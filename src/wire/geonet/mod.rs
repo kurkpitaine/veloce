@@ -3,6 +3,7 @@ use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
 mod basic_header;
+mod beacon_header;
 mod common_header;
 mod position_vector;
 
