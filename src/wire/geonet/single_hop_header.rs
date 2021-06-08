@@ -1,27 +1,30 @@
 use crate::{Error, Result};
+use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
 use super::position_vector::LongVector as LongPositionVector;
 
-/// A read/write wrapper around a Geonetworking Beacon Header.
+/// A read/write wrapper around a Geonetworking Single Hop Broadcast Header.
 #[derive(Debug, PartialEq)]
 pub struct Header<T: AsRef<[u8]>> {
     buffer: T,
 }
 
-// See ETSI EN 302 636-4-1 V1.4.1 chapter 9.8.6.2 for details about fields
+// See ETSI EN 302 636-4-1 V1.4.1 chapter 9.8.3.2 for details about fields
 mod field {
     use crate::wire::field::*;
 
-    // 24-octet Source Position Vector of the Geonetworking Beacon Header.
+    // 24-octet Source Position Vector of the Geonetworking Single Hop Broadcast Header.
     pub const SO_PV: Field = 0..24;
+    // 2-octet Reserved field of the Geonetworking Single Hop Broadcast Header.
+    pub const RESERVED: Field = 24..28;
 }
 
-// The Geonetworking Beacon Header length.
-pub const HEADER_LEN: usize = field::SO_PV.end;
+// The Geonetworking Single Hop Broadcast Header length.
+pub const HEADER_LEN: usize = field::RESERVED.end;
 
 impl<T: AsRef<[u8]>> Header<T> {
-    /// Create a raw octet buffer with a Geonetworking Beacon Header structure.
+    /// Create a raw octet buffer with a Geonetworking Single Hop Broadcast Header structure.
     pub fn new_unchecked(buffer: T) -> Header<T> {
         Header { buffer }
     }
@@ -69,6 +72,13 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
         let data = self.buffer.as_mut();
         data[field::SO_PV].copy_from_slice(value.as_bytes());
     }
+
+    /// Clear the reserved field.
+    #[inline]
+    pub fn clear_reserved(&mut self) {
+        let data = self.buffer.as_mut();
+        NetworkEndian::write_u32(&mut data[field::RESERVED], 0);
+    }
 }
 
 impl<'a, T: AsRef<[u8]>> fmt::Display for Header<&'a T> {
@@ -76,22 +86,22 @@ impl<'a, T: AsRef<[u8]>> fmt::Display for Header<&'a T> {
         match Repr::parse(self) {
             Ok(repr) => write!(f, "{}", repr),
             Err(err) => {
-                write!(f, "Beacon Header ({})", err)?;
+                write!(f, "Single Hop Broadcast Header ({})", err)?;
                 Ok(())
             }
         }
     }
 }
 
-/// A high-level representation of a Beacon header.
+/// A high-level representation of a Single Hop Broadcast header.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Repr {
-    /// The Source Position Vector contained inside the Beacon header.
+    /// The Source Position Vector contained inside the Single Hop Broadcast header.
     pub source_position_vector: LongPositionVector,
 }
 
 impl Repr {
-    /// Parse a Beacon Header and return a high-level representation.
+    /// Parse a Single Hop Broadcast Header and return a high-level representation.
     pub fn parse<T: AsRef<[u8]> + ?Sized>(header: &Header<&T>) -> Result<Repr> {
         header.check_len()?;
         Ok(Repr {
@@ -105,7 +115,7 @@ impl Repr {
         HEADER_LEN
     }
 
-    /// Emit a high-level representation into a Beacon Header.
+    /// Emit a high-level representation into a Single Hop Broadcast Header.
     pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<&mut T>) {
         header.set_source_position_vector(self.source_position_vector);
     }
@@ -113,7 +123,11 @@ impl Repr {
 
 impl fmt::Display for Repr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Beacon Header so_pv={}", self.source_position_vector)
+        write!(
+            f,
+            "Single Hop Broadcast Header so_pv={}",
+            self.source_position_vector
+        )
     }
 }
 
@@ -123,7 +137,12 @@ mod test {
     use crate::wire::ethernet::Address as MacAddress;
     use crate::wire::geonet::{Address as GnAddress, StationType};
 
-    static BYTES_HEADER: [u8; 24] = [
+    static BYTES_HEADER: [u8; 28] = [
+        0x3c, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x12, 0x5b, 0x43, 0x44, 0x1d, 0x11, 0x37,
+        0x4d, 0x01, 0x7b, 0x0d, 0x4e, 0x80, 0x18, 0x0b, 0x2c, 0x00, 0x00, 0x00, 0x00,
+    ];
+
+    static BYTES_SO_PV: [u8; 24] = [
         0x3c, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x12, 0x5b, 0x43, 0x44, 0x1d, 0x11, 0x37,
         0x4d, 0x01, 0x7b, 0x0d, 0x4e, 0x80, 0x18, 0x0b, 0x2c,
     ];
@@ -132,7 +151,7 @@ mod test {
     fn test_check_len() {
         assert_eq!(
             Err(Error::Truncated),
-            Header::new_unchecked(&BYTES_HEADER[..23]).check_len()
+            Header::new_unchecked(&BYTES_HEADER[..HEADER_LEN - 1]).check_len()
         );
 
         assert_eq!(Ok(()), Header::new_unchecked(&BYTES_HEADER).check_len());
@@ -143,7 +162,7 @@ mod test {
         let header = Header::new_unchecked(&BYTES_HEADER);
         assert_eq!(
             header.source_position_vector(),
-            LongPositionVector::from_bytes(&BYTES_HEADER)
+            LongPositionVector::from_bytes(&BYTES_SO_PV)
         );
     }
 

@@ -1,11 +1,67 @@
 use crate::wire::ethernet::Address as MacAddress;
 use byteorder::{ByteOrder, NetworkEndian};
-use core::fmt;
+use core::{cmp, fmt, ops, u16};
 
 mod basic_header;
 mod beacon_header;
 mod common_header;
 mod position_vector;
+mod single_hop_header;
+mod topo_header;
+mod unicast_header;
+
+/// A Geonetworking sequence number.
+///
+/// A sequence number is a monotonically advancing integer modulo 2<sup>16</sup>.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct SeqNumber(pub u16);
+
+impl fmt::Display for SeqNumber {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0 as u16)
+    }
+}
+
+impl ops::Add<usize> for SeqNumber {
+    type Output = SeqNumber;
+
+    fn add(self, rhs: usize) -> SeqNumber {
+        SeqNumber(self.0.wrapping_add(rhs as u16))
+    }
+}
+
+impl ops::Sub<usize> for SeqNumber {
+    type Output = SeqNumber;
+
+    fn sub(self, rhs: usize) -> SeqNumber {
+        SeqNumber(self.0.wrapping_sub(rhs as u16))
+    }
+}
+
+impl ops::AddAssign<usize> for SeqNumber {
+    fn add_assign(&mut self, rhs: usize) {
+        *self = *self + rhs;
+    }
+}
+
+/* impl ops::Sub for SeqNumber {
+    type Output = usize;
+
+    fn sub(self, rhs: SeqNumber) -> usize {
+        let result = self.0.wrapping_sub(rhs.0);
+        if result < 0 {
+            panic!("attempt to subtract sequence numbers with underflow")
+        }
+        result as usize
+    }
+} */
+
+impl cmp::PartialOrd for SeqNumber {
+    fn partial_cmp(&self, other: &SeqNumber) -> Option<cmp::Ordering> {
+        self.0.wrapping_sub(other.0).partial_cmp(&0)
+    }
+}
 
 enum_with_unknown! {
    /// Geonetworking station type.
