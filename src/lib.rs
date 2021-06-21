@@ -3,7 +3,7 @@ use core::fmt;
 #[macro_use]
 mod macros;
 
-mod constrained;
+mod types;
 mod management;
 mod wire;
 
