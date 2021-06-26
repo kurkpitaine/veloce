@@ -3,8 +3,10 @@ use core::fmt;
 #[macro_use]
 mod macros;
 
-mod types;
+mod access;
 mod management;
+mod network;
+mod types;
 mod wire;
 
 /// The error type for the networking stack.
@@ -28,6 +30,8 @@ pub enum Error {
     /// An incoming packet could not be parsed because some of its fields were out of bounds
     /// of the received data.
     Truncated,
+    /// An incoming packet was recognized but some of its fields overflow their min/max value
+    Overflow,
     /// An incoming packet had an incorrect checksum and was dropped.
     Checksum,
     /// An incoming packet could not be recognized and was dropped.
@@ -55,6 +59,7 @@ impl fmt::Display for Error {
             Error::Unaddressable => write!(f, "unaddressable destination"),
             Error::Finished => write!(f, "operation finished"),
             Error::Truncated => write!(f, "truncated packet"),
+            Error::Overflow => write!(f, "value overflow"),
             Error::Checksum => write!(f, "checksum error"),
             Error::Unrecognized => write!(f, "unrecognized packet"),
             Error::Fragmented => write!(f, "fragmented packet"),

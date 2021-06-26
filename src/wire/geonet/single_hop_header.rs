@@ -134,6 +134,7 @@ impl fmt::Display for Repr {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::types::{Latitude, Longitude};
     use crate::wire::ethernet::Address as MacAddress;
     use crate::wire::geonet::{Address as GnAddress, StationType};
 
@@ -180,8 +181,8 @@ mod test {
                         MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1])
                     ),
                     307970884,
-                    487667533,
-                    24841550,
+                    Latitude::new_unchecked(487667533),
+                    Longitude::new_unchecked(24841550),
                     true,
                     24,
                     2860,
@@ -200,8 +201,8 @@ mod test {
                     MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
                 ),
                 307970884,
-                487667533,
-                24841550,
+                Latitude::new_unchecked(487667533),
+                Longitude::new_unchecked(24841550),
                 true,
                 24,
                 2860,

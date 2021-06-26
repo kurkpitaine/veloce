@@ -1,7 +1,9 @@
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
+use crate::types::{Latitude, Longitude};
 use crate::wire::geonet::Address as GnAddress;
+use crate::{Error, Result};
 
 /// A Geonetworking Position Vector.
 pub enum PositionVector {
@@ -42,8 +44,8 @@ impl LongVector {
     pub fn new(
         address: GnAddress,
         timestamp: u32,
-        latitude: i32,
-        longitude: i32,
+        latitude: Latitude,
+        longitude: Longitude,
         accuracy: bool,
         speed: i16,
         heading: u16,
@@ -51,8 +53,14 @@ impl LongVector {
         let mut lpv = [0u8; 24];
         lpv[field::GN_ADDR].copy_from_slice(address.as_bytes());
         NetworkEndian::write_u32(&mut lpv[field::TIMESTAMP], timestamp);
-        NetworkEndian::write_i32(&mut lpv[field::LATITUDE], latitude);
-        NetworkEndian::write_i32(&mut lpv[field::LONGITUDE], longitude);
+        NetworkEndian::write_i32(
+            &mut lpv[field::LATITUDE],
+            latitude.as_tenth_of_microdegrees_i32(),
+        );
+        NetworkEndian::write_i32(
+            &mut lpv[field::LONGITUDE],
+            longitude.as_tenth_of_microdegrees_i32(),
+        );
 
         let mut pai_speed: u16 = if accuracy { 0x8000 } else { 0 };
         pai_speed = pai_speed | (speed as u16 & !0x8000);
@@ -88,13 +96,15 @@ impl LongVector {
     }
 
     /// Return the Latitude field.
-    pub fn latitude(&self) -> i32 {
-        NetworkEndian::read_i32(&self.0[field::LATITUDE])
+    pub fn latitude(&self) -> Latitude {
+        let raw = NetworkEndian::read_i32(&self.0[field::LATITUDE]);
+        Latitude::new_unchecked(raw)
     }
 
     /// Return the Latitude field.
-    pub fn longitude(&self) -> i32 {
-        NetworkEndian::read_i32(&self.0[field::LONGITUDE])
+    pub fn longitude(&self) -> Longitude {
+        let raw = NetworkEndian::read_i32(&self.0[field::LONGITUDE]);
+        Longitude::new_unchecked(raw)
     }
 
     /// Query whether the position is accurate.
@@ -137,12 +147,23 @@ pub struct ShortVector(pub [u8; 20]);
 
 impl ShortVector {
     /// Construct a Geonetworking Long Position Vector
-    pub fn new(address: GnAddress, timestamp: u32, latitude: i32, longitude: i32) -> ShortVector {
+    pub fn new(
+        address: GnAddress,
+        timestamp: u32,
+        latitude: Latitude,
+        longitude: Longitude,
+    ) -> ShortVector {
         let mut spv = [0u8; 20];
         spv[field::GN_ADDR].copy_from_slice(address.as_bytes());
         NetworkEndian::write_u32(&mut spv[field::TIMESTAMP], timestamp);
-        NetworkEndian::write_i32(&mut spv[field::LATITUDE], latitude);
-        NetworkEndian::write_i32(&mut spv[field::LONGITUDE], longitude);
+        NetworkEndian::write_i32(
+            &mut spv[field::LATITUDE],
+            latitude.as_tenth_of_microdegrees_i32(),
+        );
+        NetworkEndian::write_i32(
+            &mut spv[field::LONGITUDE],
+            longitude.as_tenth_of_microdegrees_i32(),
+        );
         ShortVector(spv)
     }
 
@@ -172,13 +193,15 @@ impl ShortVector {
     }
 
     /// Return the Latitude field.
-    pub fn latitude(&self) -> i32 {
-        NetworkEndian::read_i32(&self.0[field::LATITUDE])
+    pub fn latitude(&self) -> Latitude {
+        let raw = NetworkEndian::read_i32(&self.0[field::LATITUDE]);
+        Latitude::new_unchecked(raw)
     }
 
     /// Return the Latitude field.
-    pub fn longitude(&self) -> i32 {
-        NetworkEndian::read_i32(&self.0[field::LONGITUDE])
+    pub fn longitude(&self) -> Longitude {
+        let raw = NetworkEndian::read_i32(&self.0[field::LONGITUDE]);
+        Longitude::new_unchecked(raw)
     }
 }
 
@@ -220,17 +243,14 @@ mod test {
                 MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
             ),
             307970884,
-            487667533,
-            24841550,
+            Latitude::new_unchecked(487667533),
+            Longitude::new_unchecked(24841550),
             true,
             24,
             2860,
         );
 
-        assert_eq!(
-            lpv.as_bytes(),
-            &BYTES_LPV
-        );
+        assert_eq!(lpv.as_bytes(), &BYTES_LPV);
     }
 
     #[test]
@@ -242,14 +262,11 @@ mod test {
                 MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
             ),
             307970884,
-            487667533,
-            24841550,
+            Latitude::new_unchecked(487667533),
+            Longitude::new_unchecked(24841550),
         );
 
-        assert_eq!(
-            spv.as_bytes(),
-            &BYTES_SPV
-        );
+        assert_eq!(spv.as_bytes(), &BYTES_SPV);
     }
 
     #[test]
@@ -264,8 +281,8 @@ mod test {
             )
         );
         assert_eq!(lpv.timestamp(), 307970884);
-        assert_eq!(lpv.latitude(), 487667533);
-        assert_eq!(lpv.longitude(), 24841550);
+        assert_eq!(lpv.latitude().as_tenth_of_microdegrees_i32(), 487667533);
+        assert_eq!(lpv.longitude().as_tenth_of_microdegrees_i32(), 24841550);
         assert_eq!(lpv.is_accurate(), true);
         assert_eq!(lpv.speed(), 24);
         assert_eq!(lpv.heading(), 2860);
@@ -283,8 +300,8 @@ mod test {
             )
         );
         assert_eq!(spv.timestamp(), 307970884);
-        assert_eq!(spv.latitude(), 487667533);
-        assert_eq!(spv.longitude(), 24841550);
+        assert_eq!(spv.latitude().as_tenth_of_microdegrees_i32(), 487667533);
+        assert_eq!(spv.longitude().as_tenth_of_microdegrees_i32(), 24841550);
     }
 
     #[test]

@@ -2,36 +2,35 @@ use crate::{Error, Result};
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
-use super::position_vector::{
-    LongVector as LongPositionVector, ShortVector as ShortPositionVector,
-};
+use super::position_vector::LongVector as LongPositionVector;
+use super::Address as GnAddress;
 use super::SeqNumber;
 
-/// A read/write wrapper around a Geonetworking Unicast Header.
+/// A read/write wrapper around a Geonetworking Location Service Request Header.
 #[derive(Debug, PartialEq)]
 pub struct Header<T: AsRef<[u8]>> {
     buffer: T,
 }
 
-// See ETSI EN 302 636-4-1 V1.4.1 chapter 9.8.2.2 for details about fields
+// See ETSI EN 302 636-4-1 V1.4.1 chapter 9.8.7 for details about fields.
 mod field {
     use crate::wire::field::*;
 
-    // 2-octet Sequence Number of the Geonetworking Unicast Header.
+    // 2-octet Sequence Number of the Geonetworking Location Service Request Header.
     pub const SEQ_NUM: Field = 0..2;
-    // 2-octet Reserved field of the Geonetworking Unicast Header.
+    // 2-octet Reserved field of the Geonetworking Location Service Request Header.
     pub const RESERVED: Field = 2..4;
-    // 24-octet Source Position Vector of the Geonetworking Unicast Header.
+    // 24-octet Source Position Vector of the Geonetworking Location Service Request Header.
     pub const SO_PV: Field = 4..28;
-    // 20-octet Destination Position Vector of the Geonetworking Unicast Header.
-    pub const DE_PV: Field = 28..48;
+    // 8-octet Request Geonet Address of the Geonetworking Location Service Request Header.
+    pub const REQ_ADDR: Field = 28..36;
 }
 
-// The Geonetworking Unicast Header length.
-pub const HEADER_LEN: usize = field::DE_PV.end;
+// The Geonetworking Location Service Request Header length.
+pub const HEADER_LEN: usize = field::REQ_ADDR.end;
 
 impl<T: AsRef<[u8]>> Header<T> {
-    /// Create a raw octet buffer with a Geonetworking Unicast Header structure.
+    /// Create a raw octet buffer with a Geonetworking Location Service Request Header structure.
     pub fn new_unchecked(buffer: T) -> Header<T> {
         Header { buffer }
     }
@@ -78,11 +77,11 @@ impl<T: AsRef<[u8]>> Header<T> {
         LongPositionVector::from_bytes(&data[field::SO_PV])
     }
 
-    /// Return the destination position vector.
+    /// Return the request Geonetworking address.
     #[inline]
-    pub fn destination_position_vector(&self) -> ShortPositionVector {
+    pub fn request_address(&self) -> GnAddress {
         let data = self.buffer.as_ref();
-        ShortPositionVector::from_bytes(&data[field::DE_PV])
+        GnAddress::from_bytes(&data[field::REQ_ADDR])
     }
 }
 
@@ -108,11 +107,11 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
         data[field::SO_PV].copy_from_slice(value.as_bytes());
     }
 
-    /// Set the destination position vector field.
+    /// Set the request Geonetworking address field.
     #[inline]
-    pub fn set_destination_position_vector(&mut self, value: ShortPositionVector) {
+    pub fn set_request_address(&mut self, value: GnAddress) {
         let data = self.buffer.as_mut();
-        data[field::DE_PV].copy_from_slice(value.as_bytes());
+        data[field::REQ_ADDR].copy_from_slice(value.as_bytes());
     }
 }
 
@@ -121,32 +120,32 @@ impl<'a, T: AsRef<[u8]>> fmt::Display for Header<&'a T> {
         match Repr::parse(self) {
             Ok(repr) => write!(f, "{}", repr),
             Err(err) => {
-                write!(f, "Unicast Header ({})", err)?;
+                write!(f, "LS Request Header ({})", err)?;
                 Ok(())
             }
         }
     }
 }
 
-/// A high-level representation of a Unicast header.
+/// A high-level representation of a Location Service Request header.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Repr {
-    /// The Sequence number contained inside the Unicast header.
+    /// The Sequence number contained inside the Location Service Request header.
     pub sequence_number: SeqNumber,
-    /// The Source Position Vector contained inside the Unicast header.
+    /// The Source Position Vector contained inside the Location Service Request header.
     pub source_position_vector: LongPositionVector,
-    /// The Destination Position Vector contained inside the Unicast header.
-    pub destination_position_vector: ShortPositionVector,
+    /// The Destination Position Vector contained inside the Location Service Request header.
+    pub request_address: GnAddress,
 }
 
 impl Repr {
-    /// Parse a Unicast Header and return a high-level representation.
+    /// Parse a Location Service Request Header and return a high-level representation.
     pub fn parse<T: AsRef<[u8]> + ?Sized>(header: &Header<&T>) -> Result<Repr> {
         header.check_len()?;
         Ok(Repr {
             sequence_number: header.sequence_number(),
             source_position_vector: header.source_position_vector(),
-            destination_position_vector: header.destination_position_vector(),
+            request_address: header.request_address(),
         })
     }
 
@@ -156,11 +155,11 @@ impl Repr {
         HEADER_LEN
     }
 
-    /// Emit a high-level representation into a Unicast Header.
+    /// Emit a high-level representation into a Location Service Request Header.
     pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<&mut T>) {
         header.set_sequence_number(self.sequence_number);
         header.set_source_position_vector(self.source_position_vector);
-        header.set_destination_position_vector(self.destination_position_vector);
+        header.set_request_address(self.request_address);
     }
 }
 
@@ -168,8 +167,8 @@ impl fmt::Display for Repr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Unicast Header sn={} so_pv={} de_pv={}",
-            self.sequence_number, self.source_position_vector, self.destination_position_vector
+            "LS Request Header sn={} so_pv={} req_addr={}",
+            self.sequence_number, self.source_position_vector, self.request_address
         )
     }
 }
@@ -181,21 +180,17 @@ mod test {
     use crate::wire::ethernet::Address as MacAddress;
     use crate::wire::geonet::{Address as GnAddress, StationType};
 
-    static BYTES_HEADER: [u8; 48] = [
+    static BYTES_HEADER: [u8; 36] = [
         0x09, 0x29, 0x00, 0x00, 0x3c, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x12, 0x5b, 0x43,
         0x44, 0x1d, 0x11, 0x37, 0x4d, 0x01, 0x7b, 0x0d, 0x4e, 0x80, 0x18, 0x0b, 0x2c, 0x14, 0x00,
-        0x16, 0x33, 0x12, 0x28, 0x26, 0x45, 0x21, 0xf2, 0x41, 0x39, 0x01, 0xa4, 0xa9, 0xaf, 0x1d,
-        0x0f, 0xa0, 0x22,
+        0x16, 0x33, 0x12, 0x28, 0x26, 0x45,
     ];
 
     static BYTES_SO_PV: [u8; 24] = [
         0x3c, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x12, 0x5b, 0x43, 0x44, 0x1d, 0x11, 0x37,
         0x4d, 0x01, 0x7b, 0x0d, 0x4e, 0x80, 0x18, 0x0b, 0x2c,
     ];
-    static BYTES_DE_PV: [u8; 20] = [
-        0x14, 0x00, 0x16, 0x33, 0x12, 0x28, 0x26, 0x45, 0x21, 0xf2, 0x41, 0x39, 0x01, 0xa4, 0xa9,
-        0xaf, 0x1d, 0x0f, 0xa0, 0x22,
-    ];
+    static BYTES_REQ_ADDR: [u8; 8] = [0x14, 0x00, 0x16, 0x33, 0x12, 0x28, 0x26, 0x45];
 
     #[test]
     fn test_check_len() {
@@ -216,8 +211,8 @@ mod test {
             LongPositionVector::from_bytes(&BYTES_SO_PV)
         );
         assert_eq!(
-            header.destination_position_vector(),
-            ShortPositionVector::from_bytes(&BYTES_DE_PV)
+            header.request_address(),
+            GnAddress::from_bytes(&BYTES_REQ_ADDR)
         );
     }
 
@@ -242,15 +237,10 @@ mod test {
                     24,
                     2860,
                 ),
-                destination_position_vector: ShortPositionVector::new(
-                    GnAddress::new(
-                        false,
-                        StationType::PassengerCar,
-                        MacAddress([0x16, 0x33, 0x12, 0x28, 0x26, 0x45])
-                    ),
-                    569524537,
-                    Latitude::new_unchecked(27568559),
-                    Longitude::new_unchecked(487563298),
+                request_address: GnAddress::new(
+                    false,
+                    StationType::PassengerCar,
+                    MacAddress([0x16, 0x33, 0x12, 0x28, 0x26, 0x45])
                 ),
             }
         );
@@ -273,15 +263,10 @@ mod test {
                 24,
                 2860,
             ),
-            destination_position_vector: ShortPositionVector::new(
-                GnAddress::new(
-                    false,
-                    StationType::PassengerCar,
-                    MacAddress([0x16, 0x33, 0x12, 0x28, 0x26, 0x45]),
-                ),
-                569524537,
-                Latitude::new_unchecked(27568559),
-                Longitude::new_unchecked(487563298),
+            request_address: GnAddress::new(
+                false,
+                StationType::PassengerCar,
+                MacAddress([0x16, 0x33, 0x12, 0x28, 0x26, 0x45]),
             ),
         };
         let mut bytes = [0u8; HEADER_LEN];
