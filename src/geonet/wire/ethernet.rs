@@ -1,13 +1,13 @@
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
-use crate::{Error, Result};
+use crate::geonet::{Error, Result};
 
 enum_with_unknown! {
     /// Ethernet protocol type.
     /// We support only Geonet and WSMP protocols
     pub enum EtherType(u16) {
-        Geonet = 0x8647,
+        Geonet = 0x8947,
         WSMP = 0x88DC,
     }
 }
@@ -84,7 +84,7 @@ pub struct Frame<T: AsRef<[u8]>> {
 }
 
 mod field {
-    use crate::wire::field::*;
+    use crate::geonet::wire::field::*;
 
     pub const DESTINATION: Field = 0..6;
     pub const SOURCE: Field = 6..12;
@@ -215,34 +215,6 @@ impl<T: AsRef<[u8]>> fmt::Display for Frame<T> {
             self.dst_addr(),
             self.ethertype()
         )
-    }
-}
-
-use crate::wire::pretty_print::{PrettyIndent, PrettyPrint};
-
-impl<T: AsRef<[u8]>> PrettyPrint for Frame<T> {
-    fn pretty_print(
-        buffer: &dyn AsRef<[u8]>,
-        f: &mut fmt::Formatter,
-        indent: &mut PrettyIndent,
-    ) -> fmt::Result {
-        let frame = match Frame::new_checked(buffer) {
-            Err(err) => return write!(f, "{}({})", indent, err),
-            Ok(frame) => frame,
-        };
-        write!(f, "{}{}", indent, frame)?;
-
-        match frame.ethertype() {
-            /*             EtherType::Geonet => {
-                indent.increase(f)?;
-                super::ArpPacket::<&[u8]>::pretty_print(&frame.payload(), f, indent)
-            }
-            EtherType::WSMP => {
-                indent.increase(f)?;
-                super::Ipv4Packet::<&[u8]>::pretty_print(&frame.payload(), f, indent)
-            } */
-            _ => Ok(()),
-        }
     }
 }
 

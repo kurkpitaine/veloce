@@ -1,5 +1,11 @@
-use crate::wire::{GnAddress, GnTrafficClass};
-use core::{fmt, time::Duration};
+use super::time::Duration;
+use super::wire::{GnAddress, GnTrafficClass};
+use core::fmt;
+
+pub const GN_PROTOCOL_VERSION: u8 = 1;
+pub const GN_LOCAL_ADDR_CONF_METHOD: GnAddrConfMethod = GnAddrConfMethod::Managed;
+pub const GN_LOC_TABLE_ENTRY_COUNT: usize = 8;
+pub const GN_LOC_TABLE_ENTRY_LIFETIME: Duration = Duration::from_secs(20);
 
 /// The GeoNetworking protocol Address configuration method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +69,7 @@ impl fmt::Display for GnSnDecapResultHandling {
 
 /// The GeoNetworking protocol GeoUnicast forwarding algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GnGnNonAreaForwardingAlgorithm {
+pub enum GnNonAreaForwardingAlgorithm {
     /// Unicast forwarding algorithm is not specified.
     Unspecified,
     /// Greedy unicast forwarding algorithm.
@@ -72,19 +78,19 @@ pub enum GnGnNonAreaForwardingAlgorithm {
     Cbf,
 }
 
-impl fmt::Display for GnGnNonAreaForwardingAlgorithm {
+impl fmt::Display for GnNonAreaForwardingAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            GnGnNonAreaForwardingAlgorithm::Unspecified => write!(f, "unspecified"),
-            GnGnNonAreaForwardingAlgorithm::Greedy => write!(f, "greedy"),
-            GnGnNonAreaForwardingAlgorithm::Cbf => write!(f, "cbf"),
+            GnNonAreaForwardingAlgorithm::Unspecified => write!(f, "unspecified"),
+            GnNonAreaForwardingAlgorithm::Greedy => write!(f, "greedy"),
+            GnNonAreaForwardingAlgorithm::Cbf => write!(f, "cbf"),
         }
     }
 }
 
 /// The GeoNetworking protocol GeoBroadcast forwarding algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GnGnAreaForwardingAlgorithm {
+pub enum GnAreaForwardingAlgorithm {
     /// Broadcast forwarding algorithm is not specified.
     Unspecified,
     /// Simple Broadcast forwarding algorithm.
@@ -93,12 +99,12 @@ pub enum GnGnAreaForwardingAlgorithm {
     Cbf,
 }
 
-impl fmt::Display for GnGnAreaForwardingAlgorithm {
+impl fmt::Display for GnAreaForwardingAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            GnGnAreaForwardingAlgorithm::Unspecified => write!(f, "unspecified"),
-            GnGnAreaForwardingAlgorithm::Simple => write!(f, "simple"),
-            GnGnAreaForwardingAlgorithm::Cbf => write!(f, "cbf"),
+            GnAreaForwardingAlgorithm::Unspecified => write!(f, "unspecified"),
+            GnAreaForwardingAlgorithm::Simple => write!(f, "simple"),
+            GnAreaForwardingAlgorithm::Cbf => write!(f, "cbf"),
         }
     }
 }
@@ -116,15 +122,15 @@ pub struct Mib {
     /// ITS networking interface type.
     its_gn_if_type: GnIfType,
     /// Minimum update frequency of local position vector (EPV) in ms. 0..65635.
-    its_gn_min_update_frequency_epv: u16,
+    its_gn_min_update_frequency_epv: u32,
     /// Distance related to the confidence interval of latitude and longitude in m. Used to determine the Position Accuracy Indicator (PAI). 0..100.
     its_gn_pai_interval: u8,
     /// Maximum size of GN-SDU in bytes. 0..65635.
-    its_gn_max_sdu_size: u16,
+    its_gn_max_sdu_size: u32,
     /// Maximum size of GeoNetworking header in bytes. 0..65635.
-    its_gn_max_geo_networking_header_size: u16,
+    its_gn_max_geo_networking_header_size: u32,
     /// Location table maintenance: Lifetime of an entry in the location table in s. 0..65635.
-    its_gn_lifetime_loc_te: u16,
+    its_gn_lifetime_loc_te: u32,
     /// Indicates whether GN security is enabled or disabled.
     its_gn_security: bool,
     /// Indicates the handling of the SN-DECAP result code (service primitive SN-ENCAP.confirm parameter report).
@@ -156,15 +162,15 @@ pub struct Mib {
     /// Lower limit of the packet repetition interval in ms. 0..1000.
     its_gn_min_packet_repetition_interval: Duration,
     /// Default GeoUnicast forwarding algorithm.
-    its_gn_non_area_forwarding_algorithm: GnGnNonAreaForwardingAlgorithm,
+    its_gn_non_area_forwarding_algorithm: GnNonAreaForwardingAlgorithm,
     /// Default GeoBroadcast forwarding algorithm.
-    its_gn_area_forwarding_algorithm: GnGnAreaForwardingAlgorithm,
+    its_gn_area_forwarding_algorithm: GnAreaForwardingAlgorithm,
     /// Minimum duration a GeoBroadcast packet shall be buffered in the CBF packet buffer in ms. 0..65635.
     its_gn_cbf_min_time: Duration,
     /// Maximum duration a GeoBroadcast packet shall be buffered in the CBF packet buffer in ms. 0..65635.
     its_gn_cbf_max_time: Duration,
     /// Default theoretical maximum communication range in m. 0..65635.
-    its_gn_default_max_communication_range: u16,
+    its_gn_default_max_communication_range: u32,
     /// Default threshold angle for advanced GeoBroadcast algorithm in degrees. 0..180.
     its_gn_broadcast_c_b_f_def_sector_angle: u8,
     /// Forwarding: Size of UC forwarding packet buffer in kByte. 0..255.

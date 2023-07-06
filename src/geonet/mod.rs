@@ -1,13 +1,16 @@
 use core::fmt;
 
 #[macro_use]
-mod macros;
+pub mod macros;
 
-mod access;
-mod management;
-mod network;
-mod types;
-mod wire;
+pub mod access;
+pub mod common;
+pub mod config;
+pub mod network;
+pub mod rand;
+pub mod time;
+pub mod types;
+pub mod wire;
 
 /// The error type for the networking stack.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +49,7 @@ pub enum Error {
     /// An incoming packet was recognized but contradicted internal state.
     /// E.g. a TCP packet addressed to a socket that doesn't exist.
     Dropped,
+    BadValue,
 }
 
 /// The result type for the networking stack.
@@ -65,6 +69,7 @@ impl fmt::Display for Error {
             Error::Fragmented => write!(f, "fragmented packet"),
             Error::Malformed => write!(f, "malformed packet"),
             Error::Dropped => write!(f, "dropped by socket"),
+            Error::BadValue => write!(f, "bad value"),
         }
     }
 }

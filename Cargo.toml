@@ -1,11 +1,14 @@
 [package]
-name = "hatchback"
+name = "veloce"
 version = "0.1.0"
 authors = ["Thibaud Rouillé <thibaud.rouille@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "A V2x stack for embedded devices"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 byteorder = "1.4.3"
+heapless = "0.7.16"
+tokio = { version = "1.28.2", features = ["full"] }
+uom = { version = "0.34.0", features = ["autoconvert", "f32", "f64"] }

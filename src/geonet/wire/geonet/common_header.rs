@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use crate::geonet::{Error, Result};
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
@@ -74,7 +74,7 @@ pub struct Header<T: AsRef<[u8]>> {
 
 // See ETSI EN 302 636-4-1 V1.4.1 chapter 9.7.2 for details about fields
 mod field {
-    use crate::wire::field::*;
+    use crate::geonet::wire::field::*;
     // 4-bit identifier of the header following the Geonetworking headers and 4-bit reserved.
     pub const NXT_HDR_R: usize = 0;
 
@@ -96,6 +96,9 @@ mod field {
     // 8-bit field containing reserved bits.
     pub const RESERVED: usize = 7;
 }
+
+/// The Common header length
+pub const HEADER_LEN: usize = field::RESERVED + 1;
 
 impl<T: AsRef<[u8]>> Header<T> {
     /// Create a raw octet buffer with a Geonetworking Basic Header structure.
@@ -174,6 +177,15 @@ impl<T: AsRef<[u8]>> Header<T> {
     }
 }
 
+impl<'a, T: AsRef<[u8]> + ?Sized> Header<&'a T> {
+    /// Return a pointer to the payload.
+    #[inline]
+    pub fn payload(&self) -> &'a [u8] {
+        let data = self.buffer.as_ref();
+        &data[HEADER_LEN..]
+    }
+}
+
 impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     /// Set the next header field.
     #[inline]
@@ -231,6 +243,13 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     pub fn set_maximum_hop_limit(&mut self, value: u8) {
         let data = self.buffer.as_mut();
         data[field::MAX_HOP_LIMIT] = value;
+    }
+
+    /// Return a mutable pointer to the payload.
+    #[inline]
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        let data = self.buffer.as_mut();
+        &mut data[HEADER_LEN..]
     }
 }
 

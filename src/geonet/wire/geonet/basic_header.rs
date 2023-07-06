@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use crate::geonet::{Error, Result};
 use core::fmt;
 use core::time::Duration;
 
@@ -42,6 +42,9 @@ mod field {
     // 8-bits field containing the remaining hop limit.
     pub const RHL: usize = 3;
 }
+
+/// The Basic header length
+pub const HEADER_LEN: usize = field::RHL + 1;
 
 impl<T: AsRef<[u8]>> Header<T> {
     /// Create a raw octet buffer with a Geonetworking Basic Header structure.
@@ -116,6 +119,15 @@ impl<T: AsRef<[u8]>> Header<T> {
     }
 }
 
+impl<'a, T: AsRef<[u8]> + ?Sized> Header<&'a T> {
+    /// Return a pointer to the payload.
+    #[inline]
+    pub fn payload(&self) -> &'a [u8] {
+        let data = self.buffer.as_ref();
+        &data[HEADER_LEN..]
+    }
+}
+
 impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     /// Set the version field.
     #[inline]
@@ -164,6 +176,13 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     pub fn set_remaining_hop_limit(&mut self, value: u8) {
         let data = self.buffer.as_mut();
         data[field::RHL] = value;
+    }
+
+    /// Return a mutable pointer to the payload.
+    #[inline]
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        let data = self.buffer.as_mut();
+        &mut data[HEADER_LEN..]
     }
 }
 

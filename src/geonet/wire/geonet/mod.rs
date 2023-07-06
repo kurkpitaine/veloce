@@ -1,56 +1,57 @@
-use crate::wire::ethernet::Address as MacAddress;
+use crate::geonet::wire::ethernet::Address as MacAddress;
 use byteorder::{ByteOrder, NetworkEndian};
 use core::{cmp, fmt, ops, u16};
 
-mod anycast_broadcast_header;
-mod basic_header;
-mod beacon_header;
-mod common_header;
-mod location_service_header;
-mod position_vector;
-mod single_hop_header;
-mod topo_header;
-mod unicast_header;
+pub mod anycast_broadcast_header;
+pub mod basic_header;
+pub mod beacon_header;
+pub mod common_header;
+pub mod location_service_req_header;
+pub mod long_position_vector;
+pub mod short_position_vector;
+pub mod single_hop_header;
+pub mod topo_header;
+pub mod unicast_header;
 
 /// A Geonetworking sequence number.
 ///
-/// A sequence number is a monotonically advancing integer modulo 2<sup>16</sup>.
+/// A sequence number is a monotonically incrementing integer modulo 2<sup>16</sup>.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct SeqNumber(pub u16);
+pub struct SequenceNumber(u16);
 
-impl fmt::Display for SeqNumber {
+impl fmt::Display for SequenceNumber {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0 as u16)
     }
 }
 
-impl ops::Add<usize> for SeqNumber {
-    type Output = SeqNumber;
+impl ops::Add<usize> for SequenceNumber {
+    type Output = SequenceNumber;
 
-    fn add(self, rhs: usize) -> SeqNumber {
-        SeqNumber(self.0.wrapping_add(rhs as u16))
+    fn add(self, rhs: usize) -> SequenceNumber {
+        SequenceNumber(self.0.wrapping_add(rhs as u16))
     }
 }
 
-impl ops::Sub<usize> for SeqNumber {
-    type Output = SeqNumber;
+impl ops::Sub<usize> for SequenceNumber {
+    type Output = SequenceNumber;
 
-    fn sub(self, rhs: usize) -> SeqNumber {
-        SeqNumber(self.0.wrapping_sub(rhs as u16))
+    fn sub(self, rhs: usize) -> SequenceNumber {
+        SequenceNumber(self.0.wrapping_sub(rhs as u16))
     }
 }
 
-impl ops::AddAssign<usize> for SeqNumber {
+impl ops::AddAssign<usize> for SequenceNumber {
     fn add_assign(&mut self, rhs: usize) {
         *self = *self + rhs;
     }
 }
 
-/* impl ops::Sub for SeqNumber {
+/* impl ops::Sub for SequenceNumber {
     type Output = usize;
 
-    fn sub(self, rhs: SeqNumber) -> usize {
+    fn sub(self, rhs: SequenceNumber) -> usize {
         let result = self.0.wrapping_sub(rhs.0);
         if result < 0 {
             panic!("attempt to subtract sequence numbers with underflow")
@@ -59,8 +60,8 @@ impl ops::AddAssign<usize> for SeqNumber {
     }
 } */
 
-impl cmp::PartialOrd for SeqNumber {
-    fn partial_cmp(&self, other: &SeqNumber) -> Option<cmp::Ordering> {
+impl cmp::PartialOrd for SequenceNumber {
+    fn partial_cmp(&self, other: &SequenceNumber) -> Option<cmp::Ordering> {
         self.0.wrapping_sub(other.0).partial_cmp(&0)
     }
 }
@@ -105,11 +106,11 @@ impl fmt::Display for StationType {
 }
 
 /// An eight-octet Geonetworking address.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Address(pub [u8; 8]);
 
 mod field {
-    use crate::wire::field::*;
+    use crate::geonet::wire::field::*;
 
     pub const M_ST_RES: Field = 0..2;
     pub const MAC_ADDR: Field = 2..8;
@@ -166,6 +167,12 @@ impl Address {
     /// Return the mac address field.
     pub fn mac_addr(&self) -> MacAddress {
         MacAddress::from_bytes(&self.0[field::MAC_ADDR])
+    }
+
+    /// Sets the mac address field.
+    pub fn set_mac_addr(&mut self, mac_address: MacAddress) {
+        self.0[field::MAC_ADDR].copy_from_slice(mac_address.as_bytes());
+        MacAddress::from_bytes(&self.0[field::MAC_ADDR]);
     }
 }
 
@@ -240,7 +247,7 @@ impl fmt::Display for TrafficClass {
 #[cfg(test)]
 mod test {
     use super::{Address, StationType, TrafficClass};
-    use crate::wire::ethernet::Address as MacAddress;
+    use crate::geonet::wire::ethernet::Address as MacAddress;
 
     #[test]
     fn test_address_new() {

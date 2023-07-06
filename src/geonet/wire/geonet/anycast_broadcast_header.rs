@@ -1,13 +1,10 @@
-use crate::types::{Angle, Distance, Latitude, Longitude};
-use crate::{Error, Result};
+use crate::geonet::types::*;
+use crate::geonet::{Error, Result};
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
-use std::ops::Deref;
 
-use self::field::LATITUDE;
-
-use super::position_vector::LongVector as LongPositionVector;
-use super::SeqNumber;
+use super::long_position_vector::{Header as LPVBuf, Repr as LongPositionVector};
+use super::SequenceNumber;
 
 /// A read/write wrapper around a Geonetworking Anycast/Broadcast Header.
 #[derive(Debug, PartialEq)]
@@ -17,7 +14,7 @@ pub struct Header<T: AsRef<[u8]>> {
 
 // See ETSI EN 302 636-4-1 V1.4.1 chapter 9.8.5.2 for details about fields
 mod field {
-    use crate::wire::field::*;
+    use crate::geonet::wire::field::*;
 
     // 2-octet Sequence Number of the Geonetworking Anycast/Broadcast Header.
     pub const SEQ_NUM: Field = 0..2;
@@ -78,16 +75,17 @@ impl<T: AsRef<[u8]>> Header<T> {
 
     /// Return the sequence number.
     #[inline]
-    pub fn sequence_number(&self) -> SeqNumber {
+    pub fn sequence_number(&self) -> SequenceNumber {
         let data = self.buffer.as_ref();
-        SeqNumber(NetworkEndian::read_u16(&data[field::SEQ_NUM]))
+        SequenceNumber(NetworkEndian::read_u16(&data[field::SEQ_NUM]))
     }
 
     /// Return the source position vector.
     #[inline]
-    pub fn source_position_vector(&self) -> LongPositionVector {
+    pub fn source_position_vector(&self) -> Result<LongPositionVector> {
         let data = self.buffer.as_ref();
-        LongPositionVector::from_bytes(&data[field::SO_PV])
+        let spv_buf = LPVBuf::new_unchecked(&data[field::SO_PV]);
+        LongPositionVector::parse(&spv_buf)
     }
 
     /// Return the geo-area latitude.
@@ -95,7 +93,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn latitude(&self) -> Latitude {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::LATITUDE]);
-        Latitude::new_unchecked(raw)
+        Latitude::new::<tenth_of_microdegree>(raw as f32)
     }
 
     /// Return the geo-area longitude.
@@ -103,7 +101,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn longitude(&self) -> Longitude {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::LONGITUDE]);
-        Longitude::new_unchecked(raw)
+        Longitude::new::<tenth_of_microdegree>(raw as f32)
     }
 
     /// Return the geo-area distance A.
@@ -111,7 +109,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn distance_a(&self) -> Distance {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_u16(&data[field::DISTANCE_A]);
-        Distance::new(raw)
+        Distance::new::<meter>(raw as f32)
     }
 
     /// Return the geo-area distance B.
@@ -119,7 +117,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn distance_b(&self) -> Distance {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_u16(&data[field::DISTANCE_B]);
-        Distance::new(raw)
+        Distance::new::<meter>(raw as f32)
     }
 
     /// Return the geo-area angle.
@@ -127,14 +125,14 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn angle(&self) -> Angle {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_u16(&data[field::ANGLE]);
-        Angle::new(raw)
+        Angle::new::<degree>(raw as f32)
     }
 }
 
 impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     /// Set the sequence number.
     #[inline]
-    pub fn set_sequence_number(&mut self, value: SeqNumber) {
+    pub fn set_sequence_number(&mut self, value: SequenceNumber) {
         let data = self.buffer.as_mut();
         NetworkEndian::write_u16(&mut data[field::SEQ_NUM], value.0);
     }
@@ -151,7 +149,8 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     #[inline]
     pub fn set_source_position_vector(&mut self, value: LongPositionVector) {
         let data = self.buffer.as_mut();
-        data[field::SO_PV].copy_from_slice(value.as_bytes());
+        let mut spv_buf = LPVBuf::new_unchecked(&mut data[field::SO_PV]);
+        value.emit(&mut spv_buf);
     }
 
     /// Set the geo-area latitude.
@@ -160,7 +159,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
         let data = self.buffer.as_mut();
         NetworkEndian::write_i32(
             &mut data[field::LATITUDE],
-            value.as_tenth_of_microdegrees_i32(),
+            value.get::<tenth_of_microdegree>() as i32,
         );
     }
 
@@ -170,7 +169,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
         let data = self.buffer.as_mut();
         NetworkEndian::write_i32(
             &mut data[field::LONGITUDE],
-            value.as_tenth_of_microdegrees_i32(),
+            value.get::<tenth_of_microdegree>() as i32,
         );
     }
 
@@ -178,20 +177,20 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     #[inline]
     pub fn set_distance_a(&mut self, value: Distance) {
         let data = self.buffer.as_mut();
-        NetworkEndian::write_u16(&mut data[field::DISTANCE_A], value.as_meters_u16());
+        NetworkEndian::write_u16(&mut data[field::DISTANCE_A], value.get::<meter>() as u16);
     }
 
     /// Set the geo-area distance B
     #[inline]
     pub fn set_distance_b(&mut self, value: Distance) {
         let data = self.buffer.as_mut();
-        NetworkEndian::write_u16(&mut data[field::DISTANCE_B], value.as_meters_u16());
+        NetworkEndian::write_u16(&mut data[field::DISTANCE_B], value.get::<meter>() as u16);
     }
     /// Set the geo-area angle
     #[inline]
     pub fn set_angle(&mut self, value: Angle) {
         let data = self.buffer.as_mut();
-        NetworkEndian::write_u16(&mut data[field::ANGLE], value.as_degrees_u16());
+        NetworkEndian::write_u16(&mut data[field::ANGLE], value.get::<degree>() as u16);
     }
 }
 
@@ -208,10 +207,10 @@ impl<'a, T: AsRef<[u8]>> fmt::Display for Header<&'a T> {
 }
 
 /// A high-level representation of a Anycast/Broadcast header.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Repr {
     /// The Sequence number contained inside the Anycast/Broadcast header.
-    pub sequence_number: SeqNumber,
+    pub sequence_number: SequenceNumber,
     /// The Source Position Vector contained inside the Anycast/Broadcast header.
     pub source_position_vector: LongPositionVector,
     /// The geo-area latitude contained inside the Anycast/Broadcast header.
@@ -232,7 +231,7 @@ impl Repr {
         header.check_len()?;
         Ok(Repr {
             sequence_number: header.sequence_number(),
-            source_position_vector: header.source_position_vector(),
+            source_position_vector: header.source_position_vector()?,
             latitude: header.latitude(),
             longitude: header.longitude(),
             distance_a: header.distance_a(),
@@ -266,11 +265,11 @@ impl fmt::Display for Repr {
             "Anycast/Broadcast Header sn={} so_pv={} lat={} lon={} dist_a={} dist_b={} angle={}",
             self.sequence_number,
             self.source_position_vector,
-            self.latitude,
-            self.longitude,
-            self.distance_a,
-            self.distance_b,
-            self.angle
+            self.latitude.get::<degree>(),
+            self.longitude.get::<degree>(),
+            self.distance_a.get::<meter>(),
+            self.distance_b.get::<meter>(),
+            self.angle.get::<degree>(),
         )
     }
 }
