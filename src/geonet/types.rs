@@ -1,6 +1,6 @@
+use uom::si::f32::*;
 pub use uom::si::angle::degree;
 pub use uom::si::f32::Angle;
-use uom::si::f32::*;
 pub use uom::si::length::meter;
 pub use uom::si::velocity::centimeter_per_second;
 pub use uom::si::velocity::kilometer_per_hour;

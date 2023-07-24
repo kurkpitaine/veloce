@@ -18,12 +18,14 @@ pub use self::geonet::{
     },
     basic_header::{
         Header as BasicHeader, Repr as BasicHeaderRepr, HEADER_LEN as BASIC_HEADER_LEN,
+        NextHeader as BHNextHeader,
     },
     beacon_header::{
         Header as BeaconHeader, Repr as BeaconHeaderRepr, HEADER_LEN as BEACON_HEADER_LEN,
     },
     common_header::{
         Header as CommonHeader, Repr as CommonHeaderRepr, HEADER_LEN as COMMON_HEADER_LEN,
+        NextHeader as CHNextHeader, HeaderType as GeonetPacketType,
     },
     location_service_req_header::{
         Header as LocationServiceRequestHeader, Repr as LocationServiceRequestRepr,
@@ -51,3 +53,104 @@ pub use self::geonet::{
     },
     Address as GnAddress, SequenceNumber, TrafficClass as GnTrafficClass,
 };
+
+pub use self::pc5::Layer2Address as PC5Address;
+
+mod pc5 {
+    /// A PC5 Layer 2 address.
+    #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+    pub struct Layer2Address(pub [u8; 3]);
+
+    impl Layer2Address {
+        /// The broadcast address.
+        pub const BROADCAST: Layer2Address = Layer2Address([0xff; 3]);
+
+        /// Query whether the address is an unicast address.
+        pub fn is_unicast(&self) -> bool {
+            !self.is_broadcast()
+        }
+
+        /// Query whether this address is the broadcast address.
+        pub fn is_broadcast(&self) -> bool {
+            *self == Self::BROADCAST
+        }
+
+        /// Construct a new Layer 2 Address from bytes.
+        /// # Panics
+        /// This method will panic if the provided slice is not 3 bytes long.
+        pub fn from_bytes(a: &[u8]) -> Self {
+            if a.len() == 3 {
+                let mut b = [0u8; 3];
+                b.copy_from_slice(a);
+                Layer2Address(b)
+            } else {
+                panic!("Not a PC5 Layer 2 address");
+            }
+        }
+
+        /// Return Layer 2 Address as bytes.
+        pub const fn as_bytes(&self) -> &[u8] {
+            &self.0
+        }
+    }
+
+    impl core::fmt::Display for Layer2Address {
+        fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+            write!(f, "{:02x}:{:02x}:{:02x}", self.0[0], self.0[1], self.0[2])
+        }
+    }
+}
+
+/// Representation of an Hardware Address, such as Ethernet or PC5 Layer 2 ID.
+pub enum HardwareAddress {
+    /// Ethernet hardware address, known as MAC Address.
+    Ethernet(EthernetAddress),
+    /// LTE PC5 hardware address, aka Layer 2 ID.
+    PC5(PC5Address),
+}
+
+impl HardwareAddress {
+    pub const fn as_bytes(&self) -> &[u8] {
+        match self {
+            HardwareAddress::Ethernet(addr) => addr.as_bytes(),
+            HardwareAddress::PC5(addr) => addr.as_bytes(),
+        }
+    }
+
+    /// Query wether the address is an unicast address.
+    pub fn is_unicast(&self) -> bool {
+        match self {
+            HardwareAddress::Ethernet(addr) => addr.is_unicast(),
+            HardwareAddress::PC5(addr) => addr.is_unicast(),
+        }
+    }
+
+    /// Query wether the address is a broadcast address.
+    pub fn is_broadcast(&self) -> bool {
+        match self {
+            HardwareAddress::Ethernet(addr) => addr.is_broadcast(),
+            HardwareAddress::PC5(addr) => addr.is_broadcast(),
+        }
+    }
+}
+
+impl core::fmt::Display for HardwareAddress {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        match self {
+            HardwareAddress::Ethernet(addr) => write!(f, "{addr}"),
+            HardwareAddress::PC5(addr) => write!(f, "{addr}"),
+        }
+    }
+}
+
+impl From<EthernetAddress> for HardwareAddress {
+    fn from(addr: EthernetAddress) -> Self {
+        HardwareAddress::Ethernet(addr)
+    }
+}
+
+impl From<PC5Address> for HardwareAddress {
+    fn from(addr: PC5Address) -> Self {
+        HardwareAddress::PC5(addr)
+    }
+}

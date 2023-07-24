@@ -4,8 +4,17 @@ use core::fmt;
 
 pub const GN_PROTOCOL_VERSION: u8 = 1;
 pub const GN_LOCAL_ADDR_CONF_METHOD: GnAddrConfMethod = GnAddrConfMethod::Managed;
-pub const GN_LOC_TABLE_ENTRY_COUNT: usize = 8;
+pub const GN_LOC_TABLE_ENTRY_COUNT: usize = 10;
 pub const GN_LOC_TABLE_ENTRY_LIFETIME: Duration = Duration::from_secs(20);
+pub const GN_MAX_PACKET_DATA_RATE_EMA_BETA: f32 = 0.9;
+pub const GN_MAX_SDU_SIZE: usize = 1398;
+pub const GN_MAX_GEO_NETWORKING_HEADER_SIZE: usize = 88;
+pub const GN_LOCATION_SERVICE_PACKET_BUFFER_SIZE: usize = 1024;
+pub const GN_LOCATION_SERVICE_PACKET_BUFFER_ENTRY_COUNT: usize = 10; /// Maximum number of elements in the location service buffer.
+pub const GN_UC_FORWARDING_PACKET_BUFFER_SIZE: usize = 256 * 1000;
+pub const GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256; /// Maximum number of elements in the unicast buffer.
+pub const GN_BC_FORWARDING_PACKET_BUFFER_SIZE: usize = 1024 * 1000;
+pub const GN_CBF_PACKET_BUFFER_SIZE: usize = 256 * 1000;
 
 /// The GeoNetworking protocol Address configuration method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

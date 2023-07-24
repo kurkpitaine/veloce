@@ -1,7 +1,7 @@
 use crate::geonet::wire::{
-    AnycastBroadcastRepr, BasicHeaderRepr, BeaconHeaderRepr, CommonHeaderRepr,
-    LocationServiceReplyRepr, LocationServiceRequestRepr, SingleHopHeaderRepr, TopoBroadcastRepr,
-    UnicastRepr,
+    geonet::basic_header, AnycastBroadcastRepr, BasicHeaderRepr, BeaconHeaderRepr,
+    CommonHeaderRepr, LocationServiceReplyRepr, LocationServiceRequestRepr, SingleHopHeaderRepr,
+    TopoBroadcastRepr, UnicastRepr,
 };
 
 /// Geonetworking packet.
@@ -13,7 +13,24 @@ pub(crate) struct GeonetPacket<'p> {
     /// Extended Header part of a Geonetworking packet.
     extended_header: ExtendedHeader,
     /// Payload carried by a Geonetworking packet.
-    payload: GeonetPayload<'p>,
+    /// Optional as Beaconing packets don't carry a payload.
+    payload: Option<GeonetPayload<'p>>,
+}
+
+impl<'p> GeonetPacket<'p> {
+    pub fn new(
+        basic_header: BasicHeaderRepr,
+        common_header: CommonHeaderRepr,
+        extended_header: ExtendedHeader,
+        payload: Option<GeonetPayload<'p>>,
+    ) -> GeonetPacket<'p> {
+        GeonetPacket {
+            basic_header,
+            common_header,
+            extended_header,
+            payload,
+        }
+    }
 }
 
 /// Extended header types.

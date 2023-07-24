@@ -49,7 +49,10 @@ pub enum Error {
     /// An incoming packet was recognized but contradicted internal state.
     /// E.g. a TCP packet addressed to a socket that doesn't exist.
     Dropped,
+    /// A bad value was found.
     BadValue,
+    /// Value was not found.
+    NotFound,
 }
 
 /// The result type for the networking stack.
@@ -70,6 +73,7 @@ impl fmt::Display for Error {
             Error::Malformed => write!(f, "malformed packet"),
             Error::Dropped => write!(f, "dropped by socket"),
             Error::BadValue => write!(f, "bad value"),
+            Error::NotFound => write!(f, "not found"),
         }
     }
 }

@@ -9,6 +9,6 @@ description = "A V2x stack for embedded devices"
 
 [dependencies]
 byteorder = "1.4.3"
-heapless = "0.7.16"
+heapless = { path = "../heapless" }
 tokio = { version = "1.28.2", features = ["full"] }
-uom = { version = "0.34.0", features = ["autoconvert", "f32", "f64"] }
+uom = { version = "0.34.0", features = ["autoconvert", "f32"] }

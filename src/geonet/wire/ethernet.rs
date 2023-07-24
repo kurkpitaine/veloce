@@ -1,7 +1,8 @@
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
-
+use crate::geonet::wire::PC5Address;
 use crate::geonet::{Error, Result};
+
 
 enum_with_unknown! {
     /// Ethernet protocol type.
@@ -41,7 +42,7 @@ impl Address {
     }
 
     /// Return an Ethernet address as a sequence of octets, in big-endian.
-    pub fn as_bytes(&self) -> &[u8] {
+    pub const fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 
@@ -63,6 +64,16 @@ impl Address {
     /// Query whether the "locally administered" bit in the OUI is set.
     pub fn is_local(&self) -> bool {
         self.0[0] & 0x02 != 0
+    }
+}
+
+impl From<PC5Address> for Address {
+    fn from(pc5_addr: PC5Address) -> Self {
+        let mut addr = [0u8; 6];
+        addr[0] = pc5_addr.as_bytes()[0];
+        addr[1] = pc5_addr.as_bytes()[1];
+        addr[2] = pc5_addr.as_bytes()[2];
+        Self::from_bytes(&addr)
     }
 }
 
