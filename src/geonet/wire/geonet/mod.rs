@@ -194,7 +194,7 @@ pub struct TrafficClass(pub u8);
 
 impl TrafficClass {
     /// Construct a Geonetworking traffic class
-    pub fn new(store_carry_forward: bool, offload: bool, id: u8) -> TrafficClass {
+    pub const fn new(store_carry_forward: bool, offload: bool, id: u8) -> TrafficClass {
         let mut tc = id & 0x3f;
         tc = if store_carry_forward {
             tc | 0x80
@@ -207,27 +207,27 @@ impl TrafficClass {
     }
 
     /// Construct a Geonetworking traffic class from an octet.
-    pub fn from_byte(data: &u8) -> TrafficClass {
+    pub const fn from_byte(data: &u8) -> TrafficClass {
         TrafficClass(*data)
     }
 
     /// Return a Geonetworking traffic class as an octet.
-    pub fn as_byte(&self) -> &u8 {
+    pub const fn as_byte(&self) -> &u8 {
         &self.0
     }
 
     /// Return the store carry forward field.
-    pub fn store_carry_forward(&self) -> bool {
+    pub const fn store_carry_forward(&self) -> bool {
         (self.0 & 0x80) != 0
     }
 
     /// Return the channel offload field.
-    pub fn offload(&self) -> bool {
+    pub const fn offload(&self) -> bool {
         (self.0 & 0x40) != 0
     }
 
     /// Return the traffic class id field.
-    pub fn id(&self) -> u8 {
+    pub const fn id(&self) -> u8 {
         self.0 & 0x3F
     }
 }

@@ -1,12 +1,14 @@
 use crate::geonet::config::{
-    GN_LOC_TABLE_ENTRY_COUNT, GN_LOC_TABLE_ENTRY_LIFETIME, GN_MAX_PACKET_DATA_RATE_EMA_BETA,
+    GN_DPL_LENGTH, GN_LOC_TABLE_ENTRY_COUNT, GN_LOC_TABLE_ENTRY_LIFETIME,
+    GN_MAX_PACKET_DATA_RATE_EMA_BETA,
 };
 use crate::geonet::time::Instant;
-use crate::geonet::wire::EthernetAddress as MacAddress;
 use crate::geonet::wire::GnAddress;
-use crate::geonet::wire::LongPositionVectorRepr as LongPositionVector;
+use crate::geonet::wire::{
+    EthernetAddress as MacAddress, LongPositionVectorRepr as LongPositionVector, SequenceNumber,
+};
 use crate::geonet::{Error, Result};
-use heapless::FnvIndexMap;
+use heapless::{FnvIndexMap, HistoryBuffer};
 pub use uom::si::f32::InformationRate;
 pub use uom::si::information_rate::{byte_per_second, kilobit_per_second};
 
@@ -14,28 +16,61 @@ pub use uom::si::information_rate::{byte_per_second, kilobit_per_second};
 ///
 /// A neighbor mapping translates from a Geonetworking address to a hardware address,
 /// and contains the timestamp past which the mapping should be discarded.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct LocationTableEntry {
     /// Geonetworking address of the station.
-    geonet_addr: GnAddress,
-    /// Geonetworking protocol version of the station.
-    geonet_version: u8,
+    pub geonet_addr: GnAddress,
     /// Geonetworking Long Position Vector of the station.
-    position_vector: LongPositionVector,
+    pub position_vector: LongPositionVector,
     /// Flag indicating if the Location Service is pending for the station.
-    ls_pending: bool,
+    pub ls_pending: bool,
     /// Flag indicating if the station is a neighbour.
-    is_neighbour: bool,
+    pub is_neighbour: bool,
     /// Duplicate packet list received from the station.
-    dup_packet_list: (),
+    pub dup_packet_list: HistoryBuffer<SequenceNumber, GN_DPL_LENGTH>,
     /// Packet data rate as Exponential Moving Average.
-    packet_data_rate: InformationRate,
+    pub packet_data_rate: InformationRate,
     /// Packet data rate last update time point.
-    packet_data_rate_updated_at: Instant,
+    pub packet_data_rate_updated_at: Instant,
     /// Extensions for the station.
-    extensions: Option<()>,
+    pub extensions: Option<()>,
     /// Time point at which this entry expires.
-    expires_at: Instant,
+    pub expires_at: Instant,
+}
+
+impl LocationTableEntry {
+    /// Updates the Packet Data Rate for the given station.
+    pub fn update_pdr(&mut self, packet_size: usize, timestamp: Instant) {
+        if timestamp > self.packet_data_rate_updated_at {
+            let measure_period = timestamp - self.packet_data_rate_updated_at;
+            let instant_pdr = packet_size as f32 / measure_period.secs() as f32;
+            self.packet_data_rate *= GN_MAX_PACKET_DATA_RATE_EMA_BETA;
+            self.packet_data_rate += InformationRate::new::<byte_per_second>(
+                (1.0 - GN_MAX_PACKET_DATA_RATE_EMA_BETA) * instant_pdr,
+            );
+        }
+    }
+
+    /// Updates the `is_neighbour` flag for the given station.
+    pub fn update_neighbour_flag(&mut self, neighbour_flag: bool) {
+        self.is_neighbour = neighbour_flag;
+    }
+
+    /// Check if `seq_number` is present in the Duplicate Packet List.
+    /// `seq_number` is inserted in the Duplicate Packet List if not found.
+    pub fn check_duplicate(&mut self, seq_number: SequenceNumber) -> bool {
+        let duplicate = self
+            .dup_packet_list
+            .oldest_ordered()
+            .find(|s| **s == seq_number)
+            .is_some();
+
+        if !duplicate {
+            self.dup_packet_list.write(seq_number);
+        }
+
+        duplicate
+    }
 }
 
 /// Location Table backed by a map.
@@ -45,33 +80,50 @@ pub struct LocationTable {
 
 impl LocationTable {
     /// Create a Location Table.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             storage: FnvIndexMap::new(),
         }
     }
 
+    /// Finds the LocationTable entry for the given station.
+    /// Geonetworking address and Link Layer address are carried inside `position_vector`.
+    /// Returns a mutable reference on the element.
+    pub fn find_mut(&mut self, address: GnAddress) -> Option<&mut LocationTableEntry> {
+        self.storage.get_mut(&address.mac_addr())
+    }
+
     /// Updates or insert a `LocationTableEntry` for the given station.
     /// Geonetworking address and Link Layer address are carried inside `position_vector`.
+    /// Returns a reference on the inserted/updated element.
     pub fn update(
         &mut self,
         timestamp: Instant,
         position_vector: LongPositionVector,
-        protocol_version: u8,
-    ) {
-        if let Some(entry) = self.storage.get_mut(&position_vector.address.mac_addr()) {
+    ) -> &LocationTableEntry {
+        self.update_mut(timestamp, position_vector)
+    }
+
+    /// Updates or insert a `LocationTableEntry` for the given station.
+    /// Geonetworking address and Link Layer address are carried inside `position_vector`.
+    /// Returns a mutable reference on the inserted/updated element.
+    pub fn update_mut(
+        &mut self,
+        timestamp: Instant,
+        position_vector: LongPositionVector,
+    ) -> &mut LocationTableEntry {
+        let res = if let Some(entry) = self.storage.get_mut(&position_vector.address.mac_addr()) {
             /* Entry exists, update it with the given position vector. */
             entry.position_vector = position_vector;
             entry.expires_at = timestamp + GN_LOC_TABLE_ENTRY_LIFETIME;
         } else {
             /* Entry does not exist. Insert a new one inside storage. */
-            let mut entry = LocationTableEntry {
+            let new_entry = LocationTableEntry {
                 geonet_addr: position_vector.address,
-                geonet_version: protocol_version,
                 position_vector,
                 ls_pending: false,
                 is_neighbour: false,
-                dup_packet_list: (),
+                dup_packet_list: HistoryBuffer::new(),
                 packet_data_rate: InformationRate::new::<kilobit_per_second>(0.0),
                 packet_data_rate_updated_at: timestamp,
                 extensions: None,
@@ -95,9 +147,93 @@ impl LocationTable {
 
             /* Insert the entry in the storage */
             self.storage
-                .insert(position_vector.address.mac_addr(), entry)
+                .insert(position_vector.address.mac_addr(), new_entry)
+                .ok();
+        };
+
+        self.storage
+            .get_mut(&position_vector.address.mac_addr())
+            .unwrap()
+    }
+
+    /// Updates only if the the provided function returns true.
+    /// If the station does not exists, a `LocationTableEntry` in inserted.
+    /// Geonetworking address and Link Layer address are carried inside `position_vector`.
+    /// Returns a reference on the inserted/updated element.
+    pub fn update_if<F>(
+        &mut self,
+        timestamp: Instant,
+        position_vector: LongPositionVector,
+        f: F,
+    ) -> &LocationTableEntry
+    where
+        F: FnMut(&mut LocationTableEntry) -> bool,
+    {
+        self.update_if_mut(timestamp, position_vector, f)
+    }
+
+    /// Updates only if the the provided function returns true.
+    /// If the station does not exists, a `LocationTableEntry` in inserted.
+    /// Geonetworking address and Link Layer address are carried inside `position_vector`.
+    /// Returns a reference on the inserted/updated element.
+    pub fn update_if_mut<F>(
+        &mut self,
+        timestamp: Instant,
+        position_vector: LongPositionVector,
+        mut f: F,
+    ) -> &mut LocationTableEntry
+    where
+        F: FnMut(&mut LocationTableEntry) -> bool,
+    {
+        if let Some(entry) = self.storage.get_mut(&position_vector.address.mac_addr()) {
+            if f(entry) {
+                entry.position_vector = position_vector;
+                entry.expires_at = timestamp + GN_LOC_TABLE_ENTRY_LIFETIME;
+            }
+        } else {
+            /* Entry does not exist. Insert a new one inside storage. */
+            let new_entry = LocationTableEntry {
+                geonet_addr: position_vector.address,
+                position_vector,
+                ls_pending: false,
+                is_neighbour: false,
+                dup_packet_list: HistoryBuffer::new(),
+                packet_data_rate: InformationRate::new::<kilobit_per_second>(0.0),
+                packet_data_rate_updated_at: timestamp,
+                extensions: None,
+                expires_at: timestamp + GN_LOC_TABLE_ENTRY_LIFETIME,
+            };
+
+            /* Check if storage is full */
+            if self.storage.len() == self.storage.capacity() {
+                /* Storage is full: we remove the oldest entry. */
+                let old_addr = match self
+                    .storage
+                    .iter()
+                    .min_by_key(|(_, neighbour)| neighbour.expires_at)
+                {
+                    Some((a, _)) => *a,
+                    None => unreachable!(),
+                };
+
+                self.storage.remove(&old_addr);
+            }
+
+            /* Insert the entry in the storage */
+            self.storage
+                .insert(position_vector.address.mac_addr(), new_entry)
                 .ok();
         }
+
+        self.storage
+            .get_mut(&position_vector.address.mac_addr())
+            .unwrap()
+    }
+
+    /// Query wether the Location Table contains at least one entry where
+    /// the ìs_neighbour` flag is set.
+    pub fn has_neighbour(&self) -> bool {
+        self.storage.iter().find(|(_, v)| v.is_neighbour).is_some()
     }
 
     /// Updates the Packet Data Rate for the given station.
@@ -133,6 +269,36 @@ impl LocationTable {
             Ok(())
         } else {
             Err(Error::NotFound)
+        }
+    }
+
+    /// Updates the Location Service pending flag for the given station.
+    pub fn update_ls_pending_flag(
+        &mut self,
+        position_vector: LongPositionVector,
+        ls_flag: bool,
+    ) -> Result<()> {
+        if let Some(entry) = self.storage.get_mut(&position_vector.address.mac_addr()) {
+            entry.ls_pending = ls_flag;
+            Ok(())
+        } else {
+            Err(Error::NotFound)
+        }
+    }
+
+    /// Performs the duplicate packet detection for an incoming packet from `address` with sequence number `seq_number`.
+    /// In case `address` in unknown, `None` is returned.
+    pub fn duplicate_packet_detection(
+        &mut self,
+        address: GnAddress,
+        seq_number: SequenceNumber,
+    ) -> Option<bool> {
+        if let Some(entry) = self.storage.get_mut(&address.mac_addr()) {
+            // Address found, execute duplicate packet detection.
+            Some(entry.check_duplicate(seq_number))
+        } else {
+            // Address not found
+            None
         }
     }
 

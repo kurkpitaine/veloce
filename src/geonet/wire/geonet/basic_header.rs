@@ -1,6 +1,5 @@
-use crate::geonet::{Error, Result};
+use crate::geonet::{Error, Result, time::Duration};
 use core::fmt;
-use core::time::Duration;
 
 enum_with_unknown! {
    /// Geonetworking Next Header as carried inside the Basic Header.
@@ -155,18 +154,18 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     #[inline]
     pub fn set_lifetime(&mut self, value: Duration) {
         let data = self.buffer.as_mut();
-        let raw = if value.as_secs() % 100 == 0 {
+        let raw = if value.secs() % 100 == 0 {
             // Base is 100 seconds
-            ((value.as_secs() / 100) << 2) | 0x03
-        } else if value.as_secs() % 10 == 0 {
+            ((value.secs() / 100) << 2) | 0x03
+        } else if value.secs() % 10 == 0 {
             // base is 10 seconds
-            ((value.as_secs() / 10) << 2) | 0x02
-        } else if value.as_millis() % 1000 == 0 {
+            ((value.secs() / 10) << 2) | 0x02
+        } else if value.millis() % 1000 == 0 {
             // base is 1 second
-            (value.as_secs() << 2) | 0x01
+            (value.secs() << 2) | 0x01
         } else {
             // base is 50 milliseconds
-            ((value.as_millis() / 50) << 2) as u64
+            ((value.millis() / 50) << 2) as u64
         };
         data[field::LIFETIME] = raw as u8;
     }
@@ -199,7 +198,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> fmt::Display for Header<&'a T> {
 }
 
 /// A high-level representation of a Geonetworking Basic Header.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, /* Clone, Copy */)]
 pub struct Repr {
     /// The Geonetworking protocol version number.
     pub version: u8,
@@ -227,7 +226,7 @@ impl Repr {
 
     /// Return the length, in bytes, of a header that will be emitted from this high-level
     /// representation.
-    pub fn buffer_len(&self) -> usize {
+    pub const fn buffer_len(&self) -> usize {
         field::RHL + 1
     }
 
@@ -248,7 +247,7 @@ impl<'a> fmt::Display for Repr {
             "Basic Header version={} next_hdr={} lifetime={} rhl={}",
             self.version,
             self.next_header,
-            self.lifetime.as_millis(),
+            self.lifetime.millis(),
             self.remaining_hop_limit
         )
     }

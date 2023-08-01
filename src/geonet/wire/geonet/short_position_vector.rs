@@ -1,8 +1,10 @@
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
+use crate::geonet::time::Instant;
 use crate::geonet::types::*;
 use crate::geonet::wire::geonet::Address as GnAddress;
+use crate::geonet::wire::LongPositionVectorRepr;
 use crate::geonet::{Error, Result};
 
 /// A read/write wrapper around a Long/Short Position Vector Header.
@@ -149,7 +151,7 @@ pub struct Repr {
     /// The Geonetworking address contained inside the Short Position Vector header.
     pub address: GnAddress,
     /// The timestamp contained inside the Short Position Vector header.
-    pub timestamp: u32,
+    pub timestamp: Instant,
     /// The latitude contained inside the Short Position Vector header.
     pub latitude: Latitude,
     /// The longitude contained inside the Short Position Vector header.
@@ -162,7 +164,7 @@ impl Repr {
         header.check_len()?;
         Ok(Repr {
             address: header.address(),
-            timestamp: header.timestamp(),
+            timestamp: Instant::from_millis(header.timestamp()),
             latitude: header.latitude(),
             longitude: header.longitude(),
         })
@@ -170,16 +172,27 @@ impl Repr {
 
     /// Return the length, in bytes, of a header that will be emitted from this high-level
     /// representation.
-    pub fn buffer_len(&self) -> usize {
+    pub const fn buffer_len(&self) -> usize {
         HEADER_LEN
     }
 
     /// Emit a high-level representation into a Short Position Vector Header.
     pub fn emit<T: AsRef<[u8]> + AsMut<[u8]> + ?Sized>(&self, header: &mut Header<&mut T>) {
         header.set_address(self.address);
-        header.set_timestamp(self.timestamp);
+        header.set_timestamp(self.timestamp.millis() as u32);
         header.set_latitude(self.latitude);
         header.set_longitude(self.longitude);
+    }
+}
+
+impl From<LongPositionVectorRepr> for Repr {
+    fn from(value: LongPositionVectorRepr) -> Self {
+        Repr {
+            address: value.address,
+            timestamp: value.timestamp,
+            latitude: value.latitude,
+            longitude: value.longitude,
+        }
     }
 }
 

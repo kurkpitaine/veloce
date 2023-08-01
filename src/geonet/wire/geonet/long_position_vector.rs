@@ -4,6 +4,7 @@ use core::fmt;
 use crate::geonet::time::Instant;
 use crate::geonet::types::*;
 use crate::geonet::wire::geonet::Address as GnAddress;
+use crate::geonet::wire::ShortPositionVectorRepr;
 use crate::geonet::{Error, Result};
 
 /// A read/write wrapper around a Long/Short Position Vector Header.
@@ -242,7 +243,7 @@ impl Repr {
 
     /// Return the length, in bytes, of a header that will be emitted from this high-level
     /// representation.
-    pub fn buffer_len(&self) -> usize {
+    pub const fn buffer_len(&self) -> usize {
         HEADER_LEN
     }
 
@@ -255,6 +256,20 @@ impl Repr {
         header.set_position_accuracy_indicator(self.is_accurate);
         header.set_speed(self.speed);
         header.set_heading(self.heading);
+    }
+}
+
+impl From<ShortPositionVectorRepr> for Repr {
+    fn from(value: ShortPositionVectorRepr) -> Self {
+        Repr {
+            address: value.address,
+            timestamp: value.timestamp,
+            latitude: value.latitude,
+            longitude: value.longitude,
+            is_accurate: false,
+            speed: Speed::new::<centimeter_per_second>(0.0),
+            heading: Heading::new::<decidegree>(0.0),
+        }
     }
 }
 

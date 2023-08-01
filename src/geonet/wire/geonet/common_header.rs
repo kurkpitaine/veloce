@@ -164,9 +164,9 @@ impl<T: AsRef<[u8]>> Header<T> {
 
     /// Return the payload length field.
     #[inline]
-    pub fn payload_length(&self) -> u16 {
+    pub fn payload_length(&self) -> usize {
         let data = self.buffer.as_ref();
-        NetworkEndian::read_u16(&data[field::PAYLOAD_LEN])
+        NetworkEndian::read_u16(&data[field::PAYLOAD_LEN]).into()
     }
 
     /// Return the maximum hop limit field.
@@ -233,9 +233,9 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
 
     /// Set the payload length field.
     #[inline]
-    pub fn set_payload_length(&mut self, value: u16) {
+    pub fn set_payload_length(&mut self, value: usize) {
         let data = self.buffer.as_mut();
-        NetworkEndian::write_u16(&mut data[field::PAYLOAD_LEN], value);
+        NetworkEndian::write_u16(&mut data[field::PAYLOAD_LEN], value as u16);
     }
 
     /// Set the maximum hop limit field.
@@ -266,7 +266,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> fmt::Display for Header<&'a T> {
 }
 
 /// A high-level representation of a Geonetworking Common Header.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, /* Clone, Copy */)]
 pub struct Repr {
     /// The type of the header following the Geonetworking headers.
     pub next_header: NextHeader,
@@ -277,7 +277,7 @@ pub struct Repr {
     /// The mobile flag.
     pub mobile: bool,
     /// The payload length of the packet.
-    pub payload_len: u16,
+    pub payload_len: usize,
     /// The maximum hop limit of the packet.
     pub max_hop_limit: u8,
 }
@@ -300,7 +300,7 @@ impl Repr {
 
     /// Return the length, in bytes, of a header that will be emitted from this high-level
     /// representation.
-    pub fn buffer_len(&self) -> usize {
+    pub const fn buffer_len(&self) -> usize {
         field::RESERVED + 1
     }
 

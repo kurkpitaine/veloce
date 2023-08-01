@@ -86,7 +86,7 @@ impl<'a, T: AsRef<[u8]>> fmt::Display for Header<&'a T> {
 }
 
 /// A high-level representation of a Beacon header.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, /* Clone, Copy */)]
 pub struct Repr {
     /// The Source Position Vector contained inside the Beacon header.
     pub source_position_vector: LongPositionVector,
@@ -103,7 +103,7 @@ impl Repr {
 
     /// Return the length, in bytes, of a header that will be emitted from this high-level
     /// representation.
-    pub fn buffer_len(&self) -> usize {
+    pub const fn buffer_len(&self) -> usize {
         HEADER_LEN
     }
 

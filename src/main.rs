@@ -3,7 +3,7 @@ pub mod geonet;
 #[macro_use]
 extern crate uom;
 
-use core::time::Duration;
+use geonet::time::Duration;
 use geonet::types::*;
 use std::io;
 use tokio::net::UdpSocket;

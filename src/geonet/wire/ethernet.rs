@@ -145,7 +145,7 @@ impl<T: AsRef<[u8]>> Frame<T> {
 
     /// Return the length of a buffer required to hold a packet with the payload
     /// of a given length.
-    pub fn buffer_len(payload_len: usize) -> usize {
+    pub const fn buffer_len(payload_len: usize) -> usize {
         HEADER_LEN + payload_len
     }
 
@@ -249,7 +249,7 @@ impl Repr {
     }
 
     /// Return the length of a header that will be emitted from this high-level representation.
-    pub fn buffer_len(&self) -> usize {
+    pub const fn buffer_len(&self) -> usize {
         HEADER_LEN
     }
 

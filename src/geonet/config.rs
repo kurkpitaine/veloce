@@ -1,20 +1,37 @@
 use super::time::Duration;
-use super::wire::{GnAddress, GnTrafficClass};
+use super::wire::GnTrafficClass;
 use core::fmt;
 
 pub const GN_PROTOCOL_VERSION: u8 = 1;
+pub const GN_IS_MOBILE: bool = false;
+/// Maximum number of Duplicate Packet List (DPL) per source.
+pub const GN_DPL_LENGTH: usize = 8;
 pub const GN_LOCAL_ADDR_CONF_METHOD: GnAddrConfMethod = GnAddrConfMethod::Managed;
 pub const GN_LOC_TABLE_ENTRY_COUNT: usize = 10;
 pub const GN_LOC_TABLE_ENTRY_LIFETIME: Duration = Duration::from_secs(20);
+pub const GN_DEFAULT_HOP_LIMIT: u8 = 10;
+pub const GN_DEFAULT_TRAFFIC_CLASS: GnTrafficClass = GnTrafficClass::from_byte(&0x00);
+pub const GN_MAX_PACKET_LIFETIME: Duration = Duration::from_secs(600);
+pub const GN_DEFAULT_PACKET_LIFETIME: Duration = Duration::from_secs(60);
+pub const GN_MAX_PACKET_DATA_RATE_KILO_BYTE_PER_SEC: u8 = 100;
 pub const GN_MAX_PACKET_DATA_RATE_EMA_BETA: f32 = 0.9;
 pub const GN_MAX_SDU_SIZE: usize = 1398;
 pub const GN_MAX_GEO_NETWORKING_HEADER_SIZE: usize = 88;
 pub const GN_LOCATION_SERVICE_PACKET_BUFFER_SIZE: usize = 1024;
-pub const GN_LOCATION_SERVICE_PACKET_BUFFER_ENTRY_COUNT: usize = 10; /// Maximum number of elements in the location service buffer.
+pub const GN_LOCATION_SERVICE_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
+pub const GN_LOCATION_SERVICE_RETRANSMIT_TIMER: Duration = Duration::from_millis(1000);
+/// Maximum size of the unicast buffer.
 pub const GN_UC_FORWARDING_PACKET_BUFFER_SIZE: usize = 256 * 1000;
-pub const GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256; /// Maximum number of elements in the unicast buffer.
+/// Maximum number of elements in the unicast buffer.
+pub const GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
+/// Maximum size of the broadcast buffer.
 pub const GN_BC_FORWARDING_PACKET_BUFFER_SIZE: usize = 1024 * 1000;
+/// Maximum number of elements in the broadcast buffer.
+pub const GN_BC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
+
 pub const GN_CBF_PACKET_BUFFER_SIZE: usize = 256 * 1000;
+pub const GN_NON_AREA_FORWARDING_ALGORITHM: GnNonAreaForwardingAlgorithm =
+    GnNonAreaForwardingAlgorithm::Greedy;
 
 /// The GeoNetworking protocol Address configuration method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,7 +135,7 @@ impl fmt::Display for GnAreaForwardingAlgorithm {
     }
 }
 
-/// The Geonetworking protocol Management Information Base.
+/* /// The Geonetworking protocol Management Information Base.
 pub struct Mib {
     /// GeoNetworking address of the GeoAdhoc router.
     its_gn_local_gn_addr: GnAddress,
@@ -190,7 +207,7 @@ pub struct Mib {
     its_gn_cbf_packet_buffer_size: u16,
     /// Forwarding: Default traffic class.
     its_gn_default_traffic_class: GnTrafficClass,
-}
+} */
 
 /* impl Default for Mib {
    fn default() -> Mib {

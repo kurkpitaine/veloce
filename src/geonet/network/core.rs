@@ -17,6 +17,16 @@ pub struct Core<'a> {
 }
 
 impl Core<'_> {
+    /// Returns the Ego Position Vector as a [`LongPositionVector`].
+    pub fn ego_position_vector(&self) -> LongPositionVector {
+        self.ego_position_vector
+    }
+
+    /// Returns the Geonetworking address.
+    pub fn address(&self) -> GnAddress {
+        self.ego_position_vector.address
+    }
+
     /// Sets the Geonetworking address.
     pub fn set_address(&mut self, address: GnAddress) {
         self.ego_position_vector.address = address;
