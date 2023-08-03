@@ -974,7 +974,7 @@ impl AccessHandler<'_> {
         /* Step 11: TODO: forwarding algorithm */
 
         // Packet is sent with a the link layer destination address returned by the forwarding algorithm.
-        let packet = GeonetPacket::new_broadcast(
+        let packet = GeonetPacket::new_anycast(
             fwd_bh_repr,
             ch_repr,
             gac_repr,
@@ -984,5 +984,17 @@ impl AccessHandler<'_> {
         /* Step 12: TODO: execute media dependent procedures */
         /* Step 13: return packet */
         Some(packet)
+    }
+
+    /// Executes the non area greedy forwarding algorithm as
+    /// described in ETSI TS 103 836-4-1 V2.1.1 clause E.2.
+    pub(super) fn greedy_forwarding(&self, packet: GeonetPacket) {
+        let dest = packet.geo_destination();
+        let dist_ego_dest = self.gn_core.position().distance_to(&dest);
+        let mut mfr = dist_ego_dest;
+
+        for neighbor in self.location_table.neighbour_list().into_iter() {
+
+        }
     }
 }

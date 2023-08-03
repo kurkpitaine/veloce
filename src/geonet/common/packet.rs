@@ -7,7 +7,7 @@ use crate::geonet::{
     },
 };
 
-use super::packet_buffer::PacketMeta;
+use super::{area::GeoPosition, packet_buffer::PacketMeta};
 
 /// Geonetworking packet metadata.
 /// Same as [`GeonetPacket`] but without the payload.
@@ -35,7 +35,7 @@ impl PacketMeta for PacketMetadata {
 }
 
 impl PacketMetadata {
-    pub fn new(
+    fn new(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
         extended_header: ExtendedHeader,
@@ -166,6 +166,41 @@ impl PacketMetadata {
             ExtendedHeader::LocationServiceReply(extended) => {
                 extended.source_position_vector.address
             }
+        }
+    }
+
+    /// Returns the destination for packet types containing a destination target,
+    /// ie: a destination position vector or a destination area.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the packet does not contain a destination.
+    pub fn geo_destination(&self) -> GeoPosition {
+        match &self.extended_header {
+            ExtendedHeader::Beacon(_) => panic!("No geo destination in a beacon packet!"),
+            ExtendedHeader::SingleHopBroadcast(_) => {
+                panic!("No geo destination in a beacon packet!")
+            }
+            ExtendedHeader::TopoBroadcast(_) => panic!("No geo destination in a beacon packet!"),
+            ExtendedHeader::LocationServiceRequest(_) => {
+                panic!("No geo destination in a location service request packet!")
+            }
+            ExtendedHeader::Unicast(u) => GeoPosition {
+                latitude: u.destination_position_vector.latitude,
+                longitude: u.destination_position_vector.longitude,
+            },
+            ExtendedHeader::Anycast(a) => GeoPosition {
+                latitude: a.latitude,
+                longitude: a.longitude,
+            },
+            ExtendedHeader::Broadcast(b) => GeoPosition {
+                latitude: b.latitude,
+                longitude: b.longitude,
+            },
+            ExtendedHeader::LocationServiceReply(r) => GeoPosition {
+                latitude: r.destination_position_vector.latitude,
+                longitude: r.destination_position_vector.longitude,
+            },
         }
     }
 }
@@ -331,6 +366,41 @@ impl<'p> GeonetPacket<'p> {
             ExtendedHeader::LocationServiceReply(extended) => {
                 extended.source_position_vector.address
             }
+        }
+    }
+
+    /// Returns the destination for packet types containing a destination target,
+    /// ie: a destination position vector or a destination area.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the packet does not contain a destination.
+    pub fn geo_destination(&self) -> GeoPosition {
+        match &self.extended_header {
+            ExtendedHeader::Beacon(_) => panic!("No geo destination in a beacon packet!"),
+            ExtendedHeader::SingleHopBroadcast(_) => {
+                panic!("No geo destination in a beacon packet!")
+            }
+            ExtendedHeader::TopoBroadcast(_) => panic!("No geo destination in a beacon packet!"),
+            ExtendedHeader::LocationServiceRequest(_) => {
+                panic!("No geo destination in a location service request packet!")
+            }
+            ExtendedHeader::Unicast(u) => GeoPosition {
+                latitude: u.destination_position_vector.latitude,
+                longitude: u.destination_position_vector.longitude,
+            },
+            ExtendedHeader::Anycast(a) => GeoPosition {
+                latitude: a.latitude,
+                longitude: a.longitude,
+            },
+            ExtendedHeader::Broadcast(b) => GeoPosition {
+                latitude: b.latitude,
+                longitude: b.longitude,
+            },
+            ExtendedHeader::LocationServiceReply(r) => GeoPosition {
+                latitude: r.destination_position_vector.latitude,
+                longitude: r.destination_position_vector.longitude,
+            },
         }
     }
 }

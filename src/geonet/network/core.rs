@@ -1,7 +1,7 @@
-use crate::geonet::common::area::GeoPosition;
 /// This module implements the GN Core functions, ie:
 /// - Geonetworking Address
 /// - Maintenance of the Ego Position Vector
+use crate::geonet::common::area::GeoPosition;
 use crate::geonet::config;
 use crate::geonet::rand::Rand;
 use crate::geonet::wire::{EthernetAddress, HardwareAddress};

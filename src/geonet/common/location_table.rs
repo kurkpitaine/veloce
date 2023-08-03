@@ -7,8 +7,7 @@ use crate::geonet::wire::GnAddress;
 use crate::geonet::wire::{
     EthernetAddress as MacAddress, LongPositionVectorRepr as LongPositionVector, SequenceNumber,
 };
-use crate::geonet::{Error, Result};
-use heapless::{FnvIndexMap, HistoryBuffer};
+use heapless::{FnvIndexMap, HistoryBuffer, Vec};
 pub use uom::si::f32::InformationRate;
 pub use uom::si::information_rate::{byte_per_second, kilobit_per_second};
 
@@ -16,7 +15,7 @@ pub use uom::si::information_rate::{byte_per_second, kilobit_per_second};
 ///
 /// A neighbor mapping translates from a Geonetworking address to a hardware address,
 /// and contains the timestamp past which the mapping should be discarded.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LocationTableEntry {
     /// Geonetworking address of the station.
     pub geonet_addr: GnAddress,
@@ -244,6 +243,15 @@ impl LocationTable {
             .unwrap()
     }
 
+    /// Get the Location Table Entries where the `is_neighbour` flag is set.
+    pub fn neighbour_list(&self) -> Vec<LocationTableEntry, GN_LOC_TABLE_ENTRY_COUNT> {
+        self.storage
+            .values()
+            .filter(|e| e.is_neighbour)
+            .cloned()
+            .collect()
+    }
+
     /// Query wether the Location Table contains at least one entry where
     /// the ìs_neighbour` flag is set.
     pub fn has_neighbour(&self) -> bool {
@@ -273,6 +281,7 @@ impl LocationTable {
 }
 
 /// Determine if `left` [`LongPositionVector`] is more fresh than `right` [`LongPositionVector`].
+#[inline]
 pub fn compare_position_vector_freshness(
     left: &LongPositionVector,
     right: &LongPositionVector,

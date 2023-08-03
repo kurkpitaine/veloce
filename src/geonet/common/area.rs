@@ -5,6 +5,7 @@ use crate::geonet::wire::{GeoAnycastRepr, GeoBroadcastRepr, GeonetPacketType};
 use core::f32::consts::FRAC_PI_2;
 use uom::si::f32::{Angle, Length, Ratio};
 use uom::si::ratio::ratio;
+use uom::typenum::P2;
 
 /// A cartesian position, defined with abscissa X and ordinate Y coordinates.
 #[derive(Debug, Clone, Copy)]
@@ -22,6 +23,20 @@ pub struct GeoPosition {
     pub latitude: Latitude,
     /// Longitude of the position.
     pub longitude: Longitude,
+}
+
+impl GeoPosition {
+    pub fn distance_to(&self, rhs: &GeoPosition) -> Length {
+        let r = Length::new::<meter>(6371008.8); // Mean earth radius in meters.
+        let haversine = |theta: Angle| (theta / 2.0).sin().powi(P2::new());
+        let delta_lat = self.latitude - self.latitude;
+        let delta_lon = self.longitude - self.longitude;
+
+        let a =
+            haversine(delta_lat) + self.latitude.cos() * rhs.latitude.cos() * haversine(delta_lon);
+
+        Ratio::new::<ratio>(2.0) * r * a.sqrt().atan2((Ratio::new::<ratio>(1.0) - a).sqrt())
+    }
 }
 
 /// A circle area shape.
@@ -238,6 +253,7 @@ pub(crate) fn to_cartesian(origin: GeoPosition, position: GeoPosition) -> Cartes
     }
 }
 
+/// Rotate a `point` using `azimuth` angle.
 pub(crate) fn rotate(point: CartesianPosition, azimuth: Angle) -> CartesianPosition {
     let zenith = Angle::new::<radian>(FRAC_PI_2) - azimuth;
     let (sin_z, cos_z) = zenith.sin_cos();
