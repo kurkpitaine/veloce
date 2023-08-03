@@ -13,19 +13,20 @@ pub use self::ethernet::{
 
 pub use self::geonet::{
     anycast_broadcast_header::{
-        Header as AnycastBroadcastHeader, Repr as AnycastBroadcastRepr,
-        HEADER_LEN as ANYCAST_BROADCAST_HEADER_LEN,
+        Header as GeoAnycastHeader, Header as GeoBroadcastHeader, Repr as GeoAnycastRepr,
+        Repr as GeoBroadcastRepr, HEADER_LEN as GEO_ANYCAST_HEADER_LEN,
+        HEADER_LEN as GEO_BROADCAST_HEADER_LEN,
     },
     basic_header::{
-        Header as BasicHeader, Repr as BasicHeaderRepr, HEADER_LEN as BASIC_HEADER_LEN,
-        NextHeader as BHNextHeader,
+        Header as BasicHeader, NextHeader as BHNextHeader, Repr as BasicHeaderRepr,
+        HEADER_LEN as BASIC_HEADER_LEN,
     },
     beacon_header::{
         Header as BeaconHeader, Repr as BeaconHeaderRepr, HEADER_LEN as BEACON_HEADER_LEN,
     },
     common_header::{
-        Header as CommonHeader, Repr as CommonHeaderRepr, HEADER_LEN as COMMON_HEADER_LEN,
-        NextHeader as CHNextHeader, HeaderType as GeonetPacketType,
+        Header as CommonHeader, HeaderType as GeonetPacketType, NextHeader as CHNextHeader,
+        Repr as CommonHeaderRepr, HEADER_LEN as COMMON_HEADER_LEN,
     },
     location_service_req_header::{
         Header as LocationServiceRequestHeader, Repr as LocationServiceRequestRepr,

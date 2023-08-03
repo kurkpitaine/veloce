@@ -1,6 +1,6 @@
-use uom::si::f32::*;
-pub use uom::si::angle::degree;
+pub use uom::si::angle::{degree, radian};
 pub use uom::si::f32::Angle;
+use uom::si::f32::*;
 pub use uom::si::length::meter;
 pub use uom::si::velocity::centimeter_per_second;
 pub use uom::si::velocity::kilometer_per_hour;
@@ -23,11 +23,7 @@ pub trait LatitudeTrait {
 impl LatitudeTrait for Latitude {
     fn is_valid_latitude_value(&self) -> bool {
         let raw_lat = self.get::<tenth_of_microdegree>();
-        if raw_lat < -900_000_000.0 || raw_lat > 900_000_000.0 {
-            false
-        } else {
-            true
-        }
+        raw_lat >= -900_000_000.0 && raw_lat <= 900_000_000.0
     }
 }
 
@@ -40,11 +36,7 @@ pub trait LongitudeTrait {
 impl LongitudeTrait for Longitude {
     fn is_valid_longitude_value(&self) -> bool {
         let raw_lat = self.get::<tenth_of_microdegree>();
-        if raw_lat < -1_800_000_000.0 || raw_lat > 1_800_000_000.0 {
-            false
-        } else {
-            true
-        }
+        raw_lat >= -1_800_000_000.0 && raw_lat <= 1_800_000_000.0
     }
 }
 
@@ -57,11 +49,7 @@ pub trait HeadingTrait {
 impl HeadingTrait for Heading {
     fn is_valid_heading_value(&self) -> bool {
         let raw_hdg = self.get::<decidegree>();
-        if raw_hdg.is_sign_negative() || raw_hdg > 3600.0 {
-            false
-        } else {
-            true
-        }
+        raw_hdg.is_sign_positive() && raw_hdg <= 3600.0
     }
 }
 
@@ -74,11 +62,7 @@ pub trait SpeedTrait {
 impl SpeedTrait for Speed {
     fn is_valid_speed_value(&self) -> bool {
         let raw_spd = self.get::<centimeter_per_second>();
-        if raw_spd < -16384.0 || raw_spd > 16383.0 {
-            false
-        } else {
-            true
-        }
+        raw_spd >= -16384.0 && raw_spd <= 16383.0
     }
 }
 
@@ -91,11 +75,7 @@ pub trait DistanceTrait {
 impl DistanceTrait for Distance {
     fn is_valid_distance_value(&self) -> bool {
         let raw_dist = self.get::<meter>();
-        if raw_dist.is_sign_negative() || raw_dist > 65535.0 {
-            false
-        } else {
-            true
-        }
+        raw_dist.is_sign_positive() && raw_dist <= 65535.0
     }
 }
 
@@ -106,10 +86,6 @@ pub trait AngleTrait {
 impl AngleTrait for Angle {
     fn is_valid_angle_value(&self) -> bool {
         let raw_angle = self.get::<degree>();
-        if raw_angle.is_sign_negative() || raw_angle >= 360.0 {
-            false
-        } else {
-            true
-        }
+        raw_angle.is_sign_positive() && raw_angle < 360.0
     }
 }

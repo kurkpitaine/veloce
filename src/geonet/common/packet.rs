@@ -1,8 +1,11 @@
-use crate::geonet::{wire::{
-    AnycastBroadcastRepr, BasicHeaderRepr, BeaconHeaderRepr, CommonHeaderRepr,
-    GnAddress as Address, LocationServiceReplyRepr, LocationServiceRequestRepr,
-    SingleHopHeaderRepr, TopoBroadcastRepr, UnicastRepr,
-}, time::Duration};
+use crate::geonet::{
+    time::Duration,
+    wire::{
+        BasicHeaderRepr, BeaconHeaderRepr, CommonHeaderRepr, GeoAnycastRepr, GeoBroadcastRepr,
+        GnAddress as Address, LocationServiceReplyRepr, LocationServiceRequestRepr,
+        SingleHopHeaderRepr, TopoBroadcastRepr, UnicastRepr,
+    },
+};
 
 use super::packet_buffer::PacketMeta;
 
@@ -74,7 +77,7 @@ impl PacketMetadata {
     pub fn new_anycast(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
-        anycast_header: AnycastBroadcastRepr,
+        anycast_header: GeoAnycastRepr,
     ) -> Self {
         Self::new(
             basic_header,
@@ -87,7 +90,7 @@ impl PacketMetadata {
     pub fn new_broadcast(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
-        broadcast_header: AnycastBroadcastRepr,
+        broadcast_header: GeoBroadcastRepr,
     ) -> Self {
         Self::new(
             basic_header,
@@ -229,7 +232,7 @@ impl<'p> GeonetPacket<'p> {
     pub fn new_anycast(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
-        anycast_header: AnycastBroadcastRepr,
+        anycast_header: GeoAnycastRepr,
         payload: GeonetPayload<'p>,
     ) -> Self {
         Self::new(
@@ -244,7 +247,7 @@ impl<'p> GeonetPacket<'p> {
     pub fn new_broadcast(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
-        broadcast_header: AnycastBroadcastRepr,
+        broadcast_header: GeoBroadcastRepr,
         payload: GeonetPayload<'p>,
     ) -> Self {
         Self::new(
@@ -340,9 +343,9 @@ pub(crate) enum ExtendedHeader {
     /// Extended Header for a Unicast packet.
     Unicast(UnicastRepr),
     /// Extended Header for an Anycast packet.
-    Anycast(AnycastBroadcastRepr),
+    Anycast(GeoAnycastRepr),
     /// Extended Header for a Broadcast packet.
-    Broadcast(AnycastBroadcastRepr),
+    Broadcast(GeoBroadcastRepr),
     /// Extended Header for a Single Hop Broadcast packet.
     SingleHopBroadcast(SingleHopHeaderRepr),
     /// Extended Header for a Topologically Scoped Broadcast packet.

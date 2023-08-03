@@ -2,7 +2,7 @@ use crate::geonet::config::{
     GN_DPL_LENGTH, GN_LOC_TABLE_ENTRY_COUNT, GN_LOC_TABLE_ENTRY_LIFETIME,
     GN_MAX_PACKET_DATA_RATE_EMA_BETA,
 };
-use crate::geonet::time::Instant;
+use crate::geonet::time::{Duration, Instant};
 use crate::geonet::wire::GnAddress;
 use crate::geonet::wire::{
     EthernetAddress as MacAddress, LongPositionVectorRepr as LongPositionVector, SequenceNumber,
@@ -39,6 +39,22 @@ pub struct LocationTableEntry {
 }
 
 impl LocationTableEntry {
+    /// Updates the position vector for the given station.
+    /// Applies the algorithm defined in ETSI 103 836-4-1 V2.1.1 clause C.2.
+    pub fn update_position_vector(
+        &mut self,
+        position_vector: &LongPositionVector,
+        timestamp: Instant,
+    ) -> bool {
+        if compare_position_vector_freshness(position_vector, &self.position_vector) {
+            self.position_vector = *position_vector;
+            self.expires_at = timestamp + GN_LOC_TABLE_ENTRY_LIFETIME;
+            return true;
+        }
+
+        false
+    }
+
     /// Updates the Packet Data Rate for the given station.
     pub fn update_pdr(&mut self, packet_size: usize, timestamp: Instant) {
         if timestamp > self.packet_data_rate_updated_at {
@@ -99,7 +115,7 @@ impl LocationTable {
     pub fn update(
         &mut self,
         timestamp: Instant,
-        position_vector: LongPositionVector,
+        position_vector: &LongPositionVector,
     ) -> &LocationTableEntry {
         self.update_mut(timestamp, position_vector)
     }
@@ -110,17 +126,16 @@ impl LocationTable {
     pub fn update_mut(
         &mut self,
         timestamp: Instant,
-        position_vector: LongPositionVector,
+        position_vector: &LongPositionVector,
     ) -> &mut LocationTableEntry {
-        let res = if let Some(entry) = self.storage.get_mut(&position_vector.address.mac_addr()) {
+        if let Some(entry) = self.storage.get_mut(&position_vector.address.mac_addr()) {
             /* Entry exists, update it with the given position vector. */
-            entry.position_vector = position_vector;
-            entry.expires_at = timestamp + GN_LOC_TABLE_ENTRY_LIFETIME;
+            entry.update_position_vector(position_vector, timestamp);
         } else {
             /* Entry does not exist. Insert a new one inside storage. */
             let new_entry = LocationTableEntry {
                 geonet_addr: position_vector.address,
-                position_vector,
+                position_vector: *position_vector,
                 ls_pending: false,
                 is_neighbour: false,
                 dup_packet_list: HistoryBuffer::new(),
@@ -163,7 +178,7 @@ impl LocationTable {
     pub fn update_if<F>(
         &mut self,
         timestamp: Instant,
-        position_vector: LongPositionVector,
+        position_vector: &LongPositionVector,
         f: F,
     ) -> &LocationTableEntry
     where
@@ -179,7 +194,7 @@ impl LocationTable {
     pub fn update_if_mut<F>(
         &mut self,
         timestamp: Instant,
-        position_vector: LongPositionVector,
+        position_vector: &LongPositionVector,
         mut f: F,
     ) -> &mut LocationTableEntry
     where
@@ -187,14 +202,13 @@ impl LocationTable {
     {
         if let Some(entry) = self.storage.get_mut(&position_vector.address.mac_addr()) {
             if f(entry) {
-                entry.position_vector = position_vector;
-                entry.expires_at = timestamp + GN_LOC_TABLE_ENTRY_LIFETIME;
+                entry.update_position_vector(position_vector, timestamp);
             }
         } else {
             /* Entry does not exist. Insert a new one inside storage. */
             let new_entry = LocationTableEntry {
                 geonet_addr: position_vector.address,
-                position_vector,
+                position_vector: *position_vector,
                 ls_pending: false,
                 is_neighbour: false,
                 dup_packet_list: HistoryBuffer::new(),
@@ -236,56 +250,6 @@ impl LocationTable {
         self.storage.iter().find(|(_, v)| v.is_neighbour).is_some()
     }
 
-    /// Updates the Packet Data Rate for the given station.
-    pub fn update_pdr(
-        &mut self,
-        position_vector: LongPositionVector,
-        packet_size: usize,
-        timestamp: Instant,
-    ) -> Result<()> {
-        if let Some(entry) = self.storage.get_mut(&position_vector.address.mac_addr()) {
-            if timestamp > entry.packet_data_rate_updated_at {
-                let measure_period = timestamp - entry.packet_data_rate_updated_at;
-                let instant_pdr = packet_size as f32 / measure_period.secs() as f32;
-                entry.packet_data_rate *= GN_MAX_PACKET_DATA_RATE_EMA_BETA;
-                entry.packet_data_rate += InformationRate::new::<byte_per_second>(
-                    (1.0 - GN_MAX_PACKET_DATA_RATE_EMA_BETA) * instant_pdr,
-                );
-            }
-            Ok(())
-        } else {
-            Err(Error::NotFound)
-        }
-    }
-
-    /// Updates the Packet Data Rate for the given station.
-    pub fn update_neighbour_flag(
-        &mut self,
-        position_vector: LongPositionVector,
-        neighbour_flag: bool,
-    ) -> Result<()> {
-        if let Some(entry) = self.storage.get_mut(&position_vector.address.mac_addr()) {
-            entry.is_neighbour = neighbour_flag;
-            Ok(())
-        } else {
-            Err(Error::NotFound)
-        }
-    }
-
-    /// Updates the Location Service pending flag for the given station.
-    pub fn update_ls_pending_flag(
-        &mut self,
-        position_vector: LongPositionVector,
-        ls_flag: bool,
-    ) -> Result<()> {
-        if let Some(entry) = self.storage.get_mut(&position_vector.address.mac_addr()) {
-            entry.ls_pending = ls_flag;
-            Ok(())
-        } else {
-            Err(Error::NotFound)
-        }
-    }
-
     /// Performs the duplicate packet detection for an incoming packet from `address` with sequence number `seq_number`.
     /// In case `address` in unknown, `None` is returned.
     pub fn duplicate_packet_detection(
@@ -306,4 +270,16 @@ impl LocationTable {
     pub fn flush(&mut self) {
         self.storage.clear();
     }
+}
+
+/// Determine if `left` [`LongPositionVector`] is more fresh than `right` [`LongPositionVector`].
+pub fn compare_position_vector_freshness(
+    left: &LongPositionVector,
+    right: &LongPositionVector,
+) -> bool {
+    let tst_left = left.timestamp;
+    let tst_right = right.timestamp;
+    let half_tst_max = Duration::from_millis(0x7fff_ffff);
+    (tst_left > tst_right) && ((tst_left - tst_right) <= half_tst_max)
+        || ((tst_right > tst_left) && ((tst_right - tst_left) > half_tst_max))
 }

@@ -1,3 +1,4 @@
+use crate::geonet::common::area::GeoPosition;
 /// This module implements the GN Core functions, ie:
 /// - Geonetworking Address
 /// - Maintenance of the Ego Position Vector
@@ -20,6 +21,15 @@ impl Core<'_> {
     /// Returns the Ego Position Vector as a [`LongPositionVector`].
     pub fn ego_position_vector(&self) -> LongPositionVector {
         self.ego_position_vector
+    }
+
+    /// Returns the position carried inside the Ego Position Vector
+    /// as a [`GeoPosition`].
+    pub fn position(&self) -> GeoPosition {
+        GeoPosition {
+            latitude: self.ego_position_vector.latitude,
+            longitude: self.ego_position_vector.longitude,
+        }
     }
 
     /// Returns the Geonetworking address.

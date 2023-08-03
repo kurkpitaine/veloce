@@ -1,27 +1,29 @@
 use super::{check, core::Core};
 use crate::geonet::{
     common::{
-        location_table::LocationTable,
+        area::Area,
+        location_table::{compare_position_vector_freshness, LocationTable},
         packet::{GeonetPacket, GeonetPayload, PacketMetadata},
         PacketBuffer,
     },
     config::{
-        GnNonAreaForwardingAlgorithm, GN_DEFAULT_HOP_LIMIT, GN_DEFAULT_PACKET_LIFETIME,
-        GN_DEFAULT_TRAFFIC_CLASS, GN_IS_MOBILE,
+        GnAreaForwardingAlgorithm, GnNonAreaForwardingAlgorithm, GN_AREA_FORWARDING_ALGORITHM,
+        GN_BC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT as BC_BUF_ENTRY_NUM,
+        GN_BC_FORWARDING_PACKET_BUFFER_SIZE as BC_BUF_SIZE, GN_DEFAULT_HOP_LIMIT,
+        GN_DEFAULT_PACKET_LIFETIME, GN_DEFAULT_TRAFFIC_CLASS, GN_IS_MOBILE,
         GN_LOCATION_SERVICE_PACKET_BUFFER_ENTRY_COUNT as LS_BUF_ENTRY_NUM,
         GN_LOCATION_SERVICE_PACKET_BUFFER_SIZE as LS_BUF_SIZE, GN_NON_AREA_FORWARDING_ALGORITHM,
         GN_PROTOCOL_VERSION, GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT as UC_BUF_ENTRY_NUM,
         GN_UC_FORWARDING_PACKET_BUFFER_SIZE as UC_BUF_SIZE,
-        GN_BC_FORWARDING_PACKET_BUFFER_SIZE as BC_BUF_SIZE,
-        GN_BC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT as BC_BUF_ENTRY_NUM
     },
     time::Instant,
     wire::{
         BHNextHeader, BasicHeader, BasicHeaderRepr, BeaconHeader, BeaconHeaderRepr, CHNextHeader,
-        CommonHeader, CommonHeaderRepr, GeonetPacketType, HardwareAddress,
-        LocationServiceReplyHeader, LocationServiceReplyRepr, LocationServiceRequestHeader,
-        LocationServiceRequestRepr, SequenceNumber, SingleHopHeader, SingleHopHeaderRepr,
-        TopoBroadcastHeader, TopoBroadcastRepr, UnicastHeader, UnicastRepr,
+        CommonHeader, CommonHeaderRepr, GeoAnycastHeader, GeoAnycastRepr, GeoBroadcastHeader,
+        GeoBroadcastRepr, GeonetPacketType, HardwareAddress, LocationServiceReplyHeader,
+        LocationServiceReplyRepr, LocationServiceRequestHeader, LocationServiceRequestRepr,
+        SequenceNumber, SingleHopHeader, SingleHopHeaderRepr, TopoBroadcastHeader,
+        TopoBroadcastRepr, UnicastHeader, UnicastRepr,
     },
 };
 
@@ -120,10 +122,14 @@ impl AccessHandler<'_> {
             }
             GeonetPacketType::GeoAnycastCircle
             | GeonetPacketType::GeoAnycastRect
-            | GeonetPacketType::GeoAnycastElip => todo!(),
+            | GeonetPacketType::GeoAnycastElip => {
+                self.process_geo_anycast(timestamp, bh_repr, ch_repr, ch_payload, src_addr)
+            }
             GeonetPacketType::GeoBroadcastCircle
             | GeonetPacketType::GeoBroadcastRect
-            | GeonetPacketType::GeoBroadcastElip => todo!(),
+            | GeonetPacketType::GeoBroadcastElip => {
+                self.process_geo_broadcast(timestamp, bh_repr, ch_repr, ch_payload, src_addr)
+            }
             GeonetPacketType::TsbSingleHop => {
                 self.process_single_hop_broadcast(timestamp, bh_repr, ch_repr, ch_payload, src_addr)
             }
@@ -133,9 +139,12 @@ impl AccessHandler<'_> {
                 self.process_ls_request(timestamp, bh_repr, ch_repr, ch_payload, src_addr)
             }
             GeonetPacketType::LsReply => {
-                self.process_ls_reply(timestamp, bh_repr, ch_repr, ch_payload, src_addr, dst_addr)
+                self.process_ls_reply(timestamp, bh_repr, ch_repr, ch_payload, src_addr)
             }
-            GeonetPacketType::Unknown(_) => todo!(),
+            GeonetPacketType::Unknown(u) => {
+                println!("network: discard 'Unknown={}' packet type", u);
+                return None;
+            }
         }
     }
 
@@ -161,7 +170,7 @@ impl AccessHandler<'_> {
         /* Step 4: update Location table */
         let entry = self
             .location_table
-            .update_mut(timestamp, beacon_repr.source_position_vector);
+            .update_mut(timestamp, &beacon_repr.source_position_vector);
 
         /* Step 5: update PDR in Location table */
         let packet_size = bh_repr.buffer_len() + ch_repr.buffer_len() + beacon_repr.buffer_len();
@@ -222,15 +231,19 @@ impl AccessHandler<'_> {
         self.gn_core
             .duplicate_address_detection(src_addr, ls_req_repr.source_position_vector.address);
 
-        /* Step 5/6: add/update location table */
+        /* Step 5-6: add/update location table */
         let entry = self
             .location_table
-            .update_mut(timestamp, ls_req_repr.source_position_vector);
+            .update_mut(timestamp, &ls_req_repr.source_position_vector);
 
         /* Add received packet sequence number to the duplicate packet list */
         if dup_opt.is_none() {
             entry.dup_packet_list.write(ls_req_repr.sequence_number);
         }
+
+        /* Step 5-6: update PDR in Location table */
+        let packet_size = bh_repr.buffer_len() + ch_repr.buffer_len() + ls_req_repr.buffer_len();
+        entry.update_pdr(packet_size, timestamp);
 
         /* Determine if we are the location service destination */
         if ls_req_repr.request_address.mac_addr() == self.gn_core.address().mac_addr() {
@@ -328,7 +341,7 @@ impl AccessHandler<'_> {
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
         src_addr: HardwareAddress,
-        dst_addr: HardwareAddress,
+        //dst_addr: HardwareAddress,
     ) -> Option<GeonetPacket<'packet>> {
         let ls_rep = check!(LocationServiceReplyHeader::new_checked(ch_payload));
         let ls_rep_repr = check!(LocationServiceReplyRepr::parse(&ls_rep));
@@ -357,7 +370,7 @@ impl AccessHandler<'_> {
             /* Step 4: update Location table */
             let entry = self
                 .location_table
-                .update_mut(timestamp, ls_rep_repr.source_position_vector);
+                .update_mut(timestamp, &ls_rep_repr.source_position_vector);
 
             /* Add received packet sequence number to the duplicate packet list */
             if dup_opt.is_none() {
@@ -421,10 +434,13 @@ impl AccessHandler<'_> {
         /* Step 4: update Location table */
         let entry = self
             .location_table
-            .update_mut(timestamp, shb_repr.source_position_vector);
+            .update_mut(timestamp, &shb_repr.source_position_vector);
 
         /* Step 5: update PDR in Location table */
-        let packet_size = bh_repr.buffer_len() + ch_repr.buffer_len() + shb_repr.buffer_len();
+        let packet_size = bh_repr.buffer_len()
+            + ch_repr.buffer_len()
+            + shb_repr.buffer_len()
+            + ch_repr.payload_len;
         entry.update_pdr(packet_size, timestamp);
 
         /* Step 6: set ìs_neighbour` flag in Location table */
@@ -433,7 +449,7 @@ impl AccessHandler<'_> {
         /* Step 7: TODO: Go to upper layer */
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
-        that are destined to the source of the incoming Location Service Request packet. */
+        that are destined to the source of the incoming SHB packet. */
         if entry.ls_pending {
             self.ls_buffer.flush_with(timestamp, |packet_node| {
                 packet_node.metadata().source_address() == shb_repr.source_position_vector.address
@@ -480,7 +496,7 @@ impl AccessHandler<'_> {
         /* Step 5-6: update Location table */
         let entry = self
             .location_table
-            .update_mut(timestamp, tsb_repr.source_position_vector);
+            .update_mut(timestamp, &tsb_repr.source_position_vector);
 
         /* Add received packet sequence number to the duplicate packet list */
         if dup_opt.is_none() {
@@ -488,13 +504,16 @@ impl AccessHandler<'_> {
         }
 
         /* Step 5-6: update PDR in Location table */
-        let packet_size = bh_repr.buffer_len() + ch_repr.buffer_len() + tsb_repr.buffer_len();
+        let packet_size = bh_repr.buffer_len()
+            + ch_repr.buffer_len()
+            + tsb_repr.buffer_len()
+            + ch_repr.payload_len;
         entry.update_pdr(packet_size, timestamp);
 
         /* Step 7: TODO: Go to upper layer */
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
-        that are destined to the source of the incoming Location Service Request packet. */
+        that are destined to the source of the incoming TSB packet. */
         if entry.ls_pending {
             self.ls_buffer.flush_with(timestamp, |packet_node| {
                 packet_node.metadata().source_address() == tsb_repr.source_position_vector.address
@@ -509,6 +528,11 @@ impl AccessHandler<'_> {
             });
 
         /* Step 9: Build packet and decrement RHL. */
+        if bh_repr.remaining_hop_limit == 0 {
+            /* Remaining Hop Limit is reached, discard packet. */
+            return None;
+        }
+
         let fwd_bh_repr = BasicHeaderRepr {
             version: bh_repr.version,
             next_header: bh_repr.next_header,
@@ -518,8 +542,9 @@ impl AccessHandler<'_> {
 
         /* Step 10: check if we should buffer the packet */
         if !self.location_table.has_neighbour() && ch_repr.traffic_class.store_carry_forward() {
-            /* Buffer the packet into the unicast buffer */
-            let metadata = PacketMetadata::new_topo_scoped_broadcast(fwd_bh_repr, ch_repr, tsb_repr);
+            /* Buffer the packet into the broadcast buffer */
+            let metadata =
+                PacketMetadata::new_topo_scoped_broadcast(fwd_bh_repr, ch_repr, tsb_repr);
             self.bc_forwarding_buffer
                 .enqueue(metadata, tsb.payload(), timestamp)
                 .ok();
@@ -528,8 +553,12 @@ impl AccessHandler<'_> {
         }
 
         // Packet is sent with a broadcast link layer destination address.
-        let packet =
-            GeonetPacket::new_topo_scoped_broadcast(fwd_bh_repr, ch_repr, tsb_repr, GeonetPayload::Raw(tsb.payload()));
+        let packet = GeonetPacket::new_topo_scoped_broadcast(
+            fwd_bh_repr,
+            ch_repr,
+            tsb_repr,
+            GeonetPayload::Raw(tsb.payload()),
+        );
 
         /* Step 11: TODO: execute media dependent procedures */
         /* Step 12: return packet */
@@ -590,11 +619,18 @@ impl AccessHandler<'_> {
         let uc_repr = {
             let destination = self.location_table.update_if(
                 timestamp,
-                uc_repr.destination_position_vector.into(),
+                &uc_repr.destination_position_vector.into(),
                 |e| !e.is_neighbour,
             );
 
-            if bh_repr.next_header != BHNextHeader::SecuredHeader && destination.is_neighbour {
+            // Apply the algorithm defined in ETSI 103 836-4-1 V2.1.1 clause C.3.
+            if bh_repr.next_header != BHNextHeader::SecuredHeader
+                && destination.is_neighbour
+                && compare_position_vector_freshness(
+                    &destination.position_vector,
+                    &uc_repr.destination_position_vector.into(),
+                )
+            {
                 UnicastRepr {
                     sequence_number: uc_repr.sequence_number,
                     source_position_vector: uc_repr.source_position_vector,
@@ -612,7 +648,7 @@ impl AccessHandler<'_> {
         /* Step 4: update Location table */
         let entry = self
             .location_table
-            .update_mut(timestamp, uc_repr.source_position_vector);
+            .update_mut(timestamp, &uc_repr.source_position_vector);
 
         /* Add received packet sequence number to the duplicate packet list */
         if dup_opt.is_none() {
@@ -620,11 +656,14 @@ impl AccessHandler<'_> {
         }
 
         /* Step 5-6: update PDR in Location table */
-        let packet_size = bh_repr.buffer_len() + ch_repr.buffer_len() + uc_repr.buffer_len();
+        let packet_size = bh_repr.buffer_len()
+            + ch_repr.buffer_len()
+            + uc_repr.buffer_len()
+            + ch_repr.payload_len;
         entry.update_pdr(packet_size, timestamp);
 
         /* Step 9: Flush packets inside Location Service and Unicast forwarding buffers
-        that are destined to the source of the incoming Location Service Reply packet. */
+        that are destined to the source of the incoming Unicast packet. */
         if entry.ls_pending {
             self.ls_buffer.flush_with(timestamp, |packet_node| {
                 packet_node.metadata().source_address() == uc_repr.source_position_vector.address
@@ -639,6 +678,11 @@ impl AccessHandler<'_> {
             });
 
         /* Step 10: Build packet and decrement RHL. */
+        if bh_repr.remaining_hop_limit == 0 {
+            /* Remaining Hop Limit is reached, discard packet. */
+            return None;
+        }
+
         let fwd_bh_repr = BasicHeaderRepr {
             version: bh_repr.version,
             next_header: bh_repr.next_header,
@@ -694,15 +738,22 @@ impl AccessHandler<'_> {
         /* Step 5-6: update Location table */
         let entry = self
             .location_table
-            .update_mut(timestamp, uc_repr.source_position_vector);
+            .update_mut(timestamp, &uc_repr.source_position_vector);
 
         /* Add received packet sequence number to the duplicate packet list */
         if dup_opt.is_none() {
             entry.dup_packet_list.write(uc_repr.sequence_number);
         }
 
+        /* Step 5-6: update PDR in Location table */
+        let packet_size = bh_repr.buffer_len()
+            + ch_repr.buffer_len()
+            + uc_repr.buffer_len()
+            + ch_repr.payload_len;
+        entry.update_pdr(packet_size, timestamp);
+
         /* Step 7: Flush packets inside Location Service and Unicast forwarding buffers
-        that are destined to the source of the incoming Location Service Reply packet. */
+        that are destined to the source of the incoming Unicast packet. */
         if entry.ls_pending {
             self.ls_buffer.flush_with(timestamp, |packet_node| {
                 packet_node.metadata().source_address() == uc_repr.source_position_vector.address
@@ -717,5 +768,221 @@ impl AccessHandler<'_> {
             });
 
         /* Step 8: TODO: pass payload to upper protocol. */
+    }
+
+    /// Process a Geo Broadcast packet.
+    pub(super) fn process_geo_broadcast<'packet>(
+        &mut self,
+        timestamp: Instant,
+        bh_repr: BasicHeaderRepr,
+        ch_repr: CommonHeaderRepr,
+        ch_payload: &'packet [u8],
+        src_addr: HardwareAddress,
+        //dst_addr: HardwareAddress,
+    ) -> Option<GeonetPacket<'packet>> {
+        let gbc = check!(GeoBroadcastHeader::new_checked(ch_payload));
+        let gbc_repr = check!(GeoBroadcastRepr::parse(&gbc));
+
+        /* Step 3: determine function F(x,y) */
+        let dst_area = Area::from_gbc(&ch_repr.header_type, &gbc_repr);
+        let inside = dst_area.inside_or_at_border(self.gn_core.position());
+
+        /* Step 3a-3b: duplicate packet detection */
+        let dup_opt = self.location_table.duplicate_packet_detection(
+            gbc_repr.source_position_vector.address,
+            gbc_repr.sequence_number,
+        );
+
+        /* Ignore result only if we are using CBF algorithm */
+        if ((!inside && GN_NON_AREA_FORWARDING_ALGORITHM != GnNonAreaForwardingAlgorithm::Cbf)
+            || (inside && GN_AREA_FORWARDING_ALGORITHM != GnAreaForwardingAlgorithm::Cbf))
+            && dup_opt.is_some_and(|x| x)
+        {
+            return None;
+        }
+
+        /* Step 4: perform duplicate address detection. */
+        self.gn_core
+            .duplicate_address_detection(src_addr, gbc_repr.source_position_vector.address);
+
+        /* Step 5-6: update Location table */
+        let entry = self
+            .location_table
+            .update_mut(timestamp, &gbc_repr.source_position_vector);
+
+        /* Add received packet sequence number to the duplicate packet list */
+        if dup_opt.is_none() {
+            entry.dup_packet_list.write(gbc_repr.sequence_number);
+        }
+
+        /* Step 5-6: update PDR in Location table */
+        let packet_size = bh_repr.buffer_len()
+            + ch_repr.buffer_len()
+            + gbc_repr.buffer_len()
+            + ch_repr.payload_len;
+        entry.update_pdr(packet_size, timestamp);
+
+        /* Step 7: TODO: pass payload to upper protocol if we are inside the destination area */
+        if inside {}
+
+        /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
+        that are destined to the source of the incoming GBC packet. */
+        if entry.ls_pending {
+            self.ls_buffer.flush_with(timestamp, |packet_node| {
+                packet_node.metadata().source_address() == gbc_repr.source_position_vector.address
+            });
+
+            entry.ls_pending = false;
+        }
+
+        self.uc_forwarding_buffer
+            .flush_with(timestamp, |packet_node| {
+                packet_node.metadata().source_address() == gbc_repr.source_position_vector.address
+            });
+
+        /* Step 9: decrement Remaining Hop limit */
+        if bh_repr.remaining_hop_limit == 0 {
+            /* Remaining Hop Limit is reached, discard packet. */
+            return None;
+        }
+
+        let fwd_bh_repr = BasicHeaderRepr {
+            version: bh_repr.version,
+            next_header: bh_repr.next_header,
+            lifetime: bh_repr.lifetime,
+            remaining_hop_limit: bh_repr.remaining_hop_limit - 1,
+        };
+
+        /* Step 10: check if we should buffer the packet */
+        if !self.location_table.has_neighbour() && ch_repr.traffic_class.store_carry_forward() {
+            /* Buffer the packet into the broadcast buffer */
+            let metadata = PacketMetadata::new_broadcast(fwd_bh_repr, ch_repr, gbc_repr);
+            self.bc_forwarding_buffer
+                .enqueue(metadata, gbc.payload(), timestamp)
+                .ok();
+
+            return None;
+        }
+
+        /* Step 11-12: TODO: forwarding algorithm */
+
+        // Packet is sent with a the link layer destination address returned by the forwarding algorithm.
+        let packet = GeonetPacket::new_broadcast(
+            fwd_bh_repr,
+            ch_repr,
+            gbc_repr,
+            GeonetPayload::Raw(gbc.payload()),
+        );
+
+        /* Step 13: TODO: execute media dependent procedures */
+        /* Step 14: return packet */
+        Some(packet)
+    }
+
+    /// Process a Geo Anycast packet.
+    pub(super) fn process_geo_anycast<'packet>(
+        &mut self,
+        timestamp: Instant,
+        bh_repr: BasicHeaderRepr,
+        ch_repr: CommonHeaderRepr,
+        ch_payload: &'packet [u8],
+        src_addr: HardwareAddress,
+        //dst_addr: HardwareAddress,
+    ) -> Option<GeonetPacket<'packet>> {
+        let gac = check!(GeoAnycastHeader::new_checked(ch_payload));
+        let gac_repr = check!(GeoAnycastRepr::parse(&gac));
+
+        /* Step 3: duplicate packet detection */
+        let dup_opt = self.location_table.duplicate_packet_detection(
+            gac_repr.source_position_vector.address,
+            gac_repr.sequence_number,
+        );
+
+        if dup_opt.is_some_and(|x| x) {
+            return None;
+        }
+
+        /* Step 4: perform duplicate address detection. */
+        self.gn_core
+            .duplicate_address_detection(src_addr, gac_repr.source_position_vector.address);
+
+        /* Step 5-6: update Location table */
+        let entry = self
+            .location_table
+            .update_mut(timestamp, &gac_repr.source_position_vector);
+
+        /* Add received packet sequence number to the duplicate packet list */
+        if dup_opt.is_none() {
+            entry.dup_packet_list.write(gac_repr.sequence_number);
+        }
+
+        /* Step 5-6: update PDR in Location table */
+        let packet_size = bh_repr.buffer_len()
+            + ch_repr.buffer_len()
+            + gac_repr.buffer_len()
+            + ch_repr.payload_len;
+        entry.update_pdr(packet_size, timestamp);
+
+        /* Step 7: determine function F(x,y) */
+        let dst_area = Area::from_gac(&ch_repr.header_type, &gac_repr);
+        let inside = dst_area.inside_or_at_border(self.gn_core.position());
+
+        /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
+        that are destined to the source of the incoming GBC packet. */
+        if entry.ls_pending {
+            self.ls_buffer.flush_with(timestamp, |packet_node| {
+                packet_node.metadata().source_address() == gac_repr.source_position_vector.address
+            });
+
+            entry.ls_pending = false;
+        }
+
+        self.uc_forwarding_buffer
+            .flush_with(timestamp, |packet_node| {
+                packet_node.metadata().source_address() == gac_repr.source_position_vector.address
+            });
+
+        /* Step 9: TODO: pass payload to upper protocol if we are inside the destination area */
+        if inside {
+            return None;
+        }
+
+        /* Step 10a: decrement Remaining Hop limit */
+        if bh_repr.remaining_hop_limit == 0 {
+            /* Remaining Hop Limit is reached, discard packet. */
+            return None;
+        }
+
+        let fwd_bh_repr = BasicHeaderRepr {
+            version: bh_repr.version,
+            next_header: bh_repr.next_header,
+            lifetime: bh_repr.lifetime,
+            remaining_hop_limit: bh_repr.remaining_hop_limit - 1,
+        };
+
+        /* Step 10b: check if we should buffer the packet */
+        if !self.location_table.has_neighbour() && ch_repr.traffic_class.store_carry_forward() {
+            /* Buffer the packet into the broadcast buffer */
+            let metadata = PacketMetadata::new_anycast(fwd_bh_repr, ch_repr, gac_repr);
+            self.bc_forwarding_buffer
+                .enqueue(metadata, gac.payload(), timestamp)
+                .ok();
+
+            return None;
+        }
+
+        /* Step 11: TODO: forwarding algorithm */
+
+        // Packet is sent with a the link layer destination address returned by the forwarding algorithm.
+        let packet = GeonetPacket::new_broadcast(
+            fwd_bh_repr,
+            ch_repr,
+            gac_repr,
+            GeonetPayload::Raw(gac.payload()),
+        );
+
+        /* Step 12: TODO: execute media dependent procedures */
+        /* Step 13: return packet */
+        Some(packet)
     }
 }

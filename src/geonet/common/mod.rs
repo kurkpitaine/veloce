@@ -1,6 +1,8 @@
-pub mod packet;
 /// Common data structures shared in the Geonetworking router.
-pub mod location_table;
-mod packet_buffer;
+pub use packet_buffer::{Node as PacketBufferNode, PacketBuffer};
 
-pub use packet_buffer::{PacketBuffer, Node as PacketBufferNode};
+pub mod area;
+pub mod location_table;
+pub mod packet;
+mod packet_buffer;
+mod wgs;
