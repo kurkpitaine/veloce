@@ -2,7 +2,11 @@ use super::time::Duration;
 use super::wire::GnTrafficClass;
 use core::fmt;
 
+/// Maximum number of access handlers.
+pub const VELOCE_MAX_ACCESS_HANDLER_COUNT: usize = 2;
+/// Geonetworking protocol version supported by Veloce.
 pub const GN_PROTOCOL_VERSION: u8 = 1;
+/// Flag indicating wether the station could move.
 pub const GN_IS_MOBILE: bool = false;
 /// Maximum number of Duplicate Packet List (DPL) per source.
 pub const GN_DPL_LENGTH: usize = 8;
@@ -28,10 +32,12 @@ pub const GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
 pub const GN_BC_FORWARDING_PACKET_BUFFER_SIZE: usize = 1024 * 1000;
 /// Maximum number of elements in the broadcast buffer.
 pub const GN_BC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
-
+/// Maximum size of the contention routing buffer.
 pub const GN_CBF_PACKET_BUFFER_SIZE: usize = 256 * 1000;
+/// Non area forwarding algorithm executed by the access handlers.
 pub const GN_NON_AREA_FORWARDING_ALGORITHM: GnNonAreaForwardingAlgorithm =
     GnNonAreaForwardingAlgorithm::Greedy;
+/// Area forwarding algorithm executed by the access handlers.
 pub const GN_AREA_FORWARDING_ALGORITHM: GnAreaForwardingAlgorithm = GnAreaForwardingAlgorithm::Cbf;
 
 /// The GeoNetworking protocol Address configuration method.
@@ -124,6 +130,8 @@ pub enum GnAreaForwardingAlgorithm {
     Simple,
     /// Contention buffered forwarding algorithm.
     Cbf,
+    /// Advanced forwarding algorithm.
+    Advanced,
 }
 
 impl fmt::Display for GnAreaForwardingAlgorithm {
@@ -132,6 +140,7 @@ impl fmt::Display for GnAreaForwardingAlgorithm {
             GnAreaForwardingAlgorithm::Unspecified => write!(f, "unspecified"),
             GnAreaForwardingAlgorithm::Simple => write!(f, "simple"),
             GnAreaForwardingAlgorithm::Cbf => write!(f, "cbf"),
+            GnAreaForwardingAlgorithm::Advanced => write!(f, "advanced"),
         }
     }
 }

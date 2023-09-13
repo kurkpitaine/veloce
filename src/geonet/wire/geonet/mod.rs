@@ -18,7 +18,7 @@ pub mod unicast_header;
 /// A sequence number is a monotonically incrementing integer modulo 2<sup>16</sup>.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct SequenceNumber(u16);
+pub struct SequenceNumber(pub u16);
 
 impl fmt::Display for SequenceNumber {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

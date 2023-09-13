@@ -1,8 +1,9 @@
-use byteorder::{ByteOrder, NetworkEndian};
-use core::fmt;
 use crate::geonet::wire::PC5Address;
 use crate::geonet::{Error, Result};
+use byteorder::{ByteOrder, NetworkEndian};
+use core::fmt;
 
+use super::HardwareAddress;
 
 enum_with_unknown! {
     /// Ethernet protocol type.
@@ -31,6 +32,11 @@ impl Address {
     /// The broadcast address.
     pub const BROADCAST: Address = Address([0xff; 6]);
 
+    /// Construct an Ethernet address from parts.
+    pub const fn new(a0: u8, a1: u8, a2: u8, a3: u8, a4: u8, a5: u8) -> Address {
+        Address([a0, a1, a2, a3, a4, a5])
+    }
+
     /// Construct an Ethernet address from a sequence of octets, in big-endian.
     ///
     /// # Panics
@@ -57,16 +63,24 @@ impl Address {
     }
 
     /// Query whether the "multicast" bit in the OUI is set.
-    pub fn is_multicast(&self) -> bool {
+    pub const fn is_multicast(&self) -> bool {
         self.0[0] & 0x01 != 0
     }
 
     /// Query whether the "locally administered" bit in the OUI is set.
-    pub fn is_local(&self) -> bool {
+    pub const fn is_local(&self) -> bool {
         self.0[0] & 0x02 != 0
+    }
+
+    /// Convert to an [`HardwareAddress`].
+    ///
+    /// Same as `.into()`, but works in `const`.
+    pub const fn into_hardware_address(self) -> HardwareAddress {
+        HardwareAddress::Ethernet(self)
     }
 }
 
+/// Convert the given PC5 Layer 2 address into an Ethernet address.
 impl From<PC5Address> for Address {
     fn from(pc5_addr: PC5Address) -> Self {
         let mut addr = [0u8; 6];

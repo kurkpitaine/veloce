@@ -7,7 +7,10 @@ use crate::geonet::{
     },
 };
 
-use super::{area::GeoPosition, packet_buffer::PacketMeta};
+use super::{
+    area::{Area, GeoPosition},
+    packet_buffer::PacketMeta,
+};
 
 /// Geonetworking packet metadata.
 /// Same as [`GeonetPacket`] but without the payload.
@@ -47,7 +50,7 @@ impl PacketMetadata {
         }
     }
 
-    /// Constructs a new Beaconing packet.
+    /// Constructs a new Beaconing packet meta.
     pub fn new_beacon(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
@@ -60,7 +63,7 @@ impl PacketMetadata {
         )
     }
 
-    /// Constructs a new Unicast packet.
+    /// Constructs a new Unicast packet meta.
     pub fn new_unicast(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
@@ -73,7 +76,7 @@ impl PacketMetadata {
         )
     }
 
-    /// Constructs a new Anycast packet.
+    /// Constructs a new Anycast packet meta.
     pub fn new_anycast(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
@@ -86,7 +89,7 @@ impl PacketMetadata {
         )
     }
 
-    /// Constructs a new Broadcast packet.
+    /// Constructs a new Broadcast packet meta.
     pub fn new_broadcast(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
@@ -99,7 +102,7 @@ impl PacketMetadata {
         )
     }
 
-    /// Constructs a new Single Hop Broadcast packet.
+    /// Constructs a new Single Hop Broadcast packet meta.
     pub fn new_single_hop_broadcast(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
@@ -112,7 +115,7 @@ impl PacketMetadata {
         )
     }
 
-    /// Constructs a new Topologically Scoped Broadcast packet.
+    /// Constructs a new Topologically Scoped Broadcast packet meta.
     pub fn new_topo_scoped_broadcast(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
@@ -125,7 +128,7 @@ impl PacketMetadata {
         )
     }
 
-    /// Constructs a new Location Service Request packet.
+    /// Constructs a new Location Service Request packet meta.
     pub fn new_location_service_request(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
@@ -138,7 +141,7 @@ impl PacketMetadata {
         )
     }
 
-    /// Constructs a new Location Service Reply packet.
+    /// Constructs a new Location Service Reply packet meta.
     pub fn new_location_service_reply(
         basic_header: BasicHeaderRepr,
         common_header: CommonHeaderRepr,
@@ -148,6 +151,15 @@ impl PacketMetadata {
             basic_header,
             common_header,
             ExtendedHeader::LocationServiceReply(ls_rep_header),
+        )
+    }
+
+    /// Constructs a new packet meta from a [`GeonetPacket`].
+    pub fn from_geonet_packet(packet: GeonetPacket) -> Self {
+        Self::new(
+            packet.basic_header,
+            packet.common_header,
+            packet.extended_header,
         )
     }
 
@@ -403,6 +415,35 @@ impl<'p> GeonetPacket<'p> {
             },
         }
     }
+
+    /// Returns the destination area for Anycast and Broadcast packet types.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the packet does not contain a destination area.
+    pub fn geo_area(&self) -> Area {
+        match &self.extended_header {
+            ExtendedHeader::Beacon(_) => panic!("No geo area in a beacon packet!"),
+            ExtendedHeader::SingleHopBroadcast(_) => {
+                panic!("No geo area in a beacon packet!")
+            }
+            ExtendedHeader::TopoBroadcast(_) => panic!("No geo area in a beacon packet!"),
+            ExtendedHeader::LocationServiceRequest(_) => {
+                panic!("No geo area in a location service request packet!")
+            }
+            ExtendedHeader::LocationServiceReply(r) => {
+                panic!("No geo area in a location service reply packet!")
+            }
+            ExtendedHeader::Unicast(u) => panic!("No geo area in a unicast packet!"),
+            ExtendedHeader::Anycast(a) => Area::from_gac(&self.common_header.header_type, a),
+            ExtendedHeader::Broadcast(b) => Area::from_gbc(&self.common_header.header_type, b),
+        }
+    }
+
+    /// Returns the payload contained in the packet.
+    pub(crate) fn payload(&self) -> Option<&'p [u8]> {
+        self.payload.payload()
+    }
 }
 
 /// Extended header types.
@@ -450,14 +491,30 @@ pub(crate) enum GeonetPayload<'p> {
     /// Used to carry an opaque protocol to the Geonetworking layer.
     Any(&'p [u8]),
     /// Payload is BTP-A type.
-    BtpA(()),
+    BtpA(&'p [u8]),
     /// Payload is BTP-B type.
-    BtpB(()),
+    BtpB(&'p [u8]),
     /// Payload is IPv6 type.
-    IPv6(()),
+    IPv6(&'p [u8]),
     /// Payload is Raw type.
     /// Used for forwarding.
     Raw(&'p [u8]),
-    /// Payload is not existent.
+    /// No Payload carried in packet.
     NoPayload,
+}
+
+impl<'p> GeonetPayload<'p> {
+    /// Returns a reference on the payload contents.
+    pub(crate) fn payload(&self) -> Option<&'p [u8]> {
+        let res = match self {
+            GeonetPayload::Any(p) => Some(*p),
+            GeonetPayload::BtpA(p) => Some(*p),
+            GeonetPayload::BtpB(p) => Some(*p),
+            GeonetPayload::IPv6(p) => Some(*p),
+            GeonetPayload::Raw(p) => Some(*p),
+            GeonetPayload::NoPayload => None,
+        };
+
+        res
+    }
 }

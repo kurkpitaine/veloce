@@ -11,6 +11,8 @@ use heapless::{FnvIndexMap, HistoryBuffer, Vec};
 pub use uom::si::f32::InformationRate;
 pub use uom::si::information_rate::{byte_per_second, kilobit_per_second};
 
+use super::area::GeoPosition;
+
 /// A location table entry.
 ///
 /// A neighbor mapping translates from a Geonetworking address to a hardware address,
@@ -38,6 +40,14 @@ pub struct LocationTableEntry {
 }
 
 impl LocationTableEntry {
+    /// Returns the position for the given station.
+    pub fn position(&self) -> GeoPosition {
+        GeoPosition {
+            latitude: self.position_vector.latitude,
+            longitude: self.position_vector.longitude,
+        }
+    }
+
     /// Updates the position vector for the given station.
     /// Applies the algorithm defined in ETSI 103 836-4-1 V2.1.1 clause C.2.
     pub fn update_position_vector(
@@ -101,11 +111,16 @@ impl LocationTable {
         }
     }
 
-    /// Finds the LocationTable entry for the given station.
-    /// Geonetworking address and Link Layer address are carried inside `position_vector`.
+    /// Finds the LocationTable entry for the given `ll_addr` [`MacAddress`].
+    /// Returns a reference on the element.
+    pub fn find(&self, ll_addr: &MacAddress) -> Option<&LocationTableEntry> {
+        self.storage.get(ll_addr)
+    }
+
+    /// Finds the LocationTable entry for the given `ll_addr` [`MacAddress`].
     /// Returns a mutable reference on the element.
-    pub fn find_mut(&mut self, address: GnAddress) -> Option<&mut LocationTableEntry> {
-        self.storage.get_mut(&address.mac_addr())
+    pub fn find_mut(&mut self, ll_addr: &MacAddress) -> Option<&mut LocationTableEntry> {
+        self.storage.get_mut(ll_addr)
     }
 
     /// Updates or insert a `LocationTableEntry` for the given station.

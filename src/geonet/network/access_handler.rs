@@ -3,7 +3,7 @@ use crate::geonet::{
     common::{
         area::Area,
         location_table::{compare_position_vector_freshness, LocationTable},
-        packet::{GeonetPacket, GeonetPayload, PacketMetadata},
+        packet::{ExtendedHeader, GeonetPacket, GeonetPayload, PacketMetadata},
         PacketBuffer,
     },
     config::{
@@ -19,11 +19,11 @@ use crate::geonet::{
     time::Instant,
     wire::{
         BHNextHeader, BasicHeader, BasicHeaderRepr, BeaconHeader, BeaconHeaderRepr, CHNextHeader,
-        CommonHeader, CommonHeaderRepr, GeoAnycastHeader, GeoAnycastRepr, GeoBroadcastHeader,
-        GeoBroadcastRepr, GeonetPacketType, HardwareAddress, LocationServiceReplyHeader,
-        LocationServiceReplyRepr, LocationServiceRequestHeader, LocationServiceRequestRepr,
-        SequenceNumber, SingleHopHeader, SingleHopHeaderRepr, TopoBroadcastHeader,
-        TopoBroadcastRepr, UnicastHeader, UnicastRepr,
+        CommonHeader, CommonHeaderRepr, EthernetAddress, GeoAnycastHeader, GeoAnycastRepr,
+        GeoBroadcastHeader, GeoBroadcastRepr, GeonetPacketType, HardwareAddress,
+        LocationServiceReplyHeader, LocationServiceReplyRepr, LocationServiceRequestHeader,
+        LocationServiceRequestRepr, SequenceNumber, SingleHopHeader, SingleHopHeaderRepr,
+        TopoBroadcastHeader, TopoBroadcastRepr, UnicastHeader, UnicastRepr,
     },
 };
 
@@ -41,6 +41,20 @@ pub struct AccessHandler<'a> {
     bc_forwarding_buffer: PacketBuffer<PacketMetadata, BC_BUF_ENTRY_NUM, BC_BUF_SIZE>,
     /// Core instance.
     gn_core: &'a mut Core<'a>,
+}
+
+impl <'a>AccessHandler<'a> {
+    /// Constructs a new Access Handler.
+    pub fn new(core: &'a mut Core<'a>) -> Self {
+        Self {
+            location_table: LocationTable::new(),
+            sequence_number: SequenceNumber(0),
+            ls_buffer: PacketBuffer::new(),
+            uc_forwarding_buffer: PacketBuffer::new(),
+            bc_forwarding_buffer: PacketBuffer::new(),
+            gn_core: core,
+        }
+    }
 }
 
 impl AccessHandler<'_> {
@@ -986,15 +1000,114 @@ impl AccessHandler<'_> {
         Some(packet)
     }
 
+    /// Executes the forwarding algorithm selection procedure
+    /// as described in ETSI TS 103 836-4-1 V2.1.1 clause D.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if `packet` is neither of Anycast nor Broadcast type.
+    pub(super) fn forwarding_algorithm(
+        &mut self,
+        packet: GeonetPacket,
+        timestamp: Instant,
+        sender: Option<HardwareAddress>,
+    ) -> Option<HardwareAddress> {
+        let area = packet.geo_area();
+        let f_ego = area.inside_or_at_border(self.gn_core.position());
+
+        let ret = if f_ego {
+            match GN_AREA_FORWARDING_ALGORITHM {
+                GnAreaForwardingAlgorithm::Unspecified | GnAreaForwardingAlgorithm::Simple => {
+                    self.area_simple_forwarding()
+                }
+                GnAreaForwardingAlgorithm::Cbf => unimplemented!(),
+                GnAreaForwardingAlgorithm::Advanced => unimplemented!(),
+            }
+        } else {
+            let inside = sender
+                .and_then(|sender_ll_addr| {
+                    let addr = match sender_ll_addr {
+                        HardwareAddress::Ethernet(e) => e,
+                        HardwareAddress::PC5(p) => p.into(),
+                    };
+                    self.location_table.find(&addr)
+                })
+                .is_some_and(|neigh| {
+                    neigh.position_vector.is_accurate && area.inside_or_at_border(neigh.position())
+                });
+
+            match (inside, GN_NON_AREA_FORWARDING_ALGORITHM) {
+                (
+                    true,
+                    GnNonAreaForwardingAlgorithm::Unspecified
+                    | GnNonAreaForwardingAlgorithm::Greedy,
+                ) => self.non_area_greedy_forwarding(packet, timestamp),
+                (true, GnNonAreaForwardingAlgorithm::Cbf) => unimplemented!(),
+                _ => None,
+            }
+        };
+
+        ret
+    }
+
     /// Executes the non area greedy forwarding algorithm as
     /// described in ETSI TS 103 836-4-1 V2.1.1 clause E.2.
-    pub(super) fn greedy_forwarding(&self, packet: GeonetPacket) {
+    ///
+    /// # Panics
+    ///
+    /// This method panics if `packet` does not contain a destination nor a payload.
+    pub(super) fn non_area_greedy_forwarding(
+        &mut self,
+        packet: GeonetPacket,
+        timestamp: Instant,
+    ) -> Option<HardwareAddress> {
         let dest = packet.geo_destination();
         let dist_ego_dest = self.gn_core.position().distance_to(&dest);
         let mut mfr = dist_ego_dest;
 
+        let mut next_hop = None;
         for neighbor in self.location_table.neighbour_list().into_iter() {
-
+            let dist = packet.geo_destination().distance_to(&neighbor.position());
+            if mfr < dist {
+                next_hop = Some(neighbor.position_vector.address.mac_addr().into());
+                mfr = dist;
+            }
         }
+
+        let ll_addr = if mfr < dist_ego_dest {
+            next_hop
+        } else {
+            if packet.common_header.traffic_class.store_carry_forward() {
+                match (&packet.extended_header, packet.payload()) {
+                    (ExtendedHeader::Unicast(_), Some(payload)) => {
+                        let metadata = PacketMetadata::from_geonet_packet(packet);
+                        self.uc_forwarding_buffer
+                            .enqueue(metadata, payload, timestamp)
+                            .ok();
+                    }
+                    (ExtendedHeader::Anycast(_) | ExtendedHeader::Broadcast(_), Some(payload)) => {
+                        let metadata = PacketMetadata::from_geonet_packet(packet);
+                        self.bc_forwarding_buffer
+                            .enqueue(metadata, payload, timestamp)
+                            .ok();
+                    }
+                    _ => unreachable!(),
+                };
+
+                None
+            } else {
+                Some(EthernetAddress::BROADCAST.into())
+            }
+        };
+
+        ll_addr
+    }
+
+    /// Executes the simple GeoBroadcast forwarding algorithm as
+    /// described in ETSI TS 103 836-4-1 V2.1.1 clause F.2.
+    ///
+    /// Always return the link layer broadcast address.
+    pub(super) fn area_simple_forwarding(&self) -> Option<HardwareAddress> {
+        Some(EthernetAddress::BROADCAST.into())
     }
 }

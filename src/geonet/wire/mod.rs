@@ -58,6 +58,8 @@ pub use self::geonet::{
 pub use self::pc5::Layer2Address as PC5Address;
 
 mod pc5 {
+    use super::HardwareAddress;
+
     /// A PC5 Layer 2 address.
     #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
     pub struct Layer2Address(pub [u8; 3]);
@@ -65,6 +67,11 @@ mod pc5 {
     impl Layer2Address {
         /// The broadcast address.
         pub const BROADCAST: Layer2Address = Layer2Address([0xff; 3]);
+
+        /// Construct a Layer 2 address from parts.
+        pub const fn new(a0: u8, a1: u8, a2: u8) -> Layer2Address {
+            Layer2Address([a0, a1, a2])
+        }
 
         /// Query whether the address is an unicast address.
         pub fn is_unicast(&self) -> bool {
@@ -93,6 +100,13 @@ mod pc5 {
         pub const fn as_bytes(&self) -> &[u8] {
             &self.0
         }
+
+        /// Convert to an [`HardwareAddress`].
+        ///
+        /// Same as `.into()`, but works in `const`.
+        pub const fn into_hardware_address(self) -> HardwareAddress {
+            HardwareAddress::PC5(self)
+        }
     }
 
     impl core::fmt::Display for Layer2Address {
@@ -111,6 +125,11 @@ pub enum HardwareAddress {
 }
 
 impl HardwareAddress {
+    /// Create an address wrapping an Ethernet address with the given octets.
+    pub const fn ethernet(a0: u8, a1: u8, a2: u8, a3: u8, a4: u8, a5: u8) -> HardwareAddress {
+        HardwareAddress::Ethernet(EthernetAddress::new(a0, a1, a2, a3, a4, a5))
+    }
+
     pub const fn as_bytes(&self) -> &[u8] {
         match self {
             HardwareAddress::Ethernet(addr) => addr.as_bytes(),
