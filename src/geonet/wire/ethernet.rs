@@ -243,6 +243,26 @@ impl<T: AsRef<[u8]>> fmt::Display for Frame<T> {
     }
 }
 
+use crate::geonet::wire::pretty_print::{PrettyIndent, PrettyPrint};
+
+impl<T: AsRef<[u8]>> PrettyPrint for Frame<T> {
+    fn pretty_print(
+        buffer: &dyn AsRef<[u8]>,
+        f: &mut fmt::Formatter,
+        indent: &mut PrettyIndent,
+    ) -> fmt::Result {
+        let frame = match Frame::new_checked(buffer) {
+            Err(err) => return write!(f, "{indent}({err})"),
+            Ok(frame) => frame,
+        };
+        write!(f, "{indent}{frame}")?;
+
+        match frame.ethertype() {
+            _ => Ok(()),
+        }
+    }
+}
+
 /// A high-level representation of an Ethernet II frame header.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Repr {

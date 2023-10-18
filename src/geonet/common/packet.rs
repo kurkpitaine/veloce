@@ -12,6 +12,50 @@ use super::{
     packet_buffer::PacketMeta,
 };
 
+/// Unicast packet metadata.
+#[derive(Debug)]
+pub(crate) struct UnicastPacketMetadata {
+    /// Basic Header part of a Unicast Geonetworking packet.
+    pub basic_header: BasicHeaderRepr,
+    /// Common Header part of a Unicast Geonetworking packet.
+    pub common_header: CommonHeaderRepr,
+    /// Unicast header part of a Unicast Geonetworking packet.
+    pub unicast_header: UnicastRepr,
+}
+
+impl PacketMeta for UnicastPacketMetadata {
+    fn size(&self) -> usize {
+        self.basic_header.buffer_len()
+            + self.common_header.buffer_len()
+            + self.unicast_header.buffer_len()
+            + self.common_header.payload_len
+    }
+
+    fn lifetime(&self) -> Duration {
+        self.basic_header.lifetime
+    }
+}
+
+impl UnicastPacketMetadata {
+    /// Crates a UnicastMetadata.
+    pub fn new(
+        basic_header: BasicHeaderRepr,
+        common_header: CommonHeaderRepr,
+        unicast_header: UnicastRepr,
+    ) -> Self {
+        Self {
+            basic_header,
+            common_header,
+            unicast_header,
+        }
+    }
+
+    /// Returns the destination address of the packet.
+    pub fn destination_address(&self) -> Address {
+        self.unicast_header.destination_position_vector.address
+    }
+}
+
 /// Geonetworking packet metadata.
 /// Same as [`GeonetPacket`] but without the payload.
 #[derive(Debug)]
@@ -237,8 +281,8 @@ impl<'p> GeonetPacket<'p> {
         common_header: CommonHeaderRepr,
         extended_header: ExtendedHeader,
         payload: GeonetPayload<'p>,
-    ) -> GeonetPacket {
-        GeonetPacket {
+    ) -> Self {
+        Self {
             basic_header,
             common_header,
             extended_header,

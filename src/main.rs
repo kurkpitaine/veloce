@@ -42,7 +42,7 @@ async fn main() -> io::Result<()> {
             geonet::wire::geonet::common_header::Header::new_checked(basic_hdr.payload_mut())
                 .unwrap();
         let common_repr = geonet::wire::geonet::common_header::Repr {
-            next_header: geonet::wire::geonet::common_header::NextHeader::Any,
+            next_header: geonet::wire::GnProtocol::Any,
             header_type: geonet::wire::geonet::common_header::HeaderType::Beacon,
             traffic_class: geonet::wire::geonet::TrafficClass::new(false, false, 1),
             mobile: false,

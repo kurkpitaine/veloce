@@ -1,7 +1,9 @@
+use crate::geonet::common::area::GeoPosition;
 use crate::geonet::config::{
     GN_DPL_LENGTH, GN_LOC_TABLE_ENTRY_COUNT, GN_LOC_TABLE_ENTRY_LIFETIME,
     GN_MAX_PACKET_DATA_RATE_EMA_BETA,
 };
+
 use crate::geonet::time::{Duration, Instant};
 use crate::geonet::wire::GnAddress;
 use crate::geonet::wire::{
@@ -11,20 +13,20 @@ use heapless::{FnvIndexMap, HistoryBuffer, Vec};
 pub use uom::si::f32::InformationRate;
 pub use uom::si::information_rate::{byte_per_second, kilobit_per_second};
 
-use super::area::GeoPosition;
+use super::location_service::LocationServiceRequestHandle;
 
 /// A location table entry.
 ///
 /// A neighbor mapping translates from a Geonetworking address to a hardware address,
 /// and contains the timestamp past which the mapping should be discarded.
 #[derive(Debug, Clone)]
-pub struct LocationTableEntry {
+pub(super) struct LocationTableEntry {
     /// Geonetworking address of the station.
     pub geonet_addr: GnAddress,
     /// Geonetworking Long Position Vector of the station.
     pub position_vector: LongPositionVector,
-    /// Flag indicating if the Location Service is pending for the station.
-    pub ls_pending: bool,
+    /// Handle of the Location Service request for the station.
+    pub ls_pending: Option<LocationServiceRequestHandle>,
     /// Flag indicating if the station is a neighbour.
     pub is_neighbour: bool,
     /// Duplicate packet list received from the station.
@@ -99,7 +101,8 @@ impl LocationTableEntry {
 }
 
 /// Location Table backed by a map.
-pub struct LocationTable {
+#[derive(Debug)]
+pub(super) struct LocationTable {
     storage: FnvIndexMap<MacAddress, LocationTableEntry, GN_LOC_TABLE_ENTRY_COUNT>,
 }
 
@@ -150,7 +153,7 @@ impl LocationTable {
             let new_entry = LocationTableEntry {
                 geonet_addr: position_vector.address,
                 position_vector: *position_vector,
-                ls_pending: false,
+                ls_pending: None,
                 is_neighbour: false,
                 dup_packet_list: HistoryBuffer::new(),
                 packet_data_rate: InformationRate::new::<kilobit_per_second>(0.0),
@@ -223,7 +226,7 @@ impl LocationTable {
             let new_entry = LocationTableEntry {
                 geonet_addr: position_vector.address,
                 position_vector: *position_vector,
-                ls_pending: false,
+                ls_pending: None,
                 is_neighbour: false,
                 dup_packet_list: HistoryBuffer::new(),
                 packet_data_rate: InformationRate::new::<kilobit_per_second>(0.0),

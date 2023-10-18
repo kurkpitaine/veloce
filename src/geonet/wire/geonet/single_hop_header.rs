@@ -127,7 +127,7 @@ impl Repr {
     }
 
     /// Emit a high-level representation into a Single Hop Broadcast Header.
-    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<&mut T>) {
+    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<T>) {
         header.set_source_position_vector(self.source_position_vector);
     }
 }

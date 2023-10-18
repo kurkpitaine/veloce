@@ -3,8 +3,10 @@ mod field {
     pub type Rest = ::core::ops::RangeFrom<usize>;
 }
 
+pub mod btp;
 pub mod ethernet;
 pub mod geonet;
+pub mod pretty_print;
 
 pub use self::ethernet::{
     Address as EthernetAddress, EtherType as EthernetProtocol, Frame as EthernetFrame,
@@ -25,8 +27,13 @@ pub use self::geonet::{
         Header as BeaconHeader, Repr as BeaconHeaderRepr, HEADER_LEN as BEACON_HEADER_LEN,
     },
     common_header::{
-        Header as CommonHeader, HeaderType as GeonetPacketType, NextHeader as CHNextHeader,
-        Repr as CommonHeaderRepr, HEADER_LEN as COMMON_HEADER_LEN,
+        Header as CommonHeader, HeaderType as GeonetPacketType, Repr as CommonHeaderRepr,
+        HEADER_LEN as COMMON_HEADER_LEN,
+    },
+    geonet::{
+        GeonetBeacon, GeonetGeoAnycast, GeonetGeoBroadcast, GeonetLocationServiceReply,
+        GeonetLocationServiceRequest, GeonetSingleHop, GeonetTopoBroadcast, GeonetUnicast,
+        Protocol as GnProtocol, Repr as GeonetRepr,
     },
     location_service_req_header::{
         Header as LocationServiceRequestHeader, Repr as LocationServiceRequestRepr,
@@ -117,22 +124,34 @@ mod pc5 {
 }
 
 /// Representation of an Hardware Address, such as Ethernet or PC5 Layer 2 ID.
+#[cfg(any(
+    feature = "medium-ethernet",
+    feature = "medium-ieee80211p",
+    feature = "medium-pc5"
+))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum HardwareAddress {
     /// Ethernet hardware address, known as MAC Address.
+    #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]
     Ethernet(EthernetAddress),
     /// LTE PC5 hardware address, aka Layer 2 ID.
+    #[cfg(feature = "medium-pc5")]
     PC5(PC5Address),
 }
 
 impl HardwareAddress {
     /// Create an address wrapping an Ethernet address with the given octets.
+    #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]
     pub const fn ethernet(a0: u8, a1: u8, a2: u8, a3: u8, a4: u8, a5: u8) -> HardwareAddress {
         HardwareAddress::Ethernet(EthernetAddress::new(a0, a1, a2, a3, a4, a5))
     }
 
     pub const fn as_bytes(&self) -> &[u8] {
         match self {
+            #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]
             HardwareAddress::Ethernet(addr) => addr.as_bytes(),
+            #[cfg(feature = "medium-pc5")]
             HardwareAddress::PC5(addr) => addr.as_bytes(),
         }
     }
@@ -140,7 +159,9 @@ impl HardwareAddress {
     /// Query wether the address is an unicast address.
     pub fn is_unicast(&self) -> bool {
         match self {
+            #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]
             HardwareAddress::Ethernet(addr) => addr.is_unicast(),
+            #[cfg(feature = "medium-pc5")]
             HardwareAddress::PC5(addr) => addr.is_unicast(),
         }
     }
@@ -148,27 +169,56 @@ impl HardwareAddress {
     /// Query wether the address is a broadcast address.
     pub fn is_broadcast(&self) -> bool {
         match self {
+            #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]
             HardwareAddress::Ethernet(addr) => addr.is_broadcast(),
+            #[cfg(feature = "medium-pc5")]
             HardwareAddress::PC5(addr) => addr.is_broadcast(),
+        }
+    }
+
+    #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]
+    pub(crate) fn ethernet_or_panic(&self) -> EthernetAddress {
+        match self {
+            HardwareAddress::Ethernet(addr) => *addr,
+            #[allow(unreachable_patterns)]
+            _ => panic!("HardwareAddress is not Ethernet."),
+        }
+    }
+
+    #[cfg(feature = "medium-pc5")]
+    pub(crate) fn pc5_or_panic(&self) -> PC5Address {
+        match self {
+            HardwareAddress::PC5(addr) => *addr,
+            #[allow(unreachable_patterns)]
+            _ => panic!("HardwareAddress is not PC5."),
         }
     }
 }
 
+#[cfg(any(
+    feature = "medium-ethernet",
+    feature = "medium-ieee80211p",
+    feature = "medium-pc5"
+))]
 impl core::fmt::Display for HardwareAddress {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
+            #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]
             HardwareAddress::Ethernet(addr) => write!(f, "{addr}"),
+            #[cfg(feature = "medium-pc5")]
             HardwareAddress::PC5(addr) => write!(f, "{addr}"),
         }
     }
 }
 
+#[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]
 impl From<EthernetAddress> for HardwareAddress {
     fn from(addr: EthernetAddress) -> Self {
         HardwareAddress::Ethernet(addr)
     }
 }
 
+#[cfg(feature = "medium-pc5")]
 impl From<PC5Address> for HardwareAddress {
     fn from(addr: PC5Address) -> Self {
         HardwareAddress::PC5(addr)

@@ -13,6 +13,12 @@ pub const GN_DPL_LENGTH: usize = 8;
 pub const GN_LOCAL_ADDR_CONF_METHOD: GnAddrConfMethod = GnAddrConfMethod::Managed;
 pub const GN_LOC_TABLE_ENTRY_COUNT: usize = 10;
 pub const GN_LOC_TABLE_ENTRY_LIFETIME: Duration = Duration::from_secs(20);
+/// Beacon packet transmit period.
+pub const GN_BEACON_SERVICE_RETRANSMIT_TIMER: Duration = Duration::from_millis(3000);
+/// Maximum beacon jitter. Default value is GN_BEACON_SERVICE_RETRANSMIT_TIMER / 4.
+pub const GN_BEACON_SERVICE_MAX_JITTER: Duration = Duration::from_millis(750);
+/// Flag indicating wether the security is active.
+pub const GN_SECURITY: bool = false;
 pub const GN_DEFAULT_HOP_LIMIT: u8 = 10;
 pub const GN_DEFAULT_TRAFFIC_CLASS: GnTrafficClass = GnTrafficClass::from_byte(&0x00);
 pub const GN_MAX_PACKET_LIFETIME: Duration = Duration::from_secs(600);
@@ -23,7 +29,12 @@ pub const GN_MAX_SDU_SIZE: usize = 1398;
 pub const GN_MAX_GEO_NETWORKING_HEADER_SIZE: usize = 88;
 pub const GN_LOCATION_SERVICE_PACKET_BUFFER_SIZE: usize = 1024;
 pub const GN_LOCATION_SERVICE_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
+/// Location service retransmission period.
 pub const GN_LOCATION_SERVICE_RETRANSMIT_TIMER: Duration = Duration::from_millis(1000);
+/// Location service maximum number of retransmissions.
+pub const GN_LOCATION_SERVICE_MAX_RETRANS: u8 = 10;
+/// Location service maximum concurrent requests.
+pub const GN_LOCATION_SERVICE_MAX_REQS: usize = 5;
 /// Maximum size of the unicast buffer.
 pub const GN_UC_FORWARDING_PACKET_BUFFER_SIZE: usize = 256 * 1000;
 /// Maximum number of elements in the unicast buffer.

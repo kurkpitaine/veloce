@@ -3,11 +3,14 @@ use core::fmt;
 #[macro_use]
 pub mod macros;
 
-pub mod access;
 pub mod common;
 pub mod config;
+pub mod iface;
 pub mod network;
+pub mod phy;
 pub mod rand;
+pub mod socket;
+pub mod storage;
 pub mod time;
 pub mod types;
 pub mod wire;

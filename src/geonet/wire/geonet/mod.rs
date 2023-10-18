@@ -6,6 +6,7 @@ pub mod anycast_broadcast_header;
 pub mod basic_header;
 pub mod beacon_header;
 pub mod common_header;
+pub mod geonet;
 pub mod location_service_req_header;
 pub mod long_position_vector;
 pub mod short_position_vector;

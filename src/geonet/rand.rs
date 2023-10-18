@@ -1,3 +1,6 @@
+use core::ops::Bound;
+use core::ops::RangeBounds;
+
 /// Random number generator.
 /// Copied from Smoltcp https://github.com/smoltcp-rs/smoltcp
 #[derive(Debug)]
@@ -9,6 +12,25 @@ impl Rand {
     /// Build a new random number generator.
     pub const fn new(seed: u64) -> Self {
         Self { state: seed }
+    }
+
+    /// Generates a random number within a range.
+    pub fn rand_range<R: RangeBounds<u32>>(&mut self, range: R) -> u32 {
+        let start = match range.start_bound() {
+            Bound::Included(i) => *i,
+            Bound::Excluded(i) => *i + 1,
+            Bound::Unbounded => 0,
+        };
+
+        let end = match range.end_bound() {
+            Bound::Included(e) => *e,
+            Bound::Excluded(e) => *e + 1,
+            Bound::Unbounded => u32::MAX,
+        };
+
+        // Normalize number into range.
+        let generated = self.rand_u32();
+        generated.wrapping_sub(start) / (end - start)
     }
 
     /// Generates a random u32 integer.

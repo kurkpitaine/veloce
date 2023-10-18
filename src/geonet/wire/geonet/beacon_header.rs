@@ -86,7 +86,8 @@ impl<'a, T: AsRef<[u8]>> fmt::Display for Header<&'a T> {
 }
 
 /// A high-level representation of a Beacon header.
-#[derive(Debug, PartialEq, /* Clone, Copy */)]
+#[derive(Debug, PartialEq, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Repr {
     /// The Source Position Vector contained inside the Beacon header.
     pub source_position_vector: LongPositionVector,
@@ -108,7 +109,7 @@ impl Repr {
     }
 
     /// Emit a high-level representation into a Beacon Header.
-    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]> + ?Sized>(&self, header: &mut Header<&mut T>) {
+    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<T>) {
         header.set_source_position_vector(self.source_position_vector);
     }
 }

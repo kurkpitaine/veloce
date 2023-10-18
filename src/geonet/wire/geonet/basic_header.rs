@@ -1,4 +1,4 @@
-use crate::geonet::{Error, Result, time::Duration};
+use crate::geonet::{time::Duration, Error, Result};
 use core::fmt;
 
 enum_with_unknown! {
@@ -198,7 +198,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> fmt::Display for Header<&'a T> {
 }
 
 /// A high-level representation of a Geonetworking Basic Header.
-#[derive(Debug, PartialEq, Eq, /* Clone, Copy */)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Repr {
     /// The Geonetworking protocol version number.
     pub version: u8,
@@ -231,7 +231,7 @@ impl Repr {
     }
 
     /// Emit a high-level representation into a Geonetworking Basic Header.
-    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]> + ?Sized>(&self, header: &mut Header<&mut T>) {
+    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<T>) {
         header.set_version(self.version);
         header.set_next_header(self.next_header);
         header.clear_reserved();

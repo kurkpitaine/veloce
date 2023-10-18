@@ -216,7 +216,7 @@ impl<'a, T: AsRef<[u8]>> fmt::Display for Header<&'a T> {
 }
 
 /// A high-level representation of a Anycast/Broadcast header.
-#[derive(Debug, PartialEq,/* Clone, Copy */)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Repr {
     /// The Sequence number contained inside the Anycast/Broadcast header.
     pub sequence_number: SequenceNumber,
@@ -256,7 +256,7 @@ impl Repr {
     }
 
     /// Emit a high-level representation into a Anycast/Broadcast Header.
-    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<&mut T>) {
+    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<T>) {
         header.set_sequence_number(self.sequence_number);
         header.set_source_position_vector(self.source_position_vector);
         header.set_latitude(self.latitude);

@@ -4,7 +4,7 @@ use crate::geonet::config::GN_MAX_SDU_SIZE;
 use crate::geonet::time::{Duration, Instant};
 
 /// Trait stored metadata structures must implement.
-pub trait PacketMeta {
+pub trait BufferMeta {
     fn size(&self) -> usize;
     fn lifetime(&self) -> Duration;
 }
@@ -15,10 +15,9 @@ pub const PAYLOAD_MAX_SIZE: usize = GN_MAX_SDU_SIZE;
 #[derive(Debug)]
 pub struct Node<T>
 where
-    T: PacketMeta,
+    T: BufferMeta,
 {
     size: usize,
-    inserted_at: Instant,
     expires_at: Instant,
     metadata: T,
     payload: [u8; PAYLOAD_MAX_SIZE],
@@ -26,7 +25,7 @@ where
 
 impl<T> Node<T>
 where
-    T: PacketMeta,
+    T: BufferMeta,
 {
     pub const fn payload_max_size() -> usize {
         PAYLOAD_MAX_SIZE
@@ -39,9 +38,10 @@ where
 }
 
 /// Generic packet buffer.
+#[derive(Debug)]
 pub struct PacketBuffer<T, const N: usize, const C: usize>
 where
-    T: PacketMeta,
+    T: BufferMeta,
 {
     /// Buffer underlying storage.
     storage: LinkedList<Node<T>, LinkedIndexUsize, N>,
@@ -53,7 +53,7 @@ where
 
 impl<T, const N: usize, const C: usize> PacketBuffer<T, N, C>
 where
-    T: PacketMeta,
+    T: BufferMeta,
 {
     /// Builds a new `packet buffer`.
     pub fn new() -> PacketBuffer<T, N, C> {
@@ -89,7 +89,6 @@ where
 
         let mut node = Node {
             size: meta.size(),
-            inserted_at: timestamp,
             expires_at: timestamp + meta.lifetime(),
             metadata: meta,
             payload: [0; PAYLOAD_MAX_SIZE],
@@ -147,6 +146,14 @@ where
 
             !expired
         });
+    }
+
+    /// Drops only the packets where the predicate is true
+    pub fn drop_with<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&Node<T>) -> bool,
+    {
+        self.storage.retain(|node| !f(node))
     }
 
     /// Flushes the buffer entirely.

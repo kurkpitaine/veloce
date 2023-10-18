@@ -2,29 +2,7 @@ use crate::geonet::{Error, Result};
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
-use super::TrafficClass;
-
-enum_with_unknown! {
-   /// Geonetworking Next Header as carried inside the Common Header.
-   pub enum NextHeader(u8) {
-       Any = 0,
-       BtpA = 1,
-       BtpB = 2,
-       Ipv6 = 3,
-   }
-}
-
-impl fmt::Display for NextHeader {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            NextHeader::Any => write!(f, "Any Header"),
-            NextHeader::BtpA => write!(f, "Btp-A"),
-            NextHeader::BtpB => write!(f, "Btp-B"),
-            NextHeader::Ipv6 => write!(f, "Ipv6"),
-            NextHeader::Unknown(id) => write!(f, "0x{:02x}", id),
-        }
-    }
-}
+use super::{geonet::Protocol, TrafficClass};
 
 enum_with_unknown! {
    /// Geonetworking Header Type / Header Sub-Type values.
@@ -136,9 +114,9 @@ impl<T: AsRef<[u8]>> Header<T> {
 
     /// Return the next header field.
     #[inline]
-    pub fn next_header(&self) -> NextHeader {
+    pub fn next_header(&self) -> Protocol {
         let data = self.buffer.as_ref();
-        NextHeader::from(data[field::NXT_HDR_R] >> 4)
+        Protocol::from(data[field::NXT_HDR_R] >> 4)
     }
 
     /// Return the header type field.
@@ -189,7 +167,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Header<&'a T> {
 impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     /// Set the next header field.
     #[inline]
-    pub fn set_next_header(&mut self, value: NextHeader) {
+    pub fn set_next_header(&mut self, value: Protocol) {
         let data = self.buffer.as_mut();
         data[field::NXT_HDR_R] = (data[field::NXT_HDR_R] & 0x0f) | (u8::from(value) << 4);
     }
@@ -266,10 +244,10 @@ impl<'a, T: AsRef<[u8]> + ?Sized> fmt::Display for Header<&'a T> {
 }
 
 /// A high-level representation of a Geonetworking Common Header.
-#[derive(Debug, PartialEq, Eq, /* Clone, Copy */)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Repr {
     /// The type of the header following the Geonetworking headers.
-    pub next_header: NextHeader,
+    pub next_header: Protocol,
     /// The type of the header immediately following this header.
     pub header_type: HeaderType,
     /// The traffic class of the packet.
@@ -304,8 +282,8 @@ impl Repr {
         field::RESERVED + 1
     }
 
-    /// Emit a high-level representation into a Geonetworking Basic Header.
-    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]> + ?Sized>(&self, header: &mut Header<&mut T>) {
+    /// Emit a high-level representation into a Geonetworking Common Header.
+    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<T>) {
         header.set_next_header(self.next_header);
         header.clear_reserved();
         header.set_header_type(self.header_type);
@@ -354,7 +332,7 @@ mod test {
     #[test]
     fn test_header_deconstruct() {
         let header = Header::new_unchecked(&BYTES_HEADER);
-        assert_eq!(header.next_header(), NextHeader::BtpB);
+        assert_eq!(header.next_header(), Protocol::BtpB);
         assert_eq!(header.header_type(), HeaderType::TsbSingleHop);
         assert_eq!(header.traffic_class(), TrafficClass::new(false, false, 2));
         assert_eq!(header.mobile(), false);
@@ -369,7 +347,7 @@ mod test {
         assert_eq!(
             repr,
             Repr {
-                next_header: NextHeader::BtpB,
+                next_header: Protocol::BtpB,
                 header_type: HeaderType::TsbSingleHop,
                 traffic_class: TrafficClass::new(false, false, 2),
                 mobile: false,
@@ -382,7 +360,7 @@ mod test {
     #[test]
     fn test_repr_emit() {
         let repr = Repr {
-            next_header: NextHeader::BtpB,
+            next_header: Protocol::BtpB,
             header_type: HeaderType::TsbSingleHop,
             traffic_class: TrafficClass::new(false, false, 2),
             mobile: false,

@@ -7,6 +7,18 @@ use uom::si::f32::{Angle, Length, Ratio};
 use uom::si::ratio::ratio;
 use uom::typenum::P2;
 
+/// Trait on [`Shape`] defining the `distance_a` and `distance_b` extraction methods.
+pub trait DistanceAB {
+    /// Return the "distance a" of the shape.
+    fn distance_a(&self) -> Distance;
+    /// Return the "distance b" of the shape.
+    fn distance_b(&self) -> Distance;
+    /// Return "distance_a" and "distance b" of the shape.
+    fn distances(&self) -> (Distance, Distance) {
+        (self.distance_a(), self.distance_b())
+    }
+}
+
 /// A cartesian position, defined with abscissa X and ordinate Y coordinates.
 #[derive(Debug, Clone, Copy)]
 pub struct CartesianPosition {
@@ -40,6 +52,7 @@ impl GeoPosition {
 }
 
 /// A circle area shape.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, Clone, Copy)]
 pub struct Circle {
     /// Radius of the circle.
@@ -59,7 +72,18 @@ impl Circle {
     }
 }
 
+impl DistanceAB for Circle {
+    fn distance_a(&self) -> Distance {
+        self.radius
+    }
+
+    fn distance_b(&self) -> Distance {
+        Distance::new::<meter>(0.0)
+    }
+}
+
 /// A rectangle area shape.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, Clone, Copy)]
 pub struct Rectangle {
     /// Center to long side length.
@@ -83,7 +107,19 @@ impl Rectangle {
     }
 }
 
+impl DistanceAB for Rectangle {
+    fn distance_a(&self) -> Distance {
+        self.a
+    }
+
+    fn distance_b(&self) -> Distance {
+        self.b
+    }
+}
+
 /// An ellipse area shape.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Debug, Clone, Copy)]
 pub struct Ellipse {
     /// Center to long side length.
     pub a: Distance,
@@ -104,7 +140,19 @@ impl Ellipse {
     }
 }
 
+impl DistanceAB for Ellipse {
+    fn distance_a(&self) -> Distance {
+        self.a
+    }
+
+    fn distance_b(&self) -> Distance {
+        self.b
+    }
+}
+
 /// Area shape.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Debug, Clone, Copy)]
 pub enum Shape {
     /// Shape is circle.
     Circle(Circle),
@@ -145,8 +193,28 @@ impl Shape {
     }
 }
 
+impl DistanceAB for Shape {
+    fn distance_a(&self) -> Distance {
+        match self {
+            Shape::Circle(c) => c.distance_a(),
+            Shape::Rectangle(r) => r.distance_a(),
+            Shape::Ellipse(e) => e.distance_a(),
+        }
+    }
+
+    fn distance_b(&self) -> Distance {
+        match self {
+            Shape::Circle(c) => c.distance_b(),
+            Shape::Rectangle(r) => r.distance_b(),
+            Shape::Ellipse(e) => e.distance_a(),
+        }
+    }
+}
+
 /// A geographic area as described in ETSI EN 302 931 - V1.1.0.
 /// An area is a geometric `shape` [`Shape`], centered at a `position` [`GeoPosition`] and oriented towards an `angle` [`Angle`].
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Debug, Clone, Copy)]
 pub struct Area {
     /// Shape of the area.
     pub shape: Shape,

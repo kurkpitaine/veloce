@@ -177,7 +177,7 @@ impl Repr {
     }
 
     /// Emit a high-level representation into a Short Position Vector Header.
-    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]> + ?Sized>(&self, header: &mut Header<&mut T>) {
+    pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<T>) {
         header.set_address(self.address);
         header.set_timestamp(self.timestamp.millis() as u32);
         header.set_latitude(self.latitude);
