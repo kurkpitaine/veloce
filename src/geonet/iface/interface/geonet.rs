@@ -1,6 +1,7 @@
+use crate::geonet::iface::SocketSet;
 use crate::geonet::network::{
-    GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, SingleHopReqMeta, TopoScopedReqMeta,
-    UnicastReqMeta,
+    GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, SingleHopReqMeta,
+    TopoScopedReqMeta, Transport, UnicastReqMeta,
 };
 use crate::geonet::{
     common::area::{Area, DistanceAB, Shape},
@@ -46,18 +47,20 @@ impl InterfaceInner {
     pub(crate) fn process_geonet_packet<'packet>(
         &mut self,
         srv: InterfaceServices,
+        sockets: &mut SocketSet,
         gn_packet: &'packet [u8],
-        src_addr: EthernetAddress,
+        snd_addr: EthernetAddress,
     ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
-        self.process_basic_header(srv, gn_packet, src_addr)
+        self.process_basic_header(srv, sockets, gn_packet, snd_addr)
     }
 
     /// Processes the Basic Header of a Geonetworking packet.
     fn process_basic_header<'packet>(
         &mut self,
         srv: InterfaceServices,
+        sockets: &mut SocketSet,
         gn_packet: &'packet [u8],
-        src_addr: EthernetAddress,
+        snd_addr: EthernetAddress,
     ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
         let bh = check!(BasicHeader::new_checked(gn_packet));
         let bh_repr = check!(BasicHeaderRepr::parse(&bh));
@@ -73,7 +76,7 @@ impl InterfaceInner {
 
         match bh_repr.next_header {
             BHNextHeader::Any | BHNextHeader::CommonHeader => {
-                self.process_common_header(srv, bh_repr, bh.payload(), src_addr)
+                self.process_common_header(srv, sockets, bh_repr, bh.payload(), snd_addr)
             }
             BHNextHeader::SecuredHeader => todo!(),
             BHNextHeader::Unknown(_) => {
@@ -84,12 +87,13 @@ impl InterfaceInner {
     }
 
     /// Processes the Common Header of a Geonetworking packet.
-    pub(super) fn process_common_header<'packet>(
+    fn process_common_header<'packet>(
         &mut self,
         srv: InterfaceServices,
+        sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         bh_payload: &'packet [u8],
-        src_addr: EthernetAddress,
+        snd_addr: EthernetAddress,
     ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
         let ch = check!(CommonHeader::new_checked(bh_payload));
         let ch_repr = check!(CommonHeaderRepr::parse(&ch));
@@ -110,32 +114,31 @@ impl InterfaceInner {
                 return None;
             }
             GeonetPacketType::Beacon => {
-                self.process_beacon(srv, bh_repr, ch_repr, ch_payload, src_addr)
+                self.process_beacon(srv, bh_repr, ch_repr, ch_payload, snd_addr)
             }
             GeonetPacketType::GeoUnicast => {
-                self.process_unicast(srv, bh_repr, ch_repr, ch_payload, src_addr)
+                self.process_unicast(srv, sockets, bh_repr, ch_repr, ch_payload, snd_addr)
             }
             GeonetPacketType::GeoAnycastCircle
             | GeonetPacketType::GeoAnycastRect
             | GeonetPacketType::GeoAnycastElip => {
-                self.process_geo_anycast(srv, bh_repr, ch_repr, ch_payload, src_addr)
+                self.process_geo_anycast(srv, sockets, bh_repr, ch_repr, ch_payload, snd_addr)
             }
             GeonetPacketType::GeoBroadcastCircle
             | GeonetPacketType::GeoBroadcastRect
             | GeonetPacketType::GeoBroadcastElip => {
-                self.process_geo_broadcast(srv, bh_repr, ch_repr, ch_payload, src_addr)
+                self.process_geo_broadcast(srv, sockets, bh_repr, ch_repr, ch_payload, snd_addr)
             }
-            GeonetPacketType::TsbSingleHop => {
-                self.process_single_hop_broadcast(srv, bh_repr, ch_repr, ch_payload, src_addr)
-            }
-            GeonetPacketType::TsbMultiHop => {
-                self.process_topo_scoped_broadcast(srv, bh_repr, ch_repr, ch_payload, src_addr)
-            }
+            GeonetPacketType::TsbSingleHop => self
+                .process_single_hop_broadcast(srv, sockets, bh_repr, ch_repr, ch_payload, snd_addr),
+            GeonetPacketType::TsbMultiHop => self.process_topo_scoped_broadcast(
+                srv, sockets, bh_repr, ch_repr, ch_payload, snd_addr,
+            ),
             GeonetPacketType::LsRequest => {
-                self.process_ls_request(srv, bh_repr, ch_repr, ch_payload, src_addr)
+                self.process_ls_request(srv, bh_repr, ch_repr, ch_payload, snd_addr)
             }
             GeonetPacketType::LsReply => {
-                self.process_ls_reply(srv, bh_repr, ch_repr, ch_payload, src_addr)
+                self.process_ls_reply(srv, bh_repr, ch_repr, ch_payload, snd_addr)
             }
             GeonetPacketType::Unknown(u) => {
                 net_trace!("network: discard 'Unknown={}' packet type", u);
@@ -145,13 +148,13 @@ impl InterfaceInner {
     }
 
     /// Processes a Beaconing packet.
-    pub(super) fn process_beacon<'packet>(
+    fn process_beacon<'packet>(
         &mut self,
         srv: InterfaceServices,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        src_addr: EthernetAddress,
+        snd_addr: EthernetAddress,
     ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
         let beacon = check!(BeaconHeader::new_checked(ch_payload));
         let beacon_repr = check!(BeaconHeaderRepr::parse(&beacon));
@@ -160,7 +163,7 @@ impl InterfaceInner {
 
         /* Step 3: perform duplicate address detection. */
         srv.core
-            .duplicate_address_detection(src_addr, beacon_repr.source_position_vector.address);
+            .duplicate_address_detection(snd_addr, beacon_repr.source_position_vector.address);
 
         /* Step 4: update Location table */
         let entry = self
@@ -206,13 +209,13 @@ impl InterfaceInner {
     }
 
     /// Processes a Location Service request packet.
-    pub(super) fn process_ls_request<'packet>(
+    fn process_ls_request<'packet>(
         &mut self,
         srv: InterfaceServices,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        src_addr: EthernetAddress,
+        snd_addr: EthernetAddress,
     ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
         let ls_req = check!(LocationServiceRequestHeader::new_checked(ch_payload));
         let ls_req_repr = check!(LocationServiceRequestRepr::parse(&ls_req));
@@ -233,7 +236,7 @@ impl InterfaceInner {
 
         /* Step 4: perform duplicate address detection. */
         srv.core
-            .duplicate_address_detection(src_addr, ls_req_repr.source_position_vector.address);
+            .duplicate_address_detection(snd_addr, ls_req_repr.source_position_vector.address);
 
         /* Step 5-6: add/update location table */
         let entry = self
@@ -359,13 +362,13 @@ impl InterfaceInner {
     }
 
     /// Processes a Location Service reply packet.
-    pub(super) fn process_ls_reply<'packet>(
+    fn process_ls_reply<'packet>(
         &mut self,
         srv: InterfaceServices,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        src_addr: EthernetAddress,
+        snd_addr: EthernetAddress,
     ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
         let ls_rep = check!(LocationServiceReplyHeader::new_checked(ch_payload));
         let ls_rep_repr = check!(LocationServiceReplyRepr::parse(&ls_rep));
@@ -389,7 +392,7 @@ impl InterfaceInner {
 
             /* Step 3: perform duplicate address detection. */
             srv.core
-                .duplicate_address_detection(src_addr, ls_rep_repr.source_position_vector.address);
+                .duplicate_address_detection(snd_addr, ls_rep_repr.source_position_vector.address);
 
             /* Step 4: update Location table */
             let entry = self
@@ -442,47 +445,64 @@ impl InterfaceInner {
                 ch_repr,
                 ls_rep_repr,
                 ls_rep.payload(),
-                src_addr,
+                snd_addr,
             )
         }
     }
 
     /// Processes a Single-Hop Broadcast packet.
-    pub(super) fn process_single_hop_broadcast<'packet>(
+    fn process_single_hop_broadcast<'packet>(
         &mut self,
         srv: InterfaceServices,
+        sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        src_addr: EthernetAddress,
+        snd_addr: EthernetAddress,
     ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
         let shb = check!(SingleHopHeader::new_checked(ch_payload));
         let shb_repr = check!(SingleHopHeaderRepr::parse(&shb));
 
         /* Step 3: perform duplicate address detection. */
         srv.core
-            .duplicate_address_detection(src_addr, shb_repr.source_position_vector.address);
+            .duplicate_address_detection(snd_addr, shb_repr.source_position_vector.address);
 
-        /* Step 4: update Location table */
-        let entry = self
-            .location_table
-            .update_mut(srv.core.now, &shb_repr.source_position_vector);
+        let ls_pending = {
+            /* Step 4: update Location table */
+            let entry = self
+                .location_table
+                .update_mut(srv.core.now, &shb_repr.source_position_vector);
 
-        /* Step 5: update PDR in Location table */
-        let packet_size = bh_repr.buffer_len()
-            + ch_repr.buffer_len()
-            + shb_repr.buffer_len()
-            + ch_repr.payload_len;
-        entry.update_pdr(packet_size, srv.core.now);
+            /* Step 5: update PDR in Location table */
+            let packet_size = bh_repr.buffer_len()
+                + ch_repr.buffer_len()
+                + shb_repr.buffer_len()
+                + ch_repr.payload_len;
+            entry.update_pdr(packet_size, srv.core.now);
 
-        /* Step 6: set ìs_neighbour` flag in Location table */
-        entry.is_neighbour = true;
+            /* Step 6: set ìs_neighbour` flag in Location table */
+            entry.is_neighbour = true;
 
-        /* Step 7: TODO: Go to upper layer */
+            entry.ls_pending
+        };
+
+        /* Step 7: Go to upper layer */
+        let ind = Indication {
+            upper_proto: ch_repr.next_header.into(),
+            transport: Transport::SingleHopBroadcast,
+            ali_id: (),
+            its_aid: (),
+            cert_id: (),
+            rem_lifetime: bh_repr.lifetime,
+            rem_hop_limit: 0,
+            traffic_class: ch_repr.traffic_class,
+        };
+
+        self.pass_up(sockets, ind, shb.payload());
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming SHB packet. */
-        if let Some(handle) = entry.ls_pending {
+        if let Some(handle) = ls_pending {
             self.ls_buffer.flush_with(srv.core.now, |packet_node| {
                 packet_node
                     .metadata()
@@ -511,13 +531,14 @@ impl InterfaceInner {
     }
 
     /// Processes a Topologically Scoped Broadcast packet.
-    pub(super) fn process_topo_scoped_broadcast<'packet>(
+    fn process_topo_scoped_broadcast<'packet>(
         &mut self,
         srv: InterfaceServices,
+        sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        src_addr: EthernetAddress,
+        snd_addr: EthernetAddress,
     ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
         let tsb = check!(TopoBroadcastHeader::new_checked(ch_payload));
         let tsb_repr = check!(TopoBroadcastRepr::parse(&tsb));
@@ -534,30 +555,46 @@ impl InterfaceInner {
 
         /* Step 4: perform duplicate address detection. */
         srv.core
-            .duplicate_address_detection(src_addr, tsb_repr.source_position_vector.address);
+            .duplicate_address_detection(snd_addr, tsb_repr.source_position_vector.address);
 
-        /* Step 5-6: update Location table */
-        let entry = self
-            .location_table
-            .update_mut(srv.core.now, &tsb_repr.source_position_vector);
+        let ls_pending = {
+            /* Step 5-6: update Location table */
+            let entry = self
+                .location_table
+                .update_mut(srv.core.now, &tsb_repr.source_position_vector);
 
-        /* Add received packet sequence number to the duplicate packet list */
-        if dup_opt.is_none() {
-            entry.dup_packet_list.write(tsb_repr.sequence_number);
-        }
+            /* Add received packet sequence number to the duplicate packet list */
+            if dup_opt.is_none() {
+                entry.dup_packet_list.write(tsb_repr.sequence_number);
+            }
 
-        /* Step 5-6: update PDR in Location table */
-        let packet_size = bh_repr.buffer_len()
-            + ch_repr.buffer_len()
-            + tsb_repr.buffer_len()
-            + ch_repr.payload_len;
-        entry.update_pdr(packet_size, srv.core.now);
+            /* Step 5-6: update PDR in Location table */
+            let packet_size = bh_repr.buffer_len()
+                + ch_repr.buffer_len()
+                + tsb_repr.buffer_len()
+                + ch_repr.payload_len;
+            entry.update_pdr(packet_size, srv.core.now);
 
-        /* Step 7: TODO: Go to upper layer */
+            entry.ls_pending
+        };
+
+        /* Step 7: Go to upper layer */
+        let ind = Indication {
+            upper_proto: ch_repr.next_header.into(),
+            transport: Transport::TopoBroadcast,
+            ali_id: (),
+            its_aid: (),
+            cert_id: (),
+            rem_lifetime: bh_repr.lifetime,
+            rem_hop_limit: bh_repr.remaining_hop_limit,
+            traffic_class: ch_repr.traffic_class,
+        };
+
+        self.pass_up(sockets, ind, tsb.payload());
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming TSB packet. */
-        if let Some(handle) = entry.ls_pending {
+        if let Some(handle) = ls_pending {
             self.ls_buffer.flush_with(srv.core.now, |packet_node| {
                 packet_node
                     .metadata()
@@ -620,23 +657,32 @@ impl InterfaceInner {
     }
 
     /// Process a unicast packet.
-    pub(super) fn process_unicast<'packet>(
+    fn process_unicast<'packet>(
         &mut self,
         srv: InterfaceServices,
+        sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        src_addr: EthernetAddress,
+        snd_addr: EthernetAddress,
     ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
         let uc = check!(UnicastHeader::new_checked(ch_payload));
         let uc_repr = check!(UnicastRepr::parse(&uc));
 
         /* Determine if we are the unicast destination */
         if uc_repr.destination_position_vector.address.mac_addr() == srv.core.address().mac_addr() {
-            self.receive_unicast(srv, bh_repr, ch_repr, uc_repr, uc.payload(), src_addr);
+            self.receive_unicast(
+                srv,
+                sockets,
+                bh_repr,
+                ch_repr,
+                uc_repr,
+                uc.payload(),
+                snd_addr,
+            );
             None
         } else {
-            self.forward_unicast(srv, bh_repr, ch_repr, uc_repr, uc.payload(), src_addr)
+            self.forward_unicast(srv, bh_repr, ch_repr, uc_repr, uc.payload(), snd_addr)
         }
     }
 
@@ -648,7 +694,7 @@ impl InterfaceInner {
         ch_repr: CommonHeaderRepr,
         uc_repr: UnicastRepr,
         payload: &'packet [u8],
-        src_addr: EthernetAddress,
+        snd_addr: EthernetAddress,
     ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
         /* Step 3: duplicate packet detection */
         let dup_opt = self.location_table.duplicate_packet_detection(
@@ -693,7 +739,7 @@ impl InterfaceInner {
 
         /* Step 3: perform duplicate address detection. */
         srv.core
-            .duplicate_address_detection(src_addr, uc_repr.source_position_vector.address);
+            .duplicate_address_detection(snd_addr, uc_repr.source_position_vector.address);
 
         /* Step 4: update Location table */
         let entry = self
@@ -787,11 +833,12 @@ impl InterfaceInner {
     fn receive_unicast<'packet>(
         &mut self,
         srv: InterfaceServices,
+        sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         uc_repr: UnicastRepr,
-        _payload: &'packet [u8],
-        src_addr: EthernetAddress,
+        payload: &'packet [u8],
+        snd_addr: EthernetAddress,
     ) {
         /* Step 3: duplicate packet detection */
         let dup_opt = self.location_table.duplicate_packet_detection(
@@ -805,7 +852,7 @@ impl InterfaceInner {
 
         /* Step 4: perform duplicate address detection */
         srv.core
-            .duplicate_address_detection(src_addr, uc_repr.source_position_vector.address);
+            .duplicate_address_detection(snd_addr, uc_repr.source_position_vector.address);
 
         /* Step 5-6: update Location table */
         let entry = self
@@ -851,17 +898,30 @@ impl InterfaceInner {
                     == uc_repr.source_position_vector.address.mac_addr()
             });
 
-        /* Step 8: TODO: pass payload to upper protocol. */
+        /* Step 8: pass payload to upper protocol. */
+        let ind = Indication {
+            upper_proto: ch_repr.next_header.into(),
+            transport: Transport::Unicast(uc_repr.destination_position_vector.address),
+            ali_id: (),
+            its_aid: (),
+            cert_id: (),
+            rem_lifetime: bh_repr.lifetime,
+            rem_hop_limit: bh_repr.remaining_hop_limit,
+            traffic_class: ch_repr.traffic_class,
+        };
+
+        self.pass_up(sockets, ind, payload);
     }
 
     /// Process a Geo Broadcast packet.
-    pub(super) fn process_geo_broadcast<'packet>(
+    fn process_geo_broadcast<'packet>(
         &mut self,
         srv: InterfaceServices,
+        sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        src_addr: EthernetAddress,
+        snd_addr: EthernetAddress,
     ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
         let gbc = check!(GeoBroadcastHeader::new_checked(ch_payload));
         let gbc_repr = check!(GeoBroadcastRepr::parse(&gbc));
@@ -886,31 +946,48 @@ impl InterfaceInner {
 
         /* Step 4: perform duplicate address detection. */
         srv.core
-            .duplicate_address_detection(src_addr, gbc_repr.source_position_vector.address);
+            .duplicate_address_detection(snd_addr, gbc_repr.source_position_vector.address);
 
-        /* Step 5-6: update Location table */
-        let entry = self
-            .location_table
-            .update_mut(srv.core.now, &gbc_repr.source_position_vector);
+        let ls_pending = {
+            /* Step 5-6: update Location table */
+            let entry = self
+                .location_table
+                .update_mut(srv.core.now, &gbc_repr.source_position_vector);
 
-        /* Add received packet sequence number to the duplicate packet list */
-        if dup_opt.is_none() {
-            entry.dup_packet_list.write(gbc_repr.sequence_number);
-        }
+            /* Add received packet sequence number to the duplicate packet list */
+            if dup_opt.is_none() {
+                entry.dup_packet_list.write(gbc_repr.sequence_number);
+            }
 
-        /* Step 5-6: update PDR in Location table */
-        let packet_size = bh_repr.buffer_len()
-            + ch_repr.buffer_len()
-            + gbc_repr.buffer_len()
-            + ch_repr.payload_len;
-        entry.update_pdr(packet_size, srv.core.now);
+            /* Step 5-6: update PDR in Location table */
+            let packet_size = bh_repr.buffer_len()
+                + ch_repr.buffer_len()
+                + gbc_repr.buffer_len()
+                + ch_repr.payload_len;
+            entry.update_pdr(packet_size, srv.core.now);
+
+            entry.ls_pending
+        };
 
         /* Step 7: TODO: pass payload to upper protocol if we are inside the destination area */
-        if inside {}
+        if inside {
+            let ind = Indication {
+                upper_proto: ch_repr.next_header.into(),
+                transport: Transport::Broadcast(dst_area),
+                ali_id: (),
+                its_aid: (),
+                cert_id: (),
+                rem_lifetime: bh_repr.lifetime,
+                rem_hop_limit: bh_repr.remaining_hop_limit,
+                traffic_class: ch_repr.traffic_class,
+            };
+
+            self.pass_up(sockets, ind, gbc.payload());
+        }
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming GBC packet. */
-        if let Some(handle) = entry.ls_pending {
+        if let Some(handle) = ls_pending {
             self.ls_buffer.flush_with(srv.core.now, |packet_node| {
                 packet_node
                     .metadata()
@@ -959,8 +1036,6 @@ impl InterfaceInner {
             return None;
         }
 
-        /* Step 11-12: TODO: forwarding algorithm */
-
         // Packet is sent with a the link layer destination address returned by the forwarding algorithm.
         let packet = GeonetPacket::new_broadcast(
             fwd_bh_repr,
@@ -969,19 +1044,28 @@ impl InterfaceInner {
             GeonetPayload::Raw(gbc.payload()),
         );
 
+        /* Step 11: forwarding algorithm */
+        let dst_ll_addr_opt = self.forwarding_algorithm(srv.core, &packet, Some(snd_addr));
+
+        /* Step 12: check if packet has been buffered or dropped */
+        let Some(dst_addr) = dst_ll_addr_opt else {
+            return None;
+        };
+
         /* Step 13: TODO: execute media dependent procedures */
         /* Step 14: return packet */
-        Some((EthernetAddress::BROADCAST, packet))
+        Some((dst_addr, packet))
     }
 
     /// Process a Geo Anycast packet.
     pub(super) fn process_geo_anycast<'packet>(
         &mut self,
         srv: InterfaceServices,
+        sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        src_addr: EthernetAddress,
+        snd_addr: EthernetAddress,
     ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
         let gac = check!(GeoAnycastHeader::new_checked(ch_payload));
         let gac_repr = check!(GeoAnycastRepr::parse(&gac));
@@ -998,7 +1082,7 @@ impl InterfaceInner {
 
         /* Step 4: perform duplicate address detection. */
         srv.core
-            .duplicate_address_detection(src_addr, gac_repr.source_position_vector.address);
+            .duplicate_address_detection(snd_addr, gac_repr.source_position_vector.address);
 
         /* Step 5-6: update Location table */
         let entry = self
@@ -1050,7 +1134,18 @@ impl InterfaceInner {
 
         /* Step 9: TODO: pass payload to upper protocol if we are inside the destination area */
         if inside {
-            return None;
+            let ind = Indication {
+                upper_proto: ch_repr.next_header.into(),
+                transport: Transport::Anycast(dst_area),
+                ali_id: (),
+                its_aid: (),
+                cert_id: (),
+                rem_lifetime: bh_repr.lifetime,
+                rem_hop_limit: bh_repr.remaining_hop_limit,
+                traffic_class: ch_repr.traffic_class,
+            };
+
+            self.pass_up(sockets, ind, gac.payload());
         }
 
         /* Step 10a: decrement Remaining Hop limit */
@@ -1077,8 +1172,6 @@ impl InterfaceInner {
             return None;
         }
 
-        /* Step 11: TODO: forwarding algorithm */
-
         // Packet is sent with a the link layer destination address returned by the forwarding algorithm.
         let packet = GeonetPacket::new_anycast(
             fwd_bh_repr,
@@ -1087,9 +1180,17 @@ impl InterfaceInner {
             GeonetPayload::Raw(gac.payload()),
         );
 
+        /* Step 11: forwarding algorithm */
+        let dst_ll_addr_opt = self.forwarding_algorithm(srv.core, &packet, Some(snd_addr));
+
+        /* Step 12: check if packet has been buffered or dropped */
+        let Some(dst_addr) = dst_ll_addr_opt else {
+            return None;
+        };
+
         /* Step 12: TODO: execute media dependent procedures */
         /* Step 13: return packet */
-        Some((EthernetAddress::BROADCAST, packet))
+        Some((dst_addr, packet))
     }
 
     /// Dispatch beacons packets.
@@ -1607,9 +1708,9 @@ impl InterfaceInner {
         let nh_ll_addr_opt = self.forwarding_algorithm(srv.core, &packet_meta, None);
 
         /* Step 4: check if packet has been buffered or dropped */
-        if nh_ll_addr_opt.is_none() {
+        let Some(dst_addr) = nh_ll_addr_opt else {
             return Ok(());
-        }
+        };
 
         /* Step 5: TODO: security sign packet */
         /* Step 6: TODO: packet repetition */
@@ -1619,13 +1720,7 @@ impl InterfaceInner {
         emit(
             self,
             srv.core,
-            (
-                EthernetAddress::BROADCAST,
-                bh_repr,
-                ch_repr,
-                gbc_repr,
-                payload,
-            ),
+            (dst_addr, bh_repr, ch_repr, gbc_repr, payload),
         )?;
 
         /* Step 9: reset the beacon timer */
@@ -1705,9 +1800,9 @@ impl InterfaceInner {
         let nh_ll_addr_opt = self.forwarding_algorithm(srv.core, &packet_meta, None);
 
         /* Step 4: check if packet has been buffered or dropped */
-        if nh_ll_addr_opt.is_none() {
+        let Some(dst_addr) = nh_ll_addr_opt else {
             return Ok(());
-        }
+        };
 
         /* Step 5: TODO: security sign packet */
         /* Step 6: TODO: packet repetition */
@@ -1717,13 +1812,7 @@ impl InterfaceInner {
         emit(
             self,
             srv.core,
-            (
-                EthernetAddress::BROADCAST,
-                bh_repr,
-                ch_repr,
-                gbc_repr,
-                payload,
-            ),
+            (dst_addr, bh_repr, ch_repr, gbc_repr, payload),
         )?;
 
         /* Step 9: reset the beacon timer */
@@ -1738,7 +1827,7 @@ impl InterfaceInner {
     /// # Panics
     ///
     /// This method panics if `packet` is neither of Anycast nor Broadcast type.
-    pub(super) fn forwarding_algorithm(
+    fn forwarding_algorithm(
         &mut self,
         core: &mut GnCore,
         packet: &GeonetPacket,
@@ -1782,7 +1871,7 @@ impl InterfaceInner {
     /// # Panics
     ///
     /// This method panics if `packet` does not contain a destination nor a payload.
-    pub(super) fn non_area_greedy_forwarding(
+    fn non_area_greedy_forwarding(
         &mut self,
         core: &mut GnCore,
         packet: &GeonetPacket,
@@ -1832,7 +1921,15 @@ impl InterfaceInner {
     /// described in ETSI TS 103 836-4-1 V2.1.1 clause F.2.
     ///
     /// Always return the link layer broadcast address.
-    pub(super) fn area_simple_forwarding(&self) -> Option<EthernetAddress> {
+    fn area_simple_forwarding(&self) -> Option<EthernetAddress> {
         Some(EthernetAddress::BROADCAST.into())
+    }
+
+    /// Pass received geonetworking data to upper layer.
+    fn pass_up(&mut self, sockets: &mut SocketSet, ind: Indication, payload: &[u8]) {
+        #[cfg(feature = "socket-geonet")]
+        let _handled_by_geonet_socket = self.geonet_socket_filter(sockets, ind, payload);
+        #[cfg(not(feature = "socket-geonet"))]
+        let _handled_by_geonet_socket = false;
     }
 }

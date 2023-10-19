@@ -8,33 +8,17 @@ pub mod request;
 
 use crate::geonet::common::area::Area;
 use crate::geonet::time::Duration;
+use crate::geonet::wire::GnProtocol;
 use crate::geonet::wire::{GnAddress, GnTrafficClass};
 pub use core::Core as GnCore;
 pub use request::{AddressableRequest, GeoZonableRequest, HoppableRequest};
-
-macro_rules! check {
-    ($e:expr) => {
-        match $e {
-            Ok(x) => x,
-            Err(_) => {
-                // concat!/stringify! doesn't work with defmt macros
-                /* #[cfg(not(feature = "defmt"))]
-                net_trace!(concat!("iface: malformed ", stringify!($e)));
-                #[cfg(feature = "defmt")]
-                net_trace!("iface: malformed"); */
-                println!("network: malformed {} ", stringify!($e));
-                return Default::default();
-            }
-        }
-    };
-}
-
-use super::wire::GnProtocol;
 
 /// Upper protocol type.
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum UpperProtocol {
+    /// Upper protocol is ANY.
+    Any,
     /// Upper protocol is BTP-A.
     BtpA,
     /// Upper protocol is BTP-B.
@@ -43,9 +27,22 @@ pub enum UpperProtocol {
     Ipv6,
 }
 
+impl From<GnProtocol> for UpperProtocol {
+    fn from(value: GnProtocol) -> Self {
+        match value {
+            GnProtocol::Any => UpperProtocol::Any,
+            GnProtocol::BtpA => UpperProtocol::BtpA,
+            GnProtocol::BtpB => UpperProtocol::BtpB,
+            GnProtocol::Ipv6 => UpperProtocol::Ipv6,
+            GnProtocol::Unknown(_) => UpperProtocol::Any,
+        }
+    }
+}
+
 impl Into<GnProtocol> for UpperProtocol {
     fn into(self) -> GnProtocol {
         match self {
+            UpperProtocol::Any => GnProtocol::Any,
             UpperProtocol::BtpA => GnProtocol::BtpA,
             UpperProtocol::BtpB => GnProtocol::BtpB,
             UpperProtocol::Ipv6 => GnProtocol::Ipv6,

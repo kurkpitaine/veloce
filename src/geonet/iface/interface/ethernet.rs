@@ -13,7 +13,7 @@ impl InterfaceInner {
         &mut self,
         srv: InterfaceServices,
         sockets: &mut SocketSet,
-        meta: PacketMeta,
+        _meta: PacketMeta,
         frame: &'frame [u8],
     ) -> Option<(EthernetAddress, EthernetPacket<'frame>)> {
         let eth_frame = check!(EthernetFrame::new_checked(frame));
@@ -29,7 +29,7 @@ impl InterfaceInner {
         match eth_frame.ethertype() {
             #[cfg(feature = "proto-geonet")]
             EthernetProtocol::Geonet => self
-                .process_geonet_packet(srv, &eth_frame.payload(), eth_frame.src_addr())
+                .process_geonet_packet(srv, sockets, &eth_frame.payload(), eth_frame.src_addr())
                 .map(|e| (e.0, EthernetPacket::Geonet(e.1))),
             // Drop all other traffic.
             _ => None,

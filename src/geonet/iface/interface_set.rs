@@ -19,7 +19,7 @@ impl InterfaceStorage {
 /// An item of an interface set.
 #[derive(Debug)]
 pub(crate) struct Item {
-    /// Handle of this socket within its enclosing `InterfaceSet`.
+    /// Handle of this interface within its enclosing `InterfaceSet`.
     pub(crate) handle: InterfaceHandle,
     /// Mainly useful for debug output.
     pub(crate) interface: Interface,
@@ -87,39 +87,39 @@ impl<'a> InterfaceSet<'a> {
         }
     }
 
-    /// Get a socket from the set by its handle, as mutable.
+    /// Get an interface from the set by its handle, as mutable.
     ///
     /// # Panics
-    /// This function may panic if the handle does not belong to this socket set
-    /// or the socket has the wrong type.
+    /// This function may panic if the handle does not belong to this interface set
+    /// or the interface has the wrong type.
     pub fn get(&self, handle: InterfaceHandle) -> &Interface {
         match self.interfaces[handle.0].inner.as_ref() {
             Some(item) => &item.interface,
-            None => panic!("handle does not refer to a valid socket"),
+            None => panic!("handle does not refer to a valid interface"),
         }
     }
 
-    /// Get a mutable socket from the set by its handle, as mutable.
+    /// Get a mutable interface from the set by its handle, as mutable.
     ///
     /// # Panics
-    /// This function may panic if the handle does not belong to this socket set
-    /// or the socket has the wrong type.
+    /// This function may panic if the handle does not belong to this interface set
+    /// or the interface has the wrong type.
     pub fn get_mut(&mut self, handle: InterfaceHandle) -> &mut Interface {
         match self.interfaces[handle.0].inner.as_mut() {
             Some(item) => &mut item.interface,
-            None => panic!("handle does not refer to a valid socket"),
+            None => panic!("handle does not refer to a valid interface"),
         }
     }
 
-    /// Remove a socket from the set, without changing its state.
+    /// Remove an interface from the set, without changing its state.
     ///
     /// # Panics
-    /// This function may panic if the handle does not belong to this socket set.
+    /// This function may panic if the handle does not belong to this interface set.
     pub fn remove(&mut self, handle: InterfaceHandle) -> Interface {
         net_trace!("[{}]: removing", handle.0);
         match self.interfaces[handle.0].inner.take() {
             Some(item) => item.interface,
-            None => panic!("handle does not refer to a valid socket"),
+            None => panic!("handle does not refer to a valid interface"),
         }
     }
 
@@ -133,12 +133,12 @@ impl<'a> InterfaceSet<'a> {
         self.items_mut().map(|i| (i.handle, &mut i.interface))
     }
 
-    /// Iterate every socket in this set.
+    /// Iterate every interface in this set.
     pub(crate) fn items(&self) -> impl Iterator<Item = &Item> + '_ {
         self.interfaces.iter().filter_map(|x| x.inner.as_ref())
     }
 
-    /// Iterate every socket in this set.
+    /// Iterate every interface in this set.
     pub(crate) fn items_mut(&mut self) -> impl Iterator<Item = &mut Item> + '_ {
         self.interfaces.iter_mut().filter_map(|x| x.inner.as_mut())
     }

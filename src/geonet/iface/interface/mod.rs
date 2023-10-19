@@ -395,7 +395,7 @@ impl InterfaceInner {
     }
 
     #[cfg(feature = "socket-geonet")]
-    fn raw_socket_filter(
+    fn geonet_socket_filter(
         &mut self,
         sockets: &mut SocketSet,
         indication: Indication,
@@ -403,7 +403,7 @@ impl InterfaceInner {
     ) -> bool {
         let mut handled_by_raw_socket = false;
 
-        // Pass every IP packet to all raw sockets we have registered.
+        // Pass every GN packet to all geonet sockets we have registered.
         for raw_socket in sockets
             .items_mut()
             .filter_map(|i| GeonetSocket::downcast_mut(&mut i.socket))
