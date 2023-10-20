@@ -9,13 +9,17 @@ use crate::geonet::wire::*;
 
 impl InterfaceInner {
     #[cfg(feature = "medium-ethernet")]
-    pub(super) fn process_ethernet<'frame>(
+    pub(super) fn process_ethernet<'frame, 'services>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'services>,
         sockets: &mut SocketSet,
         _meta: PacketMeta,
         frame: &'frame [u8],
-    ) -> Option<(EthernetAddress, EthernetPacket<'frame>)> {
+    ) -> Option<(
+        InterfaceServices<'services>,
+        EthernetAddress,
+        EthernetPacket<'frame>,
+    )> {
         let eth_frame = check!(EthernetFrame::new_checked(frame));
 
         // Ignore any packets not directed to our hardware address or any of the multicast groups.
@@ -30,7 +34,7 @@ impl InterfaceInner {
             #[cfg(feature = "proto-geonet")]
             EthernetProtocol::Geonet => self
                 .process_geonet_packet(srv, sockets, &eth_frame.payload(), eth_frame.src_addr())
-                .map(|e| (e.0, EthernetPacket::Geonet(e.1))),
+                .map(|e| (e.0, e.1, EthernetPacket::Geonet(e.2))),
             // Drop all other traffic.
             _ => None,
         }

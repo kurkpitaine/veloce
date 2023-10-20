@@ -159,7 +159,7 @@ where
     /// Flushes the buffer entirely.
     pub fn flush(&mut self, _timestamp: Instant) {}
 
-    /// Flushes only the packets specified by the predicate, passing a mutable reference to it.
+    /// Flushes only the packets specified by the predicate `f`, passing a mutable reference to it.
     pub fn flush_with<F>(&mut self, _timestamp: Instant, mut f: F)
     where
         F: FnMut(&mut Node<T>) -> bool,

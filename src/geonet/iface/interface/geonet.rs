@@ -17,8 +17,7 @@ use crate::geonet::{
         location_table::compare_position_vector_freshness,
         GeonetPacket, GeonetPayload,
     },
-    rand::Rand,
-    time::{Duration, Instant},
+    time::Duration,
     wire::{
         BHNextHeader, BasicHeader, BasicHeaderRepr, BeaconHeader, BeaconHeaderRepr, CommonHeader,
         CommonHeaderRepr, EthernetAddress, GeoAnycastHeader, GeoAnycastRepr, GeoBroadcastHeader,
@@ -32,36 +31,50 @@ use crate::geonet::{
 use super::{check, sequence_number, InterfaceInner, InterfaceServices};
 
 impl InterfaceInner {
-    /// Defer the beaconing retransmission.
-    fn defer_beacon(&mut self, generator: &mut Rand, timestamp: Instant) {
-        let rand_jitter = Duration::from_millis(
-            generator
-                .rand_range(0..=GN_BEACON_SERVICE_MAX_JITTER.millis() as u32)
-                .into(),
-        );
+    /// Defer the beaconing retransmission if the packet source address is ours.
+    pub(super) fn defer_beacon(&mut self, core: &mut GnCore, gn_repr: &GeonetRepr) -> bool {
+        let deferred =
+            gn_repr.source_position_vector().address.mac_addr() == core.address().mac_addr();
+        if deferred {
+            let rand_jitter = Duration::from_millis(
+                core.rand
+                    .rand_range(0..=GN_BEACON_SERVICE_MAX_JITTER.millis() as u32)
+                    .into(),
+            );
 
-        self.retransmit_beacon_at = timestamp + GN_BEACON_SERVICE_RETRANSMIT_TIMER + rand_jitter;
+            self.retransmit_beacon_at = core.now + GN_BEACON_SERVICE_RETRANSMIT_TIMER + rand_jitter;
+        }
+
+        deferred
     }
 
     /// Processes a Geonetworking packet.
-    pub(crate) fn process_geonet_packet<'packet>(
+    pub(crate) fn process_geonet_packet<'packet, 'svcs>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
         gn_packet: &'packet [u8],
         snd_addr: EthernetAddress,
-    ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
+    ) -> Option<(
+        InterfaceServices<'svcs>,
+        EthernetAddress,
+        GeonetPacket<'packet>,
+    )> {
         self.process_basic_header(srv, sockets, gn_packet, snd_addr)
     }
 
     /// Processes the Basic Header of a Geonetworking packet.
-    fn process_basic_header<'packet>(
+    fn process_basic_header<'packet, 'svcs>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
         gn_packet: &'packet [u8],
         snd_addr: EthernetAddress,
-    ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
+    ) -> Option<(
+        InterfaceServices<'svcs>,
+        EthernetAddress,
+        GeonetPacket<'packet>,
+    )> {
         let bh = check!(BasicHeader::new_checked(gn_packet));
         let bh_repr = check!(BasicHeaderRepr::parse(&bh));
 
@@ -87,14 +100,18 @@ impl InterfaceInner {
     }
 
     /// Processes the Common Header of a Geonetworking packet.
-    fn process_common_header<'packet>(
+    fn process_common_header<'packet, 'svcs>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         bh_payload: &'packet [u8],
         snd_addr: EthernetAddress,
-    ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
+    ) -> Option<(
+        InterfaceServices<'svcs>,
+        EthernetAddress,
+        GeonetPacket<'packet>,
+    )> {
         let ch = check!(CommonHeader::new_checked(bh_payload));
         let ch_repr = check!(CommonHeaderRepr::parse(&ch));
 
@@ -148,14 +165,18 @@ impl InterfaceInner {
     }
 
     /// Processes a Beaconing packet.
-    fn process_beacon<'packet>(
+    fn process_beacon<'packet, 'svcs>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'svcs>,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
         snd_addr: EthernetAddress,
-    ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
+    ) -> Option<(
+        InterfaceServices<'svcs>,
+        EthernetAddress,
+        GeonetPacket<'packet>,
+    )> {
         let beacon = check!(BeaconHeader::new_checked(ch_payload));
         let beacon_repr = check!(BeaconHeaderRepr::parse(&beacon));
 
@@ -174,7 +195,7 @@ impl InterfaceInner {
         let packet_size = bh_repr.buffer_len() + ch_repr.buffer_len() + beacon_repr.buffer_len();
         entry.update_pdr(packet_size, srv.core.now);
 
-        /* Step 6: set ìs_neighbour` flag in Location table */
+        /* Step 6: set `is_neighbour` flag in Location table */
         entry.is_neighbour = true;
 
         /* Step 7: Do nothing */
@@ -199,7 +220,7 @@ impl InterfaceInner {
                 packet_node
                     .metadata()
                     .extended_header
-                    .source_position_vector
+                    .destination_position_vector
                     .address
                     .mac_addr()
                     == beacon_repr.source_position_vector.address.mac_addr()
@@ -209,14 +230,18 @@ impl InterfaceInner {
     }
 
     /// Processes a Location Service request packet.
-    fn process_ls_request<'packet>(
+    fn process_ls_request<'packet, 'svcs>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'svcs>,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
         snd_addr: EthernetAddress,
-    ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
+    ) -> Option<(
+        InterfaceServices<'svcs>,
+        EthernetAddress,
+        GeonetPacket<'packet>,
+    )> {
         let ls_req = check!(LocationServiceRequestHeader::new_checked(ch_payload));
         let ls_req_repr = check!(LocationServiceRequestRepr::parse(&ls_req));
 
@@ -301,7 +326,7 @@ impl InterfaceInner {
             /* Step 11: TODO: Media dependent procedures. */
 
             /* Step 12: Return packet. */
-            Some((addr, packet))
+            Some((srv, addr, packet))
         } else {
             /* We are a forwarder */
             /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
@@ -327,7 +352,7 @@ impl InterfaceInner {
                     packet_node
                         .metadata()
                         .extended_header
-                        .source_position_vector
+                        .destination_position_vector
                         .address
                         .mac_addr()
                         == ls_req_repr.source_position_vector.address.mac_addr()
@@ -357,19 +382,23 @@ impl InterfaceInner {
             /* Step 12: Return packet. */
             let packet =
                 GeonetPacket::new_location_service_request(reply_bh_repr, ch_repr, ls_req_repr);
-            Some((EthernetAddress::BROADCAST, packet))
+            Some((srv, EthernetAddress::BROADCAST, packet))
         }
     }
 
     /// Processes a Location Service reply packet.
-    fn process_ls_reply<'packet>(
+    fn process_ls_reply<'packet, 'svcs>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'svcs>,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
         snd_addr: EthernetAddress,
-    ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
+    ) -> Option<(
+        InterfaceServices<'svcs>,
+        EthernetAddress,
+        GeonetPacket<'packet>,
+    )> {
         let ls_rep = check!(LocationServiceReplyHeader::new_checked(ch_payload));
         let ls_rep_repr = check!(LocationServiceReplyRepr::parse(&ls_rep));
 
@@ -430,7 +459,7 @@ impl InterfaceInner {
                     packet_node
                         .metadata()
                         .extended_header
-                        .source_position_vector
+                        .destination_position_vector
                         .address
                         .mac_addr()
                         == ls_rep_repr.source_position_vector.address.mac_addr()
@@ -451,15 +480,19 @@ impl InterfaceInner {
     }
 
     /// Processes a Single-Hop Broadcast packet.
-    fn process_single_hop_broadcast<'packet>(
+    fn process_single_hop_broadcast<'packet, 'svcs>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
         snd_addr: EthernetAddress,
-    ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
+    ) -> Option<(
+        InterfaceServices<'svcs>,
+        EthernetAddress,
+        GeonetPacket<'packet>,
+    )> {
         let shb = check!(SingleHopHeader::new_checked(ch_payload));
         let shb_repr = check!(SingleHopHeaderRepr::parse(&shb));
 
@@ -521,7 +554,7 @@ impl InterfaceInner {
                 packet_node
                     .metadata()
                     .extended_header
-                    .source_position_vector
+                    .destination_position_vector
                     .address
                     .mac_addr()
                     == shb_repr.source_position_vector.address.mac_addr()
@@ -531,15 +564,19 @@ impl InterfaceInner {
     }
 
     /// Processes a Topologically Scoped Broadcast packet.
-    fn process_topo_scoped_broadcast<'packet>(
+    fn process_topo_scoped_broadcast<'packet, 'svcs>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
         snd_addr: EthernetAddress,
-    ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
+    ) -> Option<(
+        InterfaceServices<'svcs>,
+        EthernetAddress,
+        GeonetPacket<'packet>,
+    )> {
         let tsb = check!(TopoBroadcastHeader::new_checked(ch_payload));
         let tsb_repr = check!(TopoBroadcastRepr::parse(&tsb));
 
@@ -613,7 +650,7 @@ impl InterfaceInner {
                 packet_node
                     .metadata()
                     .extended_header
-                    .source_position_vector
+                    .destination_position_vector
                     .address
                     .mac_addr()
                     == tsb_repr.source_position_vector.address.mac_addr()
@@ -653,19 +690,23 @@ impl InterfaceInner {
 
         /* Step 11: TODO: execute media dependent procedures */
         /* Step 12: return packet */
-        Some((EthernetAddress::BROADCAST, packet))
+        Some((srv, EthernetAddress::BROADCAST, packet))
     }
 
     /// Process a unicast packet.
-    fn process_unicast<'packet>(
+    fn process_unicast<'packet, 'svcs>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
         snd_addr: EthernetAddress,
-    ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
+    ) -> Option<(
+        InterfaceServices<'svcs>,
+        EthernetAddress,
+        GeonetPacket<'packet>,
+    )> {
         let uc = check!(UnicastHeader::new_checked(ch_payload));
         let uc_repr = check!(UnicastRepr::parse(&uc));
 
@@ -687,15 +728,19 @@ impl InterfaceInner {
     }
 
     /// Forwards a unicast packet.
-    fn forward_unicast<'packet>(
+    fn forward_unicast<'packet, 'svcs>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'svcs>,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         uc_repr: UnicastRepr,
         payload: &'packet [u8],
         snd_addr: EthernetAddress,
-    ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
+    ) -> Option<(
+        InterfaceServices<'svcs>,
+        EthernetAddress,
+        GeonetPacket<'packet>,
+    )> {
         /* Step 3: duplicate packet detection */
         let dup_opt = self.location_table.duplicate_packet_detection(
             uc_repr.source_position_vector.address,
@@ -779,7 +824,7 @@ impl InterfaceInner {
                 packet_node
                     .metadata()
                     .extended_header
-                    .source_position_vector
+                    .destination_position_vector
                     .address
                     .mac_addr()
                     == uc_repr.source_position_vector.address.mac_addr()
@@ -826,7 +871,7 @@ impl InterfaceInner {
 
         /* Step 14: TODO: execute media dependent procedures */
         /* Step 15: return packet */
-        Some((addr, packet))
+        Some((srv, addr, packet))
     }
 
     /// Receiver (destination) operations for a unicast packet.
@@ -892,7 +937,7 @@ impl InterfaceInner {
                 packet_node
                     .metadata()
                     .extended_header
-                    .source_position_vector
+                    .destination_position_vector
                     .address
                     .mac_addr()
                     == uc_repr.source_position_vector.address.mac_addr()
@@ -914,15 +959,19 @@ impl InterfaceInner {
     }
 
     /// Process a Geo Broadcast packet.
-    fn process_geo_broadcast<'packet>(
+    fn process_geo_broadcast<'packet, 'svcs>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
         snd_addr: EthernetAddress,
-    ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
+    ) -> Option<(
+        InterfaceServices<'svcs>,
+        EthernetAddress,
+        GeonetPacket<'packet>,
+    )> {
         let gbc = check!(GeoBroadcastHeader::new_checked(ch_payload));
         let gbc_repr = check!(GeoBroadcastRepr::parse(&gbc));
 
@@ -969,7 +1018,7 @@ impl InterfaceInner {
             entry.ls_pending
         };
 
-        /* Step 7: TODO: pass payload to upper protocol if we are inside the destination area */
+        /* Step 7: pass payload to upper protocol if we are inside the destination area */
         if inside {
             let ind = Indication {
                 upper_proto: ch_repr.next_header.into(),
@@ -1006,7 +1055,7 @@ impl InterfaceInner {
                 packet_node
                     .metadata()
                     .extended_header
-                    .source_position_vector
+                    .destination_position_vector
                     .address
                     .mac_addr()
                     == gbc_repr.source_position_vector.address.mac_addr()
@@ -1054,19 +1103,23 @@ impl InterfaceInner {
 
         /* Step 13: TODO: execute media dependent procedures */
         /* Step 14: return packet */
-        Some((dst_addr, packet))
+        Some((srv, dst_addr, packet))
     }
 
     /// Process a Geo Anycast packet.
-    pub(super) fn process_geo_anycast<'packet>(
+    pub(super) fn process_geo_anycast<'packet, 'svcs>(
         &mut self,
-        srv: InterfaceServices,
+        srv: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
         snd_addr: EthernetAddress,
-    ) -> Option<(EthernetAddress, GeonetPacket<'packet>)> {
+    ) -> Option<(
+        InterfaceServices<'svcs>,
+        EthernetAddress,
+        GeonetPacket<'packet>,
+    )> {
         let gac = check!(GeoAnycastHeader::new_checked(ch_payload));
         let gac_repr = check!(GeoAnycastRepr::parse(&gac));
 
@@ -1126,13 +1179,13 @@ impl InterfaceInner {
                 packet_node
                     .metadata()
                     .extended_header
-                    .source_position_vector
+                    .destination_position_vector
                     .address
                     .mac_addr()
                     == gac_repr.source_position_vector.address.mac_addr()
             });
 
-        /* Step 9: TODO: pass payload to upper protocol if we are inside the destination area */
+        /* Step 9: pass payload to upper protocol if we are inside the destination area */
         if inside {
             let ind = Indication {
                 upper_proto: ch_repr.next_header.into(),
@@ -1190,7 +1243,7 @@ impl InterfaceInner {
 
         /* Step 12: TODO: execute media dependent procedures */
         /* Step 13: return packet */
-        Some((dst_addr, packet))
+        Some((srv, dst_addr, packet))
     }
 
     /// Dispatch beacons packets.
@@ -1244,9 +1297,6 @@ impl InterfaceInner {
             (EthernetAddress::BROADCAST, bh_repr, ch_repr, beacon_repr),
         )?;
 
-        /* Step 5: Reset beaconing timer. */
-        self.defer_beacon(&mut srv.core.rand, srv.core.now);
-
         Ok(())
     }
 
@@ -1268,8 +1318,6 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
-        let mut reset_beacon = false;
-
         for r in srv.ls.ls_requests.iter_mut().flatten() {
             match &mut r.state {
                 LocationServiceState::Pending(pr) => {
@@ -1317,7 +1365,6 @@ impl InterfaceInner {
                     pr.retransmit_at += GN_LOCATION_SERVICE_RETRANSMIT_TIMER;
                     pr.attempts += 1;
 
-                    reset_beacon = true;
                     break;
                 }
                 LocationServiceState::Failure(fr) => {
@@ -1333,11 +1380,6 @@ impl InterfaceInner {
                     });
                 }
             };
-        }
-
-        /* We need to reset the beacon timestamp outside the for loop since we are mutably borrowing self. */
-        if reset_beacon {
-            self.defer_beacon(&mut srv.core.rand, srv.core.now);
         }
 
         // Nothing to dispatch.
@@ -1444,9 +1486,6 @@ impl InterfaceInner {
                 srv.core,
                 (nh_ll_addr, bh_repr, ch_repr, uc_repr, payload),
             )?;
-
-            /* Step 10: reset the beacon timer */
-            self.defer_beacon(&mut srv.core.rand, srv.core.now);
         } else {
             /* Step 2a: invoke location service for this destination */
             let Ok(handle) = srv.ls.request(metadata.destination) else {
@@ -1554,9 +1593,6 @@ impl InterfaceInner {
             ),
         )?;
 
-        /* Step 7: reset the beacon timer */
-        self.defer_beacon(&mut srv.core.rand, srv.core.now);
-
         Ok(())
     }
 
@@ -1632,8 +1668,6 @@ impl InterfaceInner {
             ),
         )?;
 
-        /* Step 7: reset the beacon timer */
-        self.defer_beacon(&mut srv.core.rand, srv.core.now);
         Ok(())
     }
 
@@ -1723,9 +1757,6 @@ impl InterfaceInner {
             (dst_addr, bh_repr, ch_repr, gbc_repr, payload),
         )?;
 
-        /* Step 9: reset the beacon timer */
-        self.defer_beacon(&mut srv.core.rand, srv.core.now);
-
         Ok(())
     }
 
@@ -1814,9 +1845,6 @@ impl InterfaceInner {
             srv.core,
             (dst_addr, bh_repr, ch_repr, gbc_repr, payload),
         )?;
-
-        /* Step 9: reset the beacon timer */
-        self.defer_beacon(&mut srv.core.rand, srv.core.now);
 
         Ok(())
     }
@@ -1925,7 +1953,7 @@ impl InterfaceInner {
         Some(EthernetAddress::BROADCAST.into())
     }
 
-    /// Pass received geonetworking data to upper layer.
+    /// Pass received Geonetworking payload to upper layer.
     fn pass_up(&mut self, sockets: &mut SocketSet, ind: Indication, payload: &[u8]) {
         #[cfg(feature = "socket-geonet")]
         let _handled_by_geonet_socket = self.geonet_socket_filter(sockets, ind, payload);

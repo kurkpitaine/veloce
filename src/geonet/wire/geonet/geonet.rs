@@ -6,8 +6,8 @@ use crate::geonet::wire::{
     BasicHeader, BasicHeaderRepr, BeaconHeader, BeaconHeaderRepr, CommonHeader, CommonHeaderRepr,
     GeoAnycastHeader, GeoAnycastRepr, GeoBroadcastHeader, GeoBroadcastRepr,
     LocationServiceReplyHeader, LocationServiceReplyRepr, LocationServiceRequestHeader,
-    LocationServiceRequestRepr, SingleHopHeader, SingleHopHeaderRepr, TopoBroadcastHeader,
-    TopoBroadcastRepr, UnicastHeader, UnicastRepr,
+    LocationServiceRequestRepr, LongPositionVectorRepr as LongPositionVector, SingleHopHeader,
+    SingleHopHeaderRepr, TopoBroadcastHeader, TopoBroadcastRepr, UnicastHeader, UnicastRepr,
 };
 
 enum_with_unknown! {
@@ -262,6 +262,20 @@ impl Repr {
             Repr::TopoBroadcast(repr) => repr.common_header.next_header,
             Repr::LocationServiceRequest(repr) => repr.common_header.next_header,
             Repr::LocationServiceReply(repr) => repr.common_header.next_header,
+        }
+    }
+
+    /// Return the source position vector.
+    pub const fn source_position_vector(&self) -> LongPositionVector {
+        match self {
+            Repr::Beacon(repr) => repr.extended_header.source_position_vector,
+            Repr::Unicast(repr) => repr.extended_header.source_position_vector,
+            Repr::Anycast(repr) => repr.extended_header.source_position_vector,
+            Repr::Broadcast(repr) => repr.extended_header.source_position_vector,
+            Repr::SingleHopBroadcast(repr) => repr.extended_header.source_position_vector,
+            Repr::TopoBroadcast(repr) => repr.extended_header.source_position_vector,
+            Repr::LocationServiceRequest(repr) => repr.extended_header.source_position_vector,
+            Repr::LocationServiceReply(repr) => repr.extended_header.source_position_vector,
         }
     }
 

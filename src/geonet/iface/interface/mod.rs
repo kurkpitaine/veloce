@@ -70,6 +70,7 @@ pub struct Interface {
     /// Interface inner description.
     pub(crate) inner: InterfaceInner,
     /// Location service of the interface.
+    #[cfg(feature = "proto-geonet")]
     location_service: LocationService,
 }
 
@@ -208,8 +209,11 @@ impl Interface {
 
         loop {
             let mut did_something = false;
+
             did_something |= self.socket_ingress(core, device, sockets);
             did_something |= self.socket_egress(core, device, sockets);
+            did_something |= self.location_service_egress(core, device);
+            did_something |= self.beacon_service_egress(core, device);
 
             if did_something {
                 readiness_may_have_changed = true;
@@ -283,10 +287,12 @@ impl Interface {
                 match self.inner.caps.medium {
                     #[cfg(feature = "medium-ethernet")]
                     Medium::Ethernet => {
-                        if let Some((dst_addr, packet)) =
+                        if let Some((svcs, dst_addr, packet)) =
                             self.inner.process_ethernet(srv, sockets, rx_meta, frame)
                         {
-                            if let Err(err) = self.inner.dispatch(tx_token, dst_addr, packet) {
+                            if let Err(err) =
+                                self.inner.dispatch(tx_token, svcs.core, dst_addr, packet)
+                            {
                                 net_debug!("Failed to send response: {:?}", err);
                             }
                         }
@@ -325,12 +331,12 @@ impl Interface {
                                dst_ll_addr: EthernetAddress,
                                response: GeonetPacket| {
                 let t = device.transmit(core.now).ok_or_else(|| {
-                    net_debug!("failed to transmit IP: device exhausted");
+                    net_debug!("failed to transmit geonet packet: device exhausted");
                     EgressError::Exhausted
                 })?;
 
                 inner
-                    .dispatch_geonet(t, meta, dst_ll_addr, response)
+                    .dispatch_geonet(t, core, meta, dst_ll_addr, response)
                     .map_err(EgressError::Dispatch)?;
 
                 emitted_any = true;
@@ -338,7 +344,7 @@ impl Interface {
                 Ok(())
             };
 
-            let srv: InterfaceServices<'_> = InterfaceServices {
+            let srv = InterfaceServices {
                 core,
                 ls: &mut self.location_service,
             };
@@ -348,13 +354,13 @@ impl Interface {
                 Socket::Geonet(socket) => socket.dispatch(
                     &mut self.inner,
                     srv,
-                    |inner, core, (dst_ll_addr, ip, raw)| {
+                    |inner, core, (dst_ll_addr, gn, raw)| {
                         respond(
                             inner,
                             core,
                             PacketMeta::default(),
                             dst_ll_addr,
-                            GeonetPacket::new(ip, GeonetPayload::Raw(raw)),
+                            GeonetPacket::new(gn, GeonetPayload::Raw(raw)),
                         )
                     },
                 ),
@@ -368,6 +374,126 @@ impl Interface {
                 Ok(()) => {}
             }
         }
+        emitted_any
+    }
+
+    #[cfg(feature = "proto-geonet")]
+    fn beacon_service_egress<D>(&mut self, core: &mut GnCore, device: &mut D) -> bool
+    where
+        D: Device + ?Sized,
+    {
+        enum EgressError {
+            Exhausted,
+            Dispatch(DispatchError),
+        }
+
+        let mut emitted_any = false;
+
+        let mut respond = |inner: &mut InterfaceInner,
+                           core: &mut GnCore,
+                           meta: PacketMeta,
+                           dst_ll_addr: EthernetAddress,
+                           response: GeonetPacket| {
+            let t = device.transmit(core.now).ok_or_else(|| {
+                net_debug!("failed to transmit beacon packet: device exhausted");
+                EgressError::Exhausted
+            })?;
+
+            inner
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                .map_err(EgressError::Dispatch)?;
+
+            emitted_any = true;
+
+            Ok(())
+        };
+
+        let srv = InterfaceServices {
+            core,
+            ls: &mut self.location_service,
+        };
+
+        let result = self.inner.dispatch_beacon(
+            srv,
+            |inner, core, (dst_ll_addr, bh_repr, ch_repr, bc_repr)| {
+                respond(
+                    inner,
+                    core,
+                    PacketMeta::default(),
+                    dst_ll_addr,
+                    GeonetPacket::new_beacon(bh_repr, ch_repr, bc_repr),
+                )
+            },
+        );
+
+        match result {
+            Err(EgressError::Exhausted) => {} // Device buffer full.
+            Err(EgressError::Dispatch(_)) => {
+                net_debug!("failed to transmit beacon packet: dispatch error");
+            }
+            Ok(()) => {}
+        }
+
+        emitted_any
+    }
+
+    #[cfg(feature = "proto-geonet")]
+    fn location_service_egress<D>(&mut self, core: &mut GnCore, device: &mut D) -> bool
+    where
+        D: Device + ?Sized,
+    {
+        enum EgressError {
+            Exhausted,
+            Dispatch(DispatchError),
+        }
+
+        let mut emitted_any = false;
+
+        let mut respond = |inner: &mut InterfaceInner,
+                           core: &mut GnCore,
+                           meta: PacketMeta,
+                           dst_ll_addr: EthernetAddress,
+                           response: GeonetPacket| {
+            let t = device.transmit(core.now).ok_or_else(|| {
+                net_debug!("failed to transmit location service packet: device exhausted");
+                EgressError::Exhausted
+            })?;
+
+            inner
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                .map_err(EgressError::Dispatch)?;
+
+            emitted_any = true;
+
+            Ok(())
+        };
+
+        let srv = InterfaceServices {
+            core,
+            ls: &mut self.location_service,
+        };
+
+        let result = self.inner.dispatch_ls_request(
+            srv,
+            |inner, core, (dst_ll_addr, bh_repr, ch_repr, ls_repr)| {
+                respond(
+                    inner,
+                    core,
+                    PacketMeta::default(),
+                    dst_ll_addr,
+                    GeonetPacket::new_location_service_request(bh_repr, ch_repr, ls_repr),
+                )
+            },
+        );
+
+        match result {
+            Err(EgressError::Exhausted) => {} // Device buffer full.
+            Err(EgressError::Dispatch(_)) => {
+                net_debug!("failed to transmit location service packet: dispatch error");
+            }
+            Ok(()) => {}
+        }
+
         emitted_any
     }
 }
@@ -418,6 +544,7 @@ impl InterfaceInner {
     fn dispatch<Tx>(
         &mut self,
         tx_token: Tx,
+        core: &mut GnCore,
         dst_hardware_addr: EthernetAddress,
         packet: EthernetPacket,
     ) -> Result<(), DispatchError>
@@ -425,17 +552,20 @@ impl InterfaceInner {
         Tx: TxToken,
     {
         match packet {
-            EthernetPacket::Geonet(packet) => {
-                self.dispatch_geonet(tx_token, PacketMeta::default(), dst_hardware_addr, packet)
-            }
+            EthernetPacket::Geonet(packet) => self.dispatch_geonet(
+                tx_token,
+                core,
+                PacketMeta::default(),
+                dst_hardware_addr,
+                packet,
+            ),
         }
     }
 
     fn dispatch_geonet<Tx: TxToken>(
         &mut self,
-        // NOTE(unused_mut): tx_token isn't always mutated, depending on
-        // the feature set that is used.
-        #[allow(unused_mut)] mut tx_token: Tx,
+        mut tx_token: Tx,
+        core: &mut GnCore,
         meta: PacketMeta,
         dst_hardware_addr: EthernetAddress,
         packet: GeonetPacket,
@@ -464,23 +594,28 @@ impl InterfaceInner {
             frame.set_ethertype(EthernetProtocol::Geonet);
         };
 
-        // Emit function for the IP header and payload.
-        let emit_ip = |repr: &GeonetRepr, mut tx_buffer: &mut [u8]| {
+        // Emit function for the Geonetworking header and payload.
+        let emit_gn = |repr: &GeonetRepr, mut tx_buffer: &mut [u8]| {
             let payload = &mut tx_buffer[repr.header_len()..];
             packet.emit_payload(repr, payload, &caps)
         };
 
         tx_token.set_meta(meta);
-        tx_token.consume(total_len, |mut tx_buffer| {
-            #[cfg(feature = "medium-ethernet")]
-            if matches!(self.caps.medium, Medium::Ethernet) {
-                emit_ethernet(&gn_repr, tx_buffer);
-                tx_buffer = &mut tx_buffer[EthernetFrame::<&[u8]>::header_len()..];
-            }
+        tx_token
+            .consume(total_len, |mut tx_buffer| {
+                #[cfg(feature = "medium-ethernet")]
+                if matches!(self.caps.medium, Medium::Ethernet) {
+                    emit_ethernet(&gn_repr, tx_buffer);
+                    tx_buffer = &mut tx_buffer[EthernetFrame::<&[u8]>::header_len()..];
+                }
 
-            emit_ip(&gn_repr, tx_buffer);
-            Ok(())
-        })
+                emit_gn(&gn_repr, tx_buffer);
+                Ok(())
+            })
+            .and_then(|_| {
+                self.defer_beacon(core, &gn_repr);
+                Ok(())
+            })
     }
 }
 
