@@ -1,4 +1,6 @@
+use core::ops::DerefMut;
 use heapless::linked_list::{LinkedIndexUsize, LinkedList};
+use heapless::Vec;
 
 use crate::geonet::config::GN_MAX_SDU_SIZE;
 use crate::geonet::time::{Duration, Instant};
@@ -19,6 +21,7 @@ where
 {
     size: usize,
     expires_at: Instant,
+    flushable: bool,
     metadata: T,
     payload: [u8; PAYLOAD_MAX_SIZE],
 }
@@ -32,8 +35,18 @@ where
     }
 
     /// Accessor to metadata.
-    pub fn metadata(&self) -> &T {
-        &self.metadata
+    pub fn metadata(&mut self) -> &mut T {
+        &mut self.metadata
+    }
+
+    /// Instant at which the nodes expires.
+    pub fn expires_at(&self) -> Instant {
+        self.expires_at
+    }
+
+    /// Accessor to payload.
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
     }
 }
 
@@ -90,6 +103,7 @@ where
         let mut node = Node {
             size: meta.size(),
             expires_at: timestamp + meta.lifetime(),
+            flushable: false,
             metadata: meta,
             payload: [0; PAYLOAD_MAX_SIZE],
         };
@@ -151,20 +165,45 @@ where
     /// Drops only the packets where the predicate is true
     pub fn drop_with<F>(&mut self, mut f: F)
     where
-        F: FnMut(&Node<T>) -> bool,
+        F: FnMut(&mut Node<T>) -> bool,
     {
-        self.storage.retain(|node| !f(node))
+        self.storage.retain_mut(|node| !f(node))
     }
 
-    /// Flushes the buffer entirely.
-    pub fn flush(&mut self, _timestamp: Instant) {}
-
-    /// Flushes only the packets specified by the predicate `f`, passing a mutable reference to it.
-    pub fn flush_with<F>(&mut self, _timestamp: Instant, mut f: F)
+    /// Mark flushable only the packets specified by the predicate `f`, passing a mutable reference to it.
+    /// Expired packets are ignored and dropped.
+    /// This method marks the specified packets as ready to flush. Packets are removed from buffer
+    /// when [flush_one] is called.
+    pub fn mark_flush<F>(&mut self, timestamp: Instant, mut f: F)
     where
         F: FnMut(&mut Node<T>) -> bool,
     {
-        self.storage.retain_mut(|node| f(node));
+        self.storage.retain_mut(|node| {
+            // Filter expired packets
+            if node.expires_at >= timestamp {
+                self.len -= node.size;
+                return false;
+            }
+            if f(node) {
+                node.flushable = true;
+            }
+            true
+        });
+    }
+
+    /// Flush one packet marked as flushable from the buffer.
+    pub fn flush_one<F, E>(&mut self, f: F) -> Option<Result<(), E>>
+    where
+        F: FnOnce(&mut Node<T>) -> Result<(), E>,
+    {
+        let Some(mut fm) = self.storage.find_mut(|e| e.flushable) else {
+            return None;
+        };
+
+        let rc = f(fm.deref_mut());
+        fm.pop();
+
+        Some(rc)
     }
 }
 

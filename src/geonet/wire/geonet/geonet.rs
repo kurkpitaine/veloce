@@ -279,6 +279,20 @@ impl Repr {
         }
     }
 
+    /// Set the source position vector.
+    pub fn set_source_position_vector(&mut self, spv: LongPositionVector) {
+        match self {
+            Repr::Beacon(repr) => repr.extended_header.source_position_vector = spv,
+            Repr::Unicast(repr) => repr.extended_header.source_position_vector = spv,
+            Repr::Anycast(repr) => repr.extended_header.source_position_vector = spv,
+            Repr::Broadcast(repr) => repr.extended_header.source_position_vector = spv,
+            Repr::SingleHopBroadcast(repr) => repr.extended_header.source_position_vector = spv,
+            Repr::TopoBroadcast(repr) => repr.extended_header.source_position_vector = spv,
+            Repr::LocationServiceRequest(repr) => repr.extended_header.source_position_vector = spv,
+            Repr::LocationServiceReply(repr) => repr.extended_header.source_position_vector = spv,
+        }
+    }
+
     /// Return the payload length.
     pub const fn payload_len(&self) -> usize {
         match self {
@@ -318,6 +332,34 @@ impl Repr {
             Repr::TopoBroadcast(repr) => repr.basic_header.remaining_hop_limit,
             Repr::LocationServiceRequest(repr) => repr.basic_header.remaining_hop_limit,
             Repr::LocationServiceReply(repr) => repr.basic_header.remaining_hop_limit,
+        }
+    }
+
+    /// Return the lifetime of the packet.
+    pub const fn lifetime(&self) -> Duration {
+        match self {
+            Repr::Beacon(repr) => repr.basic_header.lifetime,
+            Repr::Unicast(repr) => repr.basic_header.lifetime,
+            Repr::Anycast(repr) => repr.basic_header.lifetime,
+            Repr::Broadcast(repr) => repr.basic_header.lifetime,
+            Repr::SingleHopBroadcast(repr) => repr.basic_header.lifetime,
+            Repr::TopoBroadcast(repr) => repr.basic_header.lifetime,
+            Repr::LocationServiceRequest(repr) => repr.basic_header.lifetime,
+            Repr::LocationServiceReply(repr) => repr.basic_header.lifetime,
+        }
+    }
+
+    /// Sets the lifetime of the packet.
+    pub fn set_lifetime(&mut self, lifetime: Duration) {
+        match self {
+            Repr::Beacon(repr) => repr.basic_header.lifetime = lifetime,
+            Repr::Unicast(repr) => repr.basic_header.lifetime = lifetime,
+            Repr::Anycast(repr) => repr.basic_header.lifetime = lifetime,
+            Repr::Broadcast(repr) => repr.basic_header.lifetime = lifetime,
+            Repr::SingleHopBroadcast(repr) => repr.basic_header.lifetime = lifetime,
+            Repr::TopoBroadcast(repr) => repr.basic_header.lifetime = lifetime,
+            Repr::LocationServiceRequest(repr) => repr.basic_header.lifetime = lifetime,
+            Repr::LocationServiceReply(repr) => repr.basic_header.lifetime = lifetime,
         }
     }
 

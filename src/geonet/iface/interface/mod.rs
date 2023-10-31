@@ -58,7 +58,12 @@ macro_rules! sequence_number {
 }
 
 use check;
+use libc::sleep;
 use sequence_number;
+
+type LsBuffer = PacketBuffer<GeonetUnicast, LS_BUF_ENTRY_NUM, LS_BUF_SIZE>;
+type UcBuffer = PacketBuffer<GeonetUnicast, UC_BUF_ENTRY_NUM, UC_BUF_SIZE>;
+type BcBuffer = PacketBuffer<GeonetRepr, BC_BUF_ENTRY_NUM, BC_BUF_SIZE>;
 
 /// A network interface.
 ///
@@ -72,11 +77,16 @@ pub struct Interface {
     /// Location service of the interface.
     #[cfg(feature = "proto-geonet")]
     location_service: LocationService,
+    /// Location Service packet buffer.
+    #[cfg(feature = "proto-geonet")]
+    ls_buffer: LsBuffer,
+    /// Unicast forwarding packet buffer.
+    #[cfg(feature = "proto-geonet")]
+    uc_forwarding_buffer: UcBuffer,
+    /// Broadcast forwarding packet buffer.
+    #[cfg(feature = "proto-geonet")]
+    bc_forwarding_buffer: BcBuffer,
 }
-
-type LsBuffer = PacketBuffer<GeonetUnicast, LS_BUF_ENTRY_NUM, LS_BUF_SIZE>;
-type UcBuffer = PacketBuffer<GeonetUnicast, UC_BUF_ENTRY_NUM, UC_BUF_SIZE>;
-type BcBuffer = PacketBuffer<GeonetRepr, BC_BUF_ENTRY_NUM, BC_BUF_SIZE>;
 
 /// The device independent part of an access interface.
 ///
@@ -100,15 +110,6 @@ pub struct InterfaceInner {
     /// Sequence Number of the Access Handler.
     #[cfg(feature = "proto-geonet")]
     sequence_number: SequenceNumber,
-    /// Location Service packet buffer.
-    #[cfg(feature = "proto-geonet")]
-    ls_buffer: LsBuffer,
-    /// Unicast forwarding packet buffer.
-    #[cfg(feature = "proto-geonet")]
-    uc_forwarding_buffer: UcBuffer,
-    /// Broadcast forwarding packet buffer.
-    #[cfg(feature = "proto-geonet")]
-    bc_forwarding_buffer: BcBuffer,
 }
 
 /// Configuration structure used for creating a network interface.
@@ -139,11 +140,18 @@ impl Config {
 }
 
 /// Utility struct containing metadata for [InterfaceInner] processing.
+#[cfg(feature = "proto-geonet")]
 pub struct InterfaceServices<'a> {
     /// Reference on the Geonetworking core services.
     pub core: &'a mut GnCore,
     /// Reference on the Location Service.
     pub ls: &'a mut LocationService,
+    /// Location Service packet buffer.
+    pub ls_buffer: &'a mut LsBuffer,
+    /// Unicast forwarding packet buffer.
+    pub uc_forwarding_buffer: &'a mut UcBuffer,
+    /// Broadcast forwarding packet buffer.
+    pub bc_forwarding_buffer: &'a mut BcBuffer,
 }
 
 impl Interface {
@@ -170,15 +178,15 @@ impl Interface {
 
         Interface {
             location_service: LocationService::new(),
+            ls_buffer: PacketBuffer::new(),
+            uc_forwarding_buffer: PacketBuffer::new(),
+            bc_forwarding_buffer: PacketBuffer::new(),
             inner: InterfaceInner {
                 caps,
                 hardware_addr: config.hardware_addr,
                 retransmit_beacon_at: Instant::from_millis(0),
                 location_table: LocationTable::new(),
                 sequence_number: SequenceNumber(0),
-                ls_buffer: PacketBuffer::new(),
-                uc_forwarding_buffer: PacketBuffer::new(),
-                bc_forwarding_buffer: PacketBuffer::new(),
             },
         }
     }
@@ -212,6 +220,16 @@ impl Interface {
 
             did_something |= self.socket_ingress(core, device, sockets);
             did_something |= self.socket_egress(core, device, sockets);
+
+            // Buffered packets inside different buffers are dequeued here after.
+            // One call to xx_buffered_egress send ALL the packets marked for flush.
+            // This could lead to some packets not being transmitted because of device exhaustion
+            // if a large number of packets has to be sent.
+            did_something |= self.ls_buffered_egress(core, device);
+            did_something |= self.uc_buffered_egress(core, device);
+            did_something |= self.bc_buffered_egress(core, device);
+
+            //
             did_something |= self.location_service_egress(core, device);
             did_something |= self.beacon_service_egress(core, device);
 
@@ -281,6 +299,9 @@ impl Interface {
             let srv = InterfaceServices {
                 core,
                 ls: &mut self.location_service,
+                ls_buffer: &mut self.ls_buffer,
+                uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
+                bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
             };
 
             rx_token.consume(|frame| {
@@ -347,6 +368,9 @@ impl Interface {
             let srv = InterfaceServices {
                 core,
                 ls: &mut self.location_service,
+                ls_buffer: &mut self.ls_buffer,
+                uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
+                bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
             };
 
             let result = match &mut item.socket {
@@ -411,6 +435,9 @@ impl Interface {
         let srv = InterfaceServices {
             core,
             ls: &mut self.location_service,
+            ls_buffer: &mut self.ls_buffer,
+            uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
+            bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
         };
 
         let result = self.inner.dispatch_beacon(
@@ -471,6 +498,9 @@ impl Interface {
         let srv = InterfaceServices {
             core,
             ls: &mut self.location_service,
+            ls_buffer: &mut self.ls_buffer,
+            uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
+            bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
         };
 
         let result = self.inner.dispatch_ls_request(
@@ -492,6 +522,258 @@ impl Interface {
                 net_debug!("failed to transmit location service packet: dispatch error");
             }
             Ok(()) => {}
+        }
+
+        emitted_any
+    }
+
+    #[cfg(feature = "proto-geonet")]
+    fn ls_buffered_egress<D>(&mut self, core: &mut GnCore, device: &mut D) -> bool
+    where
+        D: Device + ?Sized,
+    {
+        enum EgressError {
+            Exhausted,
+            Dispatch(DispatchError),
+        }
+
+        let mut emitted_any = false;
+
+        let mut respond = |inner: &mut InterfaceInner,
+                           core: &mut GnCore,
+                           meta: PacketMeta,
+                           dst_ll_addr: EthernetAddress,
+                           response: GeonetPacket| {
+            let t = device.transmit(core.now).ok_or_else(|| {
+                net_debug!("failed to transmit LS buffered packet: device exhausted");
+                EgressError::Exhausted
+            })?;
+
+            inner
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                .map_err(EgressError::Dispatch)?;
+
+            emitted_any = true;
+
+            Ok(())
+        };
+
+        loop {
+            let srv = InterfaceServices {
+                core,
+                ls: &mut self.location_service,
+                ls_buffer: &mut self.ls_buffer,
+                uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
+                bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+            };
+
+            let dequeued_some = self.inner.dispatch_ls_buffer(
+                srv,
+                |inner, core, (dst_ll_addr, bh_repr, ch_repr, uc_repr, raw)| {
+                    respond(
+                        inner,
+                        core,
+                        PacketMeta::default(),
+                        dst_ll_addr,
+                        GeonetPacket::new_unicast(
+                            bh_repr,
+                            ch_repr,
+                            uc_repr,
+                            GeonetPayload::Raw(raw),
+                        ),
+                    )
+                },
+            );
+
+            let Some(result) = dequeued_some else {
+                break;
+            };
+
+            match result {
+                Err(EgressError::Exhausted) => {
+                    // Device buffer full.
+                    break;
+                }
+                Err(EgressError::Dispatch(_)) => {
+                    net_debug!("failed to transmit LS buffered packet: dispatch error");
+                    break;
+                }
+                Ok(()) => {}
+            }
+        }
+
+        emitted_any
+    }
+
+    #[cfg(feature = "proto-geonet")]
+    fn uc_buffered_egress<D>(&mut self, core: &mut GnCore, device: &mut D) -> bool
+    where
+        D: Device + ?Sized,
+    {
+        enum EgressError {
+            Exhausted,
+            Dispatch(DispatchError),
+        }
+
+        let mut emitted_any = false;
+
+        let mut respond = |inner: &mut InterfaceInner,
+                           core: &mut GnCore,
+                           meta: PacketMeta,
+                           dst_ll_addr: EthernetAddress,
+                           response: GeonetPacket| {
+            let t = device.transmit(core.now).ok_or_else(|| {
+                net_debug!("failed to transmit unicast buffered packet: device exhausted");
+                EgressError::Exhausted
+            })?;
+
+            inner
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                .map_err(EgressError::Dispatch)?;
+
+            emitted_any = true;
+
+            Ok(())
+        };
+
+        loop {
+            let srv = InterfaceServices {
+                core,
+                ls: &mut self.location_service,
+                ls_buffer: &mut self.ls_buffer,
+                uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
+                bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+            };
+
+            let dequeued_some = self.inner.dispatch_unicast_buffer(
+                srv,
+                |inner, core, (dst_ll_addr, bh_repr, ch_repr, uc_repr, raw)| {
+                    respond(
+                        inner,
+                        core,
+                        PacketMeta::default(),
+                        dst_ll_addr,
+                        GeonetPacket::new_unicast(
+                            bh_repr,
+                            ch_repr,
+                            uc_repr,
+                            GeonetPayload::Raw(raw),
+                        ),
+                    )
+                },
+            );
+
+            let Some(result) = dequeued_some else {
+                break;
+            };
+
+            match result {
+                Err(EgressError::Exhausted) => {
+                    // Device buffer full.
+                    break;
+                }
+                Err(EgressError::Dispatch(_)) => {
+                    net_debug!("failed to transmit unicast buffered packet: dispatch error");
+                    break;
+                }
+                Ok(()) => {}
+            }
+        }
+
+        emitted_any
+    }
+
+    #[cfg(feature = "proto-geonet")]
+    fn bc_buffered_egress<D>(&mut self, core: &mut GnCore, device: &mut D) -> bool
+    where
+        D: Device + ?Sized,
+    {
+        enum EgressError {
+            Exhausted,
+            Dispatch(DispatchError),
+        }
+
+        let mut emitted_any = false;
+
+        let mut respond = |inner: &mut InterfaceInner,
+                           core: &mut GnCore,
+                           meta: PacketMeta,
+                           dst_ll_addr: EthernetAddress,
+                           response: GeonetPacket| {
+            let t = device.transmit(core.now).ok_or_else(|| {
+                net_debug!("failed to transmit unicast buffered packet: device exhausted");
+                EgressError::Exhausted
+            })?;
+
+            inner
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                .map_err(EgressError::Dispatch)?;
+
+            emitted_any = true;
+
+            Ok(())
+        };
+
+        loop {
+            let srv = InterfaceServices {
+                core,
+                ls: &mut self.location_service,
+                ls_buffer: &mut self.ls_buffer,
+                uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
+                bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+            };
+
+            let dequeued_some = self.inner.dispatch_broadcast_buffer(
+                srv,
+                |inner, core, (dst_ll_addr, gn_repr, raw)| {
+                    let response = match gn_repr {
+                        GeonetRepr::Anycast(p) => GeonetPacket::new_anycast(
+                            p.basic_header,
+                            p.common_header,
+                            p.extended_header,
+                            GeonetPayload::Raw(raw),
+                        ),
+                        GeonetRepr::Broadcast(p) => GeonetPacket::new_broadcast(
+                            p.basic_header,
+                            p.common_header,
+                            p.extended_header,
+                            GeonetPayload::Raw(raw),
+                        ),
+                        GeonetRepr::SingleHopBroadcast(p) => {
+                            GeonetPacket::new_single_hop_broadcast(
+                                p.basic_header,
+                                p.common_header,
+                                p.extended_header,
+                                GeonetPayload::Raw(raw),
+                            )
+                        }
+                        GeonetRepr::TopoBroadcast(p) => GeonetPacket::new_topo_scoped_broadcast(
+                            p.basic_header,
+                            p.common_header,
+                            p.extended_header,
+                            GeonetPayload::Raw(raw),
+                        ),
+                        _ => unreachable!(), // No other packet type.
+                    };
+                    respond(inner, core, PacketMeta::default(), dst_ll_addr, response)
+                },
+            );
+
+            let Some(result) = dequeued_some else {
+                break;
+            };
+
+            match result {
+                Err(EgressError::Exhausted) => {
+                    // Device buffer full.
+                    break;
+                }
+                Err(EgressError::Dispatch(_)) => {
+                    net_debug!("failed to transmit unicast buffered packet: dispatch error");
+                    break;
+                }
+                Ok(()) => {}
+            }
         }
 
         emitted_any
