@@ -11,10 +11,10 @@ description = "A V2x stack for embedded devices"
 byteorder = "1.4.3"
 defmt = { version = "0.3.5", optional = true }
 heapless = { path = "../heapless" }
-libc = { version = "0.2.148", optional = true }
+libc = { version = "0.2.149", optional = true }
 log = { version = "0.4.20", default-features = false, optional = true }
 managed = { version = "0.8", default-features = false, features = ["map"] }
-tokio = { version = "1.28.2", features = ["full"] }
+#tokio = { version = "1.28.2", features = ["full"] }
 uom = { version = "0.34.0", features = ["autoconvert", "f32"] }
 
 [features]

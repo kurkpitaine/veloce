@@ -1,9 +1,14 @@
+#[cfg(test)]
+mod tests;
+
 #[cfg(feature = "medium-ethernet")]
 mod ethernet;
 #[cfg(feature = "proto-geonet")]
 mod geonet;
 
-use super::location_service::LocationService;
+use core::cmp;
+
+use super::location_service::{LocationService, LocationServiceState};
 use super::location_table::LocationTable;
 use super::v2x_packet::*;
 
@@ -58,7 +63,6 @@ macro_rules! sequence_number {
 }
 
 use check;
-use libc::sleep;
 use sequence_number;
 
 type LsBuffer = PacketBuffer<GeonetUnicast, LS_BUF_ENTRY_NUM, LS_BUF_SIZE>;
@@ -218,19 +222,25 @@ impl Interface {
         loop {
             let mut did_something = false;
 
+            //println!("socket_ingress");
             did_something |= self.socket_ingress(core, device, sockets);
+            //println!("socket_egress");
             did_something |= self.socket_egress(core, device, sockets);
 
             // Buffered packets inside different buffers are dequeued here after.
             // One call to xx_buffered_egress send ALL the packets marked for flush.
             // This could lead to some packets not being transmitted because of device exhaustion
             // if a large number of packets has to be sent.
+            // println!("ls_buffered_egress");
             did_something |= self.ls_buffered_egress(core, device);
+            // println!("uc_buffered_egress");
             did_something |= self.uc_buffered_egress(core, device);
+            // println!("bc_buffered_egress");
             did_something |= self.bc_buffered_egress(core, device);
 
-            //
+            // println!("location_service_egress");
             did_something |= self.location_service_egress(core, device);
+            // println!("beacon_service_egress");
             did_something |= self.beacon_service_egress(core, device);
 
             if did_something {
@@ -254,7 +264,11 @@ impl Interface {
     pub fn poll_at(&mut self, sockets: &SocketSet<'_>) -> Option<Instant> {
         let inner = &mut self.inner;
 
-        sockets
+        let beacon_timeout = Some(inner.retransmit_beacon_at);
+
+        let ls_timeout = self.location_service.poll_at();
+
+        let sockets_timeout = sockets
             .items()
             .filter_map(move |item| {
                 let socket_poll_at = item.socket.poll_at(inner);
@@ -264,7 +278,10 @@ impl Interface {
                     PollAt::Now => Some(Instant::ZERO),
                 }
             })
-            .min()
+            .min();
+
+        let values = [beacon_timeout, ls_timeout, sockets_timeout];
+        values.into_iter().flatten().min()
     }
 
     /// Return an _advisory wait time_ for calling [poll] the next time.
@@ -852,7 +869,7 @@ impl InterfaceInner {
         dst_hardware_addr: EthernetAddress,
         packet: GeonetPacket,
     ) -> Result<(), DispatchError> {
-        let mut gn_repr = packet.geonet_repr();
+        let gn_repr = packet.geonet_repr();
 
         let caps = self.caps.clone();
 
@@ -867,7 +884,7 @@ impl InterfaceInner {
 
         // Emit function for the Ethernet header.
         #[cfg(feature = "medium-ethernet")]
-        let emit_ethernet = |repr: &GeonetRepr, tx_buffer: &mut [u8]| {
+        let emit_ethernet = |tx_buffer: &mut [u8]| {
             let mut frame = EthernetFrame::new_unchecked(tx_buffer);
 
             let src_addr = self.hardware_addr.ethernet_or_panic();
@@ -878,6 +895,8 @@ impl InterfaceInner {
 
         // Emit function for the Geonetworking header and payload.
         let emit_gn = |repr: &GeonetRepr, mut tx_buffer: &mut [u8]| {
+            gn_repr.emit(&mut tx_buffer);
+
             let payload = &mut tx_buffer[repr.header_len()..];
             packet.emit_payload(repr, payload, &caps)
         };
@@ -887,7 +906,7 @@ impl InterfaceInner {
             .consume(total_len, |mut tx_buffer| {
                 #[cfg(feature = "medium-ethernet")]
                 if matches!(self.caps.medium, Medium::Ethernet) {
-                    emit_ethernet(&gn_repr, tx_buffer);
+                    emit_ethernet(tx_buffer);
                     tx_buffer = &mut tx_buffer[EthernetFrame::<&[u8]>::header_len()..];
                 }
 

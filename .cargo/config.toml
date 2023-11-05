@@ -1,0 +1,4 @@
+#[target.aarch64-apple-darwin]
+#rustflags = [
+#  "-C", "link-args=-Wl,-stack_size,0x40000"
+#]

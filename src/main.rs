@@ -3,12 +3,110 @@ pub mod geonet;
 #[macro_use]
 extern crate uom;
 
-use geonet::time::Duration;
-use geonet::types::*;
-use std::io;
-use tokio::net::UdpSocket;
+use geonet::config::GN_DEFAULT_HOP_LIMIT;
+use geonet::iface::{Config, Interface, SocketSet};
+use geonet::network::{GnCore, GnCoreGonfig};
+use geonet::phy::{wait as phy_wait, Medium, RawSocket};
+use geonet::storage::PacketBuffer;
+use geonet::time::Instant;
+use geonet::{socket, time};
+//use geonet::types::*;
+use geonet::wire::{EthernetAddress, GnAddress, StationType};
 
-#[tokio::main]
+//use std::io;
+use std::os::unix::io::AsRawFd;
+
+use crate::geonet::config::{GN_DEFAULT_PACKET_LIFETIME, GN_DEFAULT_TRAFFIC_CLASS};
+use crate::geonet::network::{Request, Transport, UpperProtocol};
+use crate::geonet::time::Duration;
+//use tokio::net::UdpSocket;
+
+fn main() {
+    let ll_addr = EthernetAddress([0x00, 0x0c, 0x6c, 0x0d, 0x14, 0x70]);
+
+    // Configure device
+    let mut device = RawSocket::new("en0", Medium::Ethernet).unwrap();
+    let fd = device.as_raw_fd();
+
+    // Configure interface
+    let mut config = Config::new(ll_addr.into());
+    config.random_seed = 0xfadecafedeadbeef;
+    let mut iface = Interface::new(config, &mut device);
+
+    // Build GnCore
+    let router_addr = GnAddress::new(true, StationType::RoadSideUnit, ll_addr);
+    let router_config = GnCoreGonfig::new(router_addr);
+    let mut router = GnCore::new(router_config, Instant::now());
+
+    // Create socket
+    let gn_rx_buffer = PacketBuffer::new(
+        vec![
+            socket::geonet::RxPacketMetadata::EMPTY,
+            socket::geonet::RxPacketMetadata::EMPTY,
+        ],
+        vec![0; 65535],
+    );
+    let gn_tx_buffer = PacketBuffer::new(
+        vec![
+            socket::geonet::TxPacketMetadata::EMPTY,
+            socket::geonet::TxPacketMetadata::EMPTY,
+        ],
+        vec![0; 65535],
+    );
+    let gn_socket = socket::geonet::Socket::new(gn_rx_buffer, gn_tx_buffer);
+
+    // Add it to a SocketSet
+    let mut sockets = SocketSet::new(vec![]);
+    let gn_handle = sockets.add(gn_socket);
+
+    let mut next_transmit = Instant::now();
+    let mut next_uc_transmit = Instant::now() /* + Duration::from_secs(5) */;
+
+    loop {
+        let timestamp = Instant::now();
+        router.now = timestamp;
+        iface.poll(&mut router, &mut device, &mut sockets);
+        let socket = sockets.get_mut::<socket::geonet::Socket>(gn_handle);
+
+        if timestamp >= next_transmit {
+            let data = [0xfe, 0xbe, 0x1c, 0x09];
+            let req_meta = Request {
+                upper_proto: UpperProtocol::Any,
+                transport: Transport::SingleHopBroadcast,
+                ali_id: (),
+                its_aid: (),
+                max_lifetime: GN_DEFAULT_PACKET_LIFETIME,
+                max_hop_limit: 1,
+                traffic_class: GN_DEFAULT_TRAFFIC_CLASS,
+            };
+            socket.send_slice(&data, req_meta).unwrap();
+            next_transmit = timestamp + Duration::from_secs(10);
+        }
+
+        if timestamp >= next_uc_transmit {
+            let data = [0xbe, 0x1c, 0x90];
+            let req_meta = Request {
+                upper_proto: UpperProtocol::Any,
+                transport: Transport::Unicast(GnAddress::new(
+                    true,
+                    StationType::PassengerCar,
+                    EthernetAddress([0xb0, 0xde, 0x6c, 0x0d, 0x65, 0xfe]),
+                )),
+                ali_id: (),
+                its_aid: (),
+                max_lifetime: GN_DEFAULT_PACKET_LIFETIME,
+                max_hop_limit: GN_DEFAULT_HOP_LIMIT,
+                traffic_class: GN_DEFAULT_TRAFFIC_CLASS,
+            };
+            socket.send_slice(&data, req_meta).unwrap();
+            next_uc_transmit = timestamp + Duration::from_secs(15);
+        }
+
+        phy_wait(fd, iface.poll_delay(timestamp, &sockets)).expect("wait error");
+    }
+}
+
+/* #[tokio::main]
 async fn main() -> io::Result<()> {
     let sock = UdpSocket::bind("0.0.0.0:60000").await?;
     loop {
@@ -79,3 +177,4 @@ async fn main() -> io::Result<()> {
         println!("{:?} bytes sent", len);
     }
 }
+ */

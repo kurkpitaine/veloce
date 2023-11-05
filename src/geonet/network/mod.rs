@@ -10,6 +10,7 @@ use crate::geonet::common::area::Area;
 use crate::geonet::time::Duration;
 use crate::geonet::wire::GnProtocol;
 use crate::geonet::wire::{GnAddress, GnTrafficClass};
+pub use core::Config as GnCoreGonfig;
 pub use core::Core as GnCore;
 pub use request::{AddressableRequest, GeoZonableRequest, HoppableRequest};
 

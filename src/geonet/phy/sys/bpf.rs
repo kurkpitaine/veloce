@@ -17,6 +17,9 @@ const BIOCGBLEN: libc::c_ulong = 0x40044266;
 /// set immediate/nonblocking read
 #[cfg(any(target_os = "macos", target_os = "openbsd"))]
 const BIOCIMMEDIATE: libc::c_ulong = 0x80044270;
+/// disable return of locally generated packets
+#[cfg(any(target_os = "macos", target_os = "openbsd"))]
+const BIOCSSEESENT: libc::c_ulong = 0x80044277;
 /// set bpf_hdr struct size
 #[cfg(target_os = "macos")]
 const SIZEOF_BPF_HDR: usize = 18;
@@ -107,6 +110,8 @@ impl BpfDevice {
     /// if you change the buffer size to the actual MTU of the interface.
     pub fn interface_mtu(&mut self) -> io::Result<usize> {
         let mut bufsize: libc::c_int = 1;
+        let mut disable = 0;
+        try_ioctl!(self.fd, BIOCSSEESENT, &mut disable as *mut libc::c_int);
         try_ioctl!(self.fd, BIOCIMMEDIATE, &mut bufsize as *mut libc::c_int);
         try_ioctl!(self.fd, BIOCGBLEN, &mut bufsize as *mut libc::c_int);
 

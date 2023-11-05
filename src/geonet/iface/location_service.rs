@@ -69,9 +69,28 @@ pub struct LocationService {
 impl LocationService {
     /// Constructs a new [LocationService].
     pub fn new() -> Self {
-        LocationService {
-            ls_requests: Vec::new(),
+        let mut storage = Vec::new();
+        loop {
+            if storage.push(None).is_err() {
+                break;
+            }
         }
+
+        LocationService {
+            ls_requests: storage,
+        }
+    }
+
+    /// Return the minimum time the location service should be polled at.
+    pub(crate) fn poll_at(&self) -> Option<Instant> {
+        self.ls_requests
+            .iter()
+            .flatten()
+            .filter_map(|item| match &item.state {
+                LocationServiceState::Pending(p) => Some(p.retransmit_at),
+                LocationServiceState::Failure(_) => None,
+            })
+            .min()
     }
 
     /// Finds the first free slot available for the Location Service.
@@ -91,6 +110,7 @@ impl LocationService {
     pub fn request(
         &mut self,
         address: GnAddress,
+        timestamp: Instant,
     ) -> Result<LocationServiceRequestHandle, LocationServiceRequestError> {
         let handle = self
             .ls_find_free_handle()
@@ -99,7 +119,7 @@ impl LocationService {
         self.ls_requests[handle.0] = Some(LocationServiceRequest {
             state: LocationServiceState::Pending(LocationServicePendingRequest {
                 address,
-                retransmit_at: Instant::ZERO,
+                retransmit_at: timestamp,
                 attempts: 0,
             }),
         });

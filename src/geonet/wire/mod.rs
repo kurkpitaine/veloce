@@ -59,7 +59,7 @@ pub use self::geonet::{
         Repr as LocationServiceReplyRepr, HEADER_LEN as UNICAST_HEADER_LEN,
         HEADER_LEN as LOCATION_SERVICE_REP_HEADER_LEN,
     },
-    Address as GnAddress, SequenceNumber, TrafficClass as GnTrafficClass,
+    Address as GnAddress, SequenceNumber, StationType, TrafficClass as GnTrafficClass,
 };
 
 pub use self::pc5::Layer2Address as PC5Address;

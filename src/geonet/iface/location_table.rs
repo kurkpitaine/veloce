@@ -114,6 +114,12 @@ impl LocationTable {
         }
     }
 
+    /// Remove the LocationTable entry for the given `ll_addr` [`MacAddress`].
+    /// Return `None` if `ll_addr` is not in the LocationTable.
+    pub fn remove(&mut self, ll_addr: &MacAddress) -> Option<LocationTableEntry> {
+        self.storage.remove(ll_addr)
+    }
+
     /// Finds the LocationTable entry for the given `ll_addr` [`MacAddress`].
     /// Returns a reference on the element.
     pub fn find(&self, ll_addr: &MacAddress) -> Option<&LocationTableEntry> {

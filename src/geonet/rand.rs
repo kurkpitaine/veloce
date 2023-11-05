@@ -30,7 +30,8 @@ impl Rand {
 
         // Normalize number into range.
         let generated = self.rand_u32();
-        generated.wrapping_sub(start) / (end - start)
+        let factor = u32::MAX / end;
+        generated / factor
     }
 
     /// Generates a random u32 integer.

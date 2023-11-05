@@ -1,4 +1,5 @@
 use crate::geonet::iface::SocketSet;
+use crate::geonet::iface::location_service::LocationServiceRequest;
 use crate::geonet::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, SingleHopReqMeta,
     TopoScopedReqMeta, Transport, UnicastReqMeta,
@@ -43,6 +44,8 @@ impl InterfaceInner {
             );
 
             self.retransmit_beacon_at = core.now + GN_BEACON_SERVICE_RETRANSMIT_TIMER + rand_jitter;
+            //println!("self.retransmit_beacon_at = core.now + GN_BEACON_SERVICE_RETRANSMIT_TIMER + rand_jitter");
+            //println!("{} = {} + {} + {}", self.retransmit_beacon_at, core.now, GN_BEACON_SERVICE_RETRANSMIT_TIMER, rand_jitter);
         }
 
         deferred
@@ -1324,68 +1327,74 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
-        for r in svcs.ls.ls_requests.iter_mut().flatten() {
-            match &mut r.state {
-                LocationServiceState::Pending(pr) => {
-                    // Max attempts reached. Query failed.
-                    if pr.attempts > GN_LOCATION_SERVICE_MAX_RETRANS {
-                        r.state = LocationServiceState::Failure(LocationServiceFailedRequest {
-                            address: pr.address,
+        for r in svcs.ls.ls_requests.iter_mut() {
+            if let Some(LocationServiceRequest{state, ..}) = r {
+                match state {
+                    LocationServiceState::Pending(pr) => {
+                        // Max attempts reached. Query failed.
+                        if pr.attempts >= GN_LOCATION_SERVICE_MAX_RETRANS {
+                            *state = LocationServiceState::Failure(LocationServiceFailedRequest {
+                                address: pr.address,
+                            });
+                            continue;
+                        }
+
+                        // Transmission timeout.
+                        if pr.retransmit_at > svcs.core.now {
+                            continue;
+                        }
+
+                        let bh_repr = BasicHeaderRepr {
+                            version: GN_PROTOCOL_VERSION,
+                            next_header: BHNextHeader::CommonHeader,
+                            lifetime: GN_DEFAULT_PACKET_LIFETIME,
+                            remaining_hop_limit: GN_DEFAULT_HOP_LIMIT,
+                        };
+
+                        let ch_repr = CommonHeaderRepr {
+                            next_header: GnProtocol::Any,
+                            header_type: GeonetPacketType::LsRequest,
+                            traffic_class: GN_DEFAULT_TRAFFIC_CLASS,
+                            mobile: GN_IS_MOBILE,
+                            payload_len: 0,
+                            max_hop_limit: GN_DEFAULT_HOP_LIMIT,
+                        };
+
+                        let ls_req_repr = LocationServiceRequestRepr {
+                            sequence_number: sequence_number!(self),
+                            source_position_vector: svcs.core.ego_position_vector(),
+                            request_address: pr.address,
+                        };
+
+                        emit(
+                            self,
+                            svcs.core,
+                            (EthernetAddress::BROADCAST, bh_repr, ch_repr, ls_req_repr),
+                        )?;
+
+                        pr.retransmit_at = svcs.core.now + GN_LOCATION_SERVICE_RETRANSMIT_TIMER;
+                        pr.attempts += 1;
+
+                        break;
+                    }
+                    LocationServiceState::Failure(fr) => {
+                        // Query has failed, remove elements inside the ls buffer.
+                        svcs.ls_buffer.drop_with(|packet_node| {
+                            packet_node
+                                .metadata()
+                                .extended_header
+                                .destination_position_vector
+                                .address
+                                .mac_addr()
+                                == fr.address.mac_addr()
                         });
-                        continue;
+
+                        // Remove location table entry.
+                        self.location_table.remove(&fr.address.mac_addr());
+                        r.take();
                     }
-
-                    // Transmission timeout.
-                    if pr.retransmit_at > svcs.core.now {
-                        continue;
-                    }
-
-                    let bh_repr = BasicHeaderRepr {
-                        version: GN_PROTOCOL_VERSION,
-                        next_header: BHNextHeader::CommonHeader,
-                        lifetime: GN_DEFAULT_PACKET_LIFETIME,
-                        remaining_hop_limit: GN_DEFAULT_HOP_LIMIT,
-                    };
-
-                    let ch_repr = CommonHeaderRepr {
-                        next_header: GnProtocol::Any,
-                        header_type: GeonetPacketType::LsRequest,
-                        traffic_class: GN_DEFAULT_TRAFFIC_CLASS,
-                        mobile: GN_IS_MOBILE,
-                        payload_len: 0,
-                        max_hop_limit: GN_DEFAULT_HOP_LIMIT,
-                    };
-
-                    let ls_req_repr = LocationServiceRequestRepr {
-                        sequence_number: sequence_number!(self),
-                        source_position_vector: svcs.core.ego_position_vector(),
-                        request_address: pr.address,
-                    };
-
-                    emit(
-                        self,
-                        svcs.core,
-                        (EthernetAddress::BROADCAST, bh_repr, ch_repr, ls_req_repr),
-                    )?;
-
-                    pr.retransmit_at += GN_LOCATION_SERVICE_RETRANSMIT_TIMER;
-                    pr.attempts += 1;
-
-                    break;
-                }
-                LocationServiceState::Failure(fr) => {
-                    // Query has failed, remove elements inside the ls buffer.
-                    svcs.ls_buffer.drop_with(|packet_node| {
-                        packet_node
-                            .metadata()
-                            .extended_header
-                            .destination_position_vector
-                            .address
-                            .mac_addr()
-                            == fr.address.mac_addr()
-                    });
-                }
-            };
+                };
+            }
         }
 
         // Nothing to dispatch.
@@ -1494,7 +1503,7 @@ impl InterfaceInner {
             )?;
         } else {
             /* Step 2a: invoke location service for this destination */
-            let Ok(handle) = svcs.ls.request(metadata.destination) else {
+            let Ok(handle) = svcs.ls.request(metadata.destination, svcs.core.now) else {
                 /* Error invoking Location Service. */
                 // TODO: we should return an error.
                 return Ok(());

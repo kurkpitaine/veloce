@@ -11,7 +11,7 @@ pub const GN_IS_MOBILE: bool = false;
 /// Maximum number of Duplicate Packet List (DPL) per source.
 pub const GN_DPL_LENGTH: usize = 8;
 pub const GN_LOCAL_ADDR_CONF_METHOD: GnAddrConfMethod = GnAddrConfMethod::Managed;
-pub const GN_LOC_TABLE_ENTRY_COUNT: usize = 10;
+pub const GN_LOC_TABLE_ENTRY_COUNT: usize = 16;
 pub const GN_LOC_TABLE_ENTRY_LIFETIME: Duration = Duration::from_secs(20);
 /// Beacon packet transmit period.
 pub const GN_BEACON_SERVICE_RETRANSMIT_TIMER: Duration = Duration::from_millis(3000);
