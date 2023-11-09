@@ -10,6 +10,7 @@ description = "A V2x stack for embedded devices"
 [dependencies]
 byteorder = "1.4.3"
 defmt = { version = "0.3.5", optional = true }
+env_logger = "0.10"
 heapless = { path = "../heapless" }
 libc = { version = "0.2.149", optional = true }
 log = { version = "0.4.20", default-features = false, optional = true }
@@ -30,10 +31,10 @@ defmt = ["dep:defmt", "heapless/defmt", "heapless/defmt-impl"]
 "phy-tuntap_interface" = ["std", "libc", "medium-ethernet"]
 
 "proto-geonet" = []
+"proto-map" = ["proto-geonet"]
 "proto-cam" = ["proto-geonet"]
 "proto-denm" = ["proto-geonet"]
 "proto-spat" = ["proto-geonet"]
-"proto-map" = ["proto-geonet"]
 "proto-ivi" = ["proto-geonet"]
 
 "socket" = []

@@ -49,7 +49,7 @@ pub const GN_CBF_PACKET_BUFFER_SIZE: usize = 256 * 1000;
 pub const GN_NON_AREA_FORWARDING_ALGORITHM: GnNonAreaForwardingAlgorithm =
     GnNonAreaForwardingAlgorithm::Greedy;
 /// Area forwarding algorithm executed by the access handlers.
-pub const GN_AREA_FORWARDING_ALGORITHM: GnAreaForwardingAlgorithm = GnAreaForwardingAlgorithm::Cbf;
+pub const GN_AREA_FORWARDING_ALGORITHM: GnAreaForwardingAlgorithm = GnAreaForwardingAlgorithm::Simple;
 
 /// The GeoNetworking protocol Address configuration method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

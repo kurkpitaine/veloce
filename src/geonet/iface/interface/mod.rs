@@ -222,25 +222,25 @@ impl Interface {
         loop {
             let mut did_something = false;
 
-            //println!("socket_ingress");
+            // net_trace!("socket_ingress");
             did_something |= self.socket_ingress(core, device, sockets);
-            //println!("socket_egress");
+            // net_trace!("socket_egress");
             did_something |= self.socket_egress(core, device, sockets);
 
             // Buffered packets inside different buffers are dequeued here after.
             // One call to xx_buffered_egress send ALL the packets marked for flush.
             // This could lead to some packets not being transmitted because of device exhaustion
             // if a large number of packets has to be sent.
-            // println!("ls_buffered_egress");
+            // net_trace!("ls_buffered_egress");
             did_something |= self.ls_buffered_egress(core, device);
-            // println!("uc_buffered_egress");
+            // net_trace!("uc_buffered_egress");
             did_something |= self.uc_buffered_egress(core, device);
-            // println!("bc_buffered_egress");
+            // net_trace!("bc_buffered_egress");
             did_something |= self.bc_buffered_egress(core, device);
 
-            // println!("location_service_egress");
+            // net_trace!("location_service_egress");
             did_something |= self.location_service_egress(core, device);
-            // println!("beacon_service_egress");
+            // net_trace!("beacon_service_egress");
             did_something |= self.beacon_service_egress(core, device);
 
             if did_something {

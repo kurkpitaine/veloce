@@ -1269,6 +1269,8 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
+        net_trace!("dispatch_beacon()");
+
         if self.retransmit_beacon_at > svcs.core.now {
             return Ok(());
         }
@@ -1327,6 +1329,8 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
+        net_trace!("dispatch_ls_request()");
+
         for r in svcs.ls.ls_requests.iter_mut() {
             if let Some(LocationServiceRequest{state, ..}) = r {
                 match state {
@@ -1422,6 +1426,8 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
+        net_trace!("dispatch_unicast()");
+
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1505,6 +1511,7 @@ impl InterfaceInner {
             /* Step 2a: invoke location service for this destination */
             let Ok(handle) = svcs.ls.request(metadata.destination, svcs.core.now) else {
                 /* Error invoking Location Service. */
+                net_trace!("Error invoking Location Service");
                 // TODO: we should return an error.
                 return Ok(());
             };
@@ -1556,6 +1563,8 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
+        net_trace!("dispatch_topo_scoped_broadcast()");
+
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1632,6 +1641,8 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
+        net_trace!("dispatch_single_hop_broadcast()");
+
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1707,6 +1718,8 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
+        net_trace!("dispatch_geo_broadcast()");
+
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1796,6 +1809,7 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
+        net_trace!("dispatch_geo_anycast()");
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1818,8 +1832,8 @@ impl InterfaceInner {
             max_hop_limit: metadata.max_hop_limit,
         };
 
-        /* Step 1c: set the fields of the geo broadcast header */
-        let gbc_repr = GeoBroadcastRepr {
+        /* Step 1c: set the fields of the geo anycast header */
+        let gbc_repr = GeoAnycastRepr {
             source_position_vector: svcs.core.ego_position_vector(),
             sequence_number: sequence_number!(self),
             latitude: metadata.destination.position.latitude,
@@ -1832,7 +1846,7 @@ impl InterfaceInner {
         /* Step 2: check if we should buffer the packet */
         if !self.location_table.has_neighbour() && metadata.traffic_class.store_carry_forward() {
             /* Buffer the packet into the broadcast buffer */
-            let packet_meta = GeonetRepr::new_broadcast(bh_repr, ch_repr, gbc_repr);
+            let packet_meta = GeonetRepr::new_anycast(bh_repr, ch_repr, gbc_repr);
             svcs.bc_forwarding_buffer
                 .enqueue(packet_meta, payload, svcs.core.now)
                 .ok();
@@ -1884,6 +1898,8 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
+        net_trace!("dispatch_ls_buffer()");
+
         svcs.ls_buffer.flush_one(|packet| {
             let expiry = packet.expires_at();
             let meta = packet.metadata();
@@ -1937,6 +1953,8 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
+        net_trace!("dispatch_unicast_buffer()");
+
         svcs.uc_forwarding_buffer.flush_one(|packet| {
             let expiry = packet.expires_at();
             let meta = packet.metadata();
@@ -1980,6 +1998,8 @@ impl InterfaceInner {
             (EthernetAddress, GeonetRepr, &[u8]),
         ) -> Result<(), E>,
     {
+        net_trace!("dispatch_broadcast_buffer()");
+
         svcs.bc_forwarding_buffer.flush_one(|packet| {
             let expiry = packet.expires_at();
             let meta = packet.metadata();

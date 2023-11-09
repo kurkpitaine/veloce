@@ -14,6 +14,8 @@ pub use core::Config as GnCoreGonfig;
 pub use core::Core as GnCore;
 pub use request::{AddressableRequest, GeoZonableRequest, HoppableRequest};
 
+use super::config;
+
 /// Upper protocol type.
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -73,6 +75,20 @@ pub struct Request {
     pub max_hop_limit: u8,
     /// Traffic class.
     pub traffic_class: GnTrafficClass,
+}
+
+impl Default for Request {
+    fn default() -> Self {
+        Self {
+            upper_proto: UpperProtocol::Any,
+            transport: Transport::TopoBroadcast,
+            ali_id: Default::default(),
+            its_aid: Default::default(),
+            max_lifetime: config::GN_DEFAULT_PACKET_LIFETIME,
+            max_hop_limit: config::GN_DEFAULT_HOP_LIMIT,
+            traffic_class: config::GN_DEFAULT_TRAFFIC_CLASS,
+        }
+    }
 }
 
 /// Data indication, aka `TRANSP_CORE.indication` in ETSI

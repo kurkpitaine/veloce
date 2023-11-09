@@ -62,6 +62,12 @@ pub use self::geonet::{
     Address as GnAddress, SequenceNumber, StationType, TrafficClass as GnTrafficClass,
 };
 
+pub use btp::{
+    ports,
+    type_a::{Header as BtpAHeader, Repr as BtpARepr},
+    type_b::{Header as BtpBHeader, Repr as BtpBRepr},
+};
+
 pub use self::pc5::Layer2Address as PC5Address;
 
 mod pc5 {

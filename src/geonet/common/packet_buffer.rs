@@ -167,7 +167,14 @@ where
     where
         F: FnMut(&mut Node<T>) -> bool,
     {
-        self.storage.retain_mut(|node| !f(node))
+        self.storage.retain_mut(|node| {
+            let to_drop = f(node);
+            if to_drop {
+                self.len -= node.size;
+            }
+
+            !to_drop
+        })
     }
 
     /// Mark flushable only the packets specified by the predicate `f`, passing a mutable reference to it.
