@@ -4,8 +4,8 @@ use crate::geonet::wire::{
     BasicHeaderRepr, BeaconHeaderRepr, CommonHeaderRepr, GeoAnycastRepr, GeoBroadcastRepr,
     GeonetBeacon, GeonetGeoAnycast, GeonetGeoBroadcast, GeonetLocationServiceReply,
     GeonetLocationServiceRequest, GeonetRepr, GeonetSingleHop, GeonetTopoBroadcast, GeonetUnicast,
-    LocationServiceReplyRepr, LocationServiceRequestRepr, SingleHopHeaderRepr, TopoBroadcastRepr,
-    UnicastRepr,
+    GnAddress, LocationServiceReplyRepr, LocationServiceRequestRepr, SequenceNumber,
+    SingleHopHeaderRepr, TopoBroadcastRepr, UnicastRepr,
 };
 
 #[allow(clippy::large_enum_variant)]
@@ -315,6 +315,42 @@ impl<'p> GeonetPacket<'p> {
                 packet.common_header,
                 packet.extended_header,
             ),
+        }
+    }
+
+    /// Returns the source Geonetworking address contained inside the packet.
+    pub(crate) fn source_address(&self) -> GnAddress {
+        match self {
+            GeonetPacket::Beacon(p) => p.extended_header.source_position_vector.address,
+            GeonetPacket::Unicast(p) => p.extended_header.source_position_vector.address,
+            GeonetPacket::Anycast(p) => p.extended_header.source_position_vector.address,
+            GeonetPacket::Broadcast(p) => p.extended_header.source_position_vector.address,
+            GeonetPacket::SingleHopBroadcast(p) => p.extended_header.source_position_vector.address,
+            GeonetPacket::TopoBroadcast(p) => p.extended_header.source_position_vector.address,
+            GeonetPacket::LocationServiceRequest(p) => {
+                p.extended_header.source_position_vector.address
+            }
+            GeonetPacket::LocationServiceReply(p) => {
+                p.extended_header.source_position_vector.address
+            }
+        }
+    }
+
+    /// Returns the sequence number the packet.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the packet does not contain a sequence number.
+    pub(crate) fn sequence_number(&self) -> SequenceNumber {
+        match self {
+            GeonetPacket::Beacon(_) => panic!("No sequence number in a Beacon packet!"),
+            GeonetPacket::SingleHopBroadcast(_) => panic!("No sequence number in a SHB packet!"),
+            GeonetPacket::Unicast(p) => p.extended_header.sequence_number,
+            GeonetPacket::Anycast(p) => p.extended_header.sequence_number,
+            GeonetPacket::Broadcast(p) => p.extended_header.sequence_number,
+            GeonetPacket::TopoBroadcast(p) => p.extended_header.sequence_number,
+            GeonetPacket::LocationServiceRequest(p) => p.extended_header.sequence_number,
+            GeonetPacket::LocationServiceReply(p) => p.extended_header.sequence_number,
         }
     }
 

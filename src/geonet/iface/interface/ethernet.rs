@@ -21,6 +21,7 @@ impl InterfaceInner {
         EthernetPacket<'frame>,
     )> {
         let eth_frame = check!(EthernetFrame::new_checked(frame));
+        let eth_repr = check!(EthernetRepr::parse(&eth_frame));
 
         // Ignore any packets not directed to our hardware address or any of the multicast groups.
         if !eth_frame.dst_addr().is_broadcast()
@@ -33,7 +34,7 @@ impl InterfaceInner {
         match eth_frame.ethertype() {
             #[cfg(feature = "proto-geonet")]
             EthernetProtocol::Geonet => self
-                .process_geonet_packet(srv, sockets, &eth_frame.payload(), eth_frame.src_addr())
+                .process_geonet_packet(srv, sockets, &eth_frame.payload(), eth_repr)
                 .map(|e| (e.0, e.1, EthernetPacket::Geonet(e.2))),
             // Drop all other traffic.
             _ => None,

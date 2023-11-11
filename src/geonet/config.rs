@@ -4,6 +4,8 @@ use core::fmt;
 
 /// Maximum number of access handlers.
 pub const VELOCE_MAX_ACCESS_HANDLER_COUNT: usize = 2;
+/// Maximum number of retransmissions used in area advanced forwarding.
+pub const VELOCE_CBF_MAX_RETRANSMIT: u8 = 2;
 /// Geonetworking protocol version supported by Veloce.
 pub const GN_PROTOCOL_VERSION: u8 = 1;
 /// Flag indicating wether the station could move.
@@ -45,11 +47,21 @@ pub const GN_BC_FORWARDING_PACKET_BUFFER_SIZE: usize = 1024 * 1000;
 pub const GN_BC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
 /// Maximum size of the contention routing buffer.
 pub const GN_CBF_PACKET_BUFFER_SIZE: usize = 256 * 1000;
+/// Maximum number of elements in the broadcast buffer.
+pub const GN_CBF_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
 /// Non area forwarding algorithm executed by the access handlers.
 pub const GN_NON_AREA_FORWARDING_ALGORITHM: GnNonAreaForwardingAlgorithm =
     GnNonAreaForwardingAlgorithm::Greedy;
 /// Area forwarding algorithm executed by the access handlers.
-pub const GN_AREA_FORWARDING_ALGORITHM: GnAreaForwardingAlgorithm = GnAreaForwardingAlgorithm::Simple;
+pub const GN_AREA_FORWARDING_ALGORITHM: GnAreaForwardingAlgorithm = GnAreaForwardingAlgorithm::Cbf;
+/// Minimum duration a GN packet shall be buffered in the CBF packet buffer.
+pub const GN_CBF_MIN_TIME: Duration = Duration::from_millis(1);
+/// Maximum duration a GN packet shall be buffered in the CBF packet buffer.
+pub const GN_CBF_MAX_TIME: Duration = Duration::from_millis(100);
+/// Default theoretical maximum communication range in meters.
+pub const GN_DEFAULT_MAX_COMMUNICATION_RANGE: f32 = 1000.0;
+/// Default threshold angle for area advanced forwarding algorithm in degrees.
+pub const GN_BROADCAST_CBF_DEF_SECTOR_ANGLE: f32 = 30.0;
 
 /// The GeoNetworking protocol Address configuration method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

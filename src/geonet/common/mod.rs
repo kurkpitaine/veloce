@@ -1,7 +1,7 @@
-/// Common data structures shared in the Geonetworking router.
+pub use cbf_buffer::{ContentionBuffer, CbfIdentifier, Node as CbfBufferNode};
 pub use packet_buffer::{BufferMeta as PacketBufferMeta, Node as PacketBufferNode, PacketBuffer};
 
 pub mod area;
-//pub mod packet;
+mod cbf_buffer;
 mod packet_buffer;
 mod wgs;

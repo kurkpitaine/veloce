@@ -3,25 +3,37 @@ use heapless::linked_list::{LinkedIndexUsize, LinkedList};
 
 use crate::geonet::config::GN_MAX_SDU_SIZE;
 use crate::geonet::time::{Duration, Instant};
+use crate::geonet::wire::{EthernetAddress, GnAddress, SequenceNumber};
 
-/// Trait stored metadata structures must implement.
-pub trait BufferMeta {
-    fn size(&self) -> usize;
-    fn lifetime(&self) -> Duration;
-}
+use super::packet_buffer::BufferMeta;
+
+/// Packet identifier inside CBF buffer.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct CbfIdentifier(pub GnAddress, pub SequenceNumber);
 
 pub const PAYLOAD_MAX_SIZE: usize = GN_MAX_SDU_SIZE;
 
-/// Packet buffer node.
+/// CBF buffer node.
 #[derive(Debug)]
 pub struct Node<T>
 where
     T: BufferMeta,
 {
+    /// CBF packet identifier.
+    cbf_identifier: CbfIdentifier,
+    /// CBF timer expiration time.
+    pub cbf_expires_at: Instant,
+    /// CBF retransmit counter.
+    pub cbf_counter: u8,
+    /// Sender Mac Address.
+    sender: EthernetAddress,
+    /// Size of the packet, headers including payload.
     size: usize,
+    /// Time at which the packet lifetime expires.
     expires_at: Instant,
-    flushable: bool,
+    /// Packet headers, without payload.
     metadata: T,
+    /// Packet payload.
     payload: [u8; PAYLOAD_MAX_SIZE],
 }
 
@@ -31,6 +43,16 @@ where
 {
     pub const fn payload_max_size() -> usize {
         PAYLOAD_MAX_SIZE
+    }
+
+    /// CBF packet identifier inside buffer.
+    pub fn cbf_identifier(&self) -> CbfIdentifier {
+        self.cbf_identifier
+    }
+
+    /// Sender of the packet.
+    pub fn sender(&self) -> EthernetAddress {
+        self.sender
     }
 
     /// Accessor to metadata.
@@ -51,7 +73,7 @@ where
 
 /// Generic packet buffer.
 #[derive(Debug)]
-pub struct PacketBuffer<T, const N: usize, const C: usize>
+pub struct ContentionBuffer<T, const N: usize, const C: usize>
 where
     T: BufferMeta,
 {
@@ -61,18 +83,21 @@ where
     capacity: usize,
     /// Used length in buffer in bytes.
     len: usize,
+    /// Instant at which to poll the buffer.
+    poll_at: Option<Instant>,
 }
 
-impl<T, const N: usize, const C: usize> PacketBuffer<T, N, C>
+impl<T, const N: usize, const C: usize> ContentionBuffer<T, N, C>
 where
     T: BufferMeta,
 {
     /// Builds a new `packet buffer`.
-    pub fn new() -> PacketBuffer<T, N, C> {
-        PacketBuffer {
+    pub fn new() -> ContentionBuffer<T, N, C> {
+        ContentionBuffer {
             storage: LinkedList::new_usize(),
             capacity: C,
             len: 0,
+            poll_at: None,
         }
     }
 
@@ -92,7 +117,10 @@ where
         &mut self,
         meta: T,
         payload: &[u8],
+        cbf_id: CbfIdentifier,
+        cbf_timer: Duration,
         timestamp: Instant,
+        sender: EthernetAddress,
     ) -> Result<(), PacketBufferError> {
         // Check payload length vs Node payload capacity.
         if payload.len() > Node::<T>::payload_max_size() {
@@ -100,9 +128,12 @@ where
         }
 
         let mut node = Node {
+            cbf_identifier: cbf_id,
+            cbf_expires_at: timestamp + cbf_timer,
+            cbf_counter: 1,
+            sender,
             size: meta.size(),
             expires_at: timestamp + meta.lifetime(),
-            flushable: false,
             metadata: meta,
             payload: [0; PAYLOAD_MAX_SIZE],
         };
@@ -114,14 +145,13 @@ where
         self.push(node, timestamp)
             .map_err(|_| PacketBufferError::PacketTooBig)?;
 
+        self.update_poll();
+
         Ok(())
     }
 
     /// Push a new element in the buffer.
     fn push(&mut self, node: Node<T>, timestamp: Instant) -> Result<(), TooBig> {
-        // Remove expired packets.
-        self.drop_expired(timestamp);
-
         // Check packet could fit in the buffer
         if node.size > self.capacity() {
             return Err(TooBig);
@@ -151,18 +181,6 @@ where
         Ok(())
     }
 
-    /// Drop expired packets.
-    fn drop_expired(&mut self, timestamp: Instant) {
-        self.storage.retain(|node| {
-            let expired = node.expires_at >= timestamp;
-            if expired {
-                self.len -= node.size;
-            }
-
-            !expired
-        });
-    }
-
     /// Drops only the packets where the predicate is true
     pub fn drop_with<F>(&mut self, mut f: F)
     where
@@ -178,33 +196,46 @@ where
         })
     }
 
-    /// Mark flushable only the packets specified by the predicate `f`, passing a mutable reference to it.
-    /// Expired packets are ignored and dropped.
-    /// This method marks the specified packets as ready to flush. Packets are removed from buffer
-    /// when [flush_one] is called.
-    pub fn mark_flush<F>(&mut self, timestamp: Instant, mut f: F)
-    where
-        F: FnMut(&mut Node<T>) -> bool,
-    {
-        self.storage.retain_mut(|node| {
-            // Filter expired packets
-            if node.expires_at >= timestamp {
-                self.len -= node.size;
-                return false;
+    /// Removes packet identified by `id` from CBF buffer.
+    /// Returns `true` if the packet was in the buffer.
+    pub fn remove(&mut self, id: CbfIdentifier) -> bool {
+        match self.storage.find_mut(|n| n.cbf_identifier == id) {
+            Some(p) => {
+                p.pop();
+                self.update_poll();
+                true
             }
-            if f(node) {
-                node.flushable = true;
-            }
-            true
-        });
+            None => false,
+        }
     }
 
-    /// Flush one packet marked as flushable from the buffer.
-    pub fn flush_one<F, E>(&mut self, f: F) -> Option<Result<(), E>>
+    /// Find an element identified by `id` that can be popped.
+    /// Returns `true` if an element has been popped.
+    pub fn pop_if<F>(&mut self, id: CbfIdentifier, f: F) -> Option<bool>
+    where
+        F: FnOnce(&mut Node<T>) -> bool,
+    {
+        let Some(mut fm) = self.storage.find_mut(|n| n.cbf_identifier == id) else {
+            return None;
+        };
+
+        let rc = if f(fm.deref_mut()) {
+            fm.pop();
+            Some(true)
+        } else {
+            Some(false)
+        };
+
+        self.update_poll();
+        rc
+    }
+
+    /// Dequeue one packet whose CBF timer has expired.
+    pub fn dequeue_expired<F, E>(&mut self, timestamp: Instant, f: F) -> Option<Result<(), E>>
     where
         F: FnOnce(&mut Node<T>) -> Result<(), E>,
     {
-        let Some(mut fm) = self.storage.find_mut(|e| e.flushable) else {
+        let Some(mut fm) = self.storage.find_mut(|e| e.cbf_expires_at >= timestamp) else {
             return None;
         };
 
@@ -212,6 +243,16 @@ where
         fm.pop();
 
         Some(rc)
+    }
+
+    /// Update polling Instant of the buffer.
+    fn update_poll(&mut self) {
+        self.poll_at = self.storage.iter().map(|e| e.cbf_expires_at).min();
+    }
+
+    /// Return the Instant the contention buffer should be polled at.
+    pub fn poll_at(&self) -> Option<Instant> {
+        self.poll_at
     }
 }
 

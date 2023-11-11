@@ -93,6 +93,13 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
         let data = self.buffer.as_mut();
         NetworkEndian::write_u16(&mut data[field::DST_PORT_INFO], value);
     }
+
+    /// Return a mutable pointer to the payload.
+    #[inline]
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        let data = self.buffer.as_mut();
+        &mut data[HEADER_LEN..]
+    }
 }
 
 /// A high-level representation of a BTP-B header.

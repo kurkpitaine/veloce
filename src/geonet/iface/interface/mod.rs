@@ -6,18 +6,18 @@ mod ethernet;
 #[cfg(feature = "proto-geonet")]
 mod geonet;
 
-use core::cmp;
-
-use super::location_service::{LocationService, LocationServiceState};
+use super::location_service::LocationService;
 use super::location_table::LocationTable;
 use super::v2x_packet::*;
 
 use super::socket_set::SocketSet;
 
-use crate::geonet::common::PacketBuffer;
+use crate::geonet::common::{ContentionBuffer, PacketBuffer};
 use crate::geonet::config::{
     GN_BC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT as BC_BUF_ENTRY_NUM,
     GN_BC_FORWARDING_PACKET_BUFFER_SIZE as BC_BUF_SIZE,
+    GN_CBF_PACKET_BUFFER_ENTRY_COUNT as CBF_BUF_ENTRY_NUM,
+    GN_CBF_PACKET_BUFFER_SIZE as CBF_BUF_SIZE,
     GN_LOCATION_SERVICE_PACKET_BUFFER_ENTRY_COUNT as LS_BUF_ENTRY_NUM,
     GN_LOCATION_SERVICE_PACKET_BUFFER_SIZE as LS_BUF_SIZE,
     GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT as UC_BUF_ENTRY_NUM,
@@ -68,6 +68,7 @@ use sequence_number;
 type LsBuffer = PacketBuffer<GeonetUnicast, LS_BUF_ENTRY_NUM, LS_BUF_SIZE>;
 type UcBuffer = PacketBuffer<GeonetUnicast, UC_BUF_ENTRY_NUM, UC_BUF_SIZE>;
 type BcBuffer = PacketBuffer<GeonetRepr, BC_BUF_ENTRY_NUM, BC_BUF_SIZE>;
+type CbfBuffer = ContentionBuffer<GeonetRepr, CBF_BUF_ENTRY_NUM, CBF_BUF_SIZE>;
 
 /// A network interface.
 ///
@@ -90,6 +91,9 @@ pub struct Interface {
     /// Broadcast forwarding packet buffer.
     #[cfg(feature = "proto-geonet")]
     bc_forwarding_buffer: BcBuffer,
+    /// Contention Based forwarding packet buffer.
+    #[cfg(feature = "proto-geonet")]
+    cb_forwarding_buffer: CbfBuffer,
 }
 
 /// The device independent part of an access interface.
@@ -156,6 +160,8 @@ pub struct InterfaceServices<'a> {
     pub uc_forwarding_buffer: &'a mut UcBuffer,
     /// Broadcast forwarding packet buffer.
     pub bc_forwarding_buffer: &'a mut BcBuffer,
+    /// Contention Based forwarding packet buffer.
+    pub cb_forwarding_buffer: &'a mut CbfBuffer,
 }
 
 impl Interface {
@@ -185,6 +191,7 @@ impl Interface {
             ls_buffer: PacketBuffer::new(),
             uc_forwarding_buffer: PacketBuffer::new(),
             bc_forwarding_buffer: PacketBuffer::new(),
+            cb_forwarding_buffer: ContentionBuffer::new(),
             inner: InterfaceInner {
                 caps,
                 hardware_addr: config.hardware_addr,
@@ -237,6 +244,8 @@ impl Interface {
             did_something |= self.uc_buffered_egress(core, device);
             // net_trace!("bc_buffered_egress");
             did_something |= self.bc_buffered_egress(core, device);
+            // net_trace!("cb_buffered_egress");
+            did_something |= self.cb_buffered_egress(core, device);
 
             // net_trace!("location_service_egress");
             did_something |= self.location_service_egress(core, device);
@@ -265,8 +274,8 @@ impl Interface {
         let inner = &mut self.inner;
 
         let beacon_timeout = Some(inner.retransmit_beacon_at);
-
         let ls_timeout = self.location_service.poll_at();
+        let cbf_timeout = self.cb_forwarding_buffer.poll_at();
 
         let sockets_timeout = sockets
             .items()
@@ -280,7 +289,7 @@ impl Interface {
             })
             .min();
 
-        let values = [beacon_timeout, ls_timeout, sockets_timeout];
+        let values = [beacon_timeout, ls_timeout, cbf_timeout, sockets_timeout];
         values.into_iter().flatten().min()
     }
 
@@ -319,6 +328,7 @@ impl Interface {
                 ls_buffer: &mut self.ls_buffer,
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+                cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
             };
 
             rx_token.consume(|frame| {
@@ -388,6 +398,7 @@ impl Interface {
                 ls_buffer: &mut self.ls_buffer,
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+                cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
             };
 
             let result = match &mut item.socket {
@@ -455,6 +466,7 @@ impl Interface {
             ls_buffer: &mut self.ls_buffer,
             uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
             bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+            cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
         };
 
         let result = self.inner.dispatch_beacon(
@@ -518,6 +530,7 @@ impl Interface {
             ls_buffer: &mut self.ls_buffer,
             uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
             bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+            cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
         };
 
         let result = self.inner.dispatch_ls_request(
@@ -582,6 +595,7 @@ impl Interface {
                 ls_buffer: &mut self.ls_buffer,
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+                cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
             };
 
             let dequeued_some = self.inner.dispatch_ls_buffer(
@@ -660,6 +674,7 @@ impl Interface {
                 ls_buffer: &mut self.ls_buffer,
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+                cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
             };
 
             let dequeued_some = self.inner.dispatch_unicast_buffer(
@@ -718,7 +733,7 @@ impl Interface {
                            dst_ll_addr: EthernetAddress,
                            response: GeonetPacket| {
             let t = device.transmit(core.now).ok_or_else(|| {
-                net_debug!("failed to transmit unicast buffered packet: device exhausted");
+                net_debug!("failed to transmit broadcast buffered packet: device exhausted");
                 EgressError::Exhausted
             })?;
 
@@ -738,6 +753,7 @@ impl Interface {
                 ls_buffer: &mut self.ls_buffer,
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+                cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
             };
 
             let dequeued_some = self.inner.dispatch_broadcast_buffer(
@@ -786,7 +802,104 @@ impl Interface {
                     break;
                 }
                 Err(EgressError::Dispatch(_)) => {
-                    net_debug!("failed to transmit unicast buffered packet: dispatch error");
+                    net_debug!("failed to transmit broadcast buffered packet: dispatch error");
+                    break;
+                }
+                Ok(()) => {}
+            }
+        }
+
+        emitted_any
+    }
+
+    #[cfg(feature = "proto-geonet")]
+    fn cb_buffered_egress<D>(&mut self, core: &mut GnCore, device: &mut D) -> bool
+    where
+        D: Device + ?Sized,
+    {
+        enum EgressError {
+            Exhausted,
+            Dispatch(DispatchError),
+        }
+
+        let mut emitted_any = false;
+
+        let mut respond = |inner: &mut InterfaceInner,
+                           core: &mut GnCore,
+                           meta: PacketMeta,
+                           dst_ll_addr: EthernetAddress,
+                           response: GeonetPacket| {
+            let t = device.transmit(core.now).ok_or_else(|| {
+                net_debug!("failed to transmit contention buffered packet: device exhausted");
+                EgressError::Exhausted
+            })?;
+
+            inner
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                .map_err(EgressError::Dispatch)?;
+
+            emitted_any = true;
+
+            Ok(())
+        };
+
+        loop {
+            let srv = InterfaceServices {
+                core,
+                ls: &mut self.location_service,
+                ls_buffer: &mut self.ls_buffer,
+                uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
+                bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+                cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
+            };
+
+            let dequeued_some = self.inner.dispatch_contention_buffer(
+                srv,
+                |inner, core, (dst_ll_addr, gn_repr, raw)| {
+                    let response = match gn_repr {
+                        GeonetRepr::Anycast(p) => GeonetPacket::new_anycast(
+                            p.basic_header,
+                            p.common_header,
+                            p.extended_header,
+                            GeonetPayload::Raw(raw),
+                        ),
+                        GeonetRepr::Broadcast(p) => GeonetPacket::new_broadcast(
+                            p.basic_header,
+                            p.common_header,
+                            p.extended_header,
+                            GeonetPayload::Raw(raw),
+                        ),
+                        GeonetRepr::SingleHopBroadcast(p) => {
+                            GeonetPacket::new_single_hop_broadcast(
+                                p.basic_header,
+                                p.common_header,
+                                p.extended_header,
+                                GeonetPayload::Raw(raw),
+                            )
+                        }
+                        GeonetRepr::TopoBroadcast(p) => GeonetPacket::new_topo_scoped_broadcast(
+                            p.basic_header,
+                            p.common_header,
+                            p.extended_header,
+                            GeonetPayload::Raw(raw),
+                        ),
+                        _ => unreachable!(), // No other packet type.
+                    };
+                    respond(inner, core, PacketMeta::default(), dst_ll_addr, response)
+                },
+            );
+
+            let Some(result) = dequeued_some else {
+                break;
+            };
+
+            match result {
+                Err(EgressError::Exhausted) => {
+                    // Device buffer full.
+                    break;
+                }
+                Err(EgressError::Dispatch(_)) => {
+                    net_debug!("failed to transmit contention buffered packet: dispatch error");
                     break;
                 }
                 Ok(()) => {}

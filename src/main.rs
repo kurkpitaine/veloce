@@ -5,34 +5,29 @@ use log::trace;
 #[macro_use]
 extern crate uom;
 
-use geonet::config::GN_DEFAULT_HOP_LIMIT;
+use geonet::common::area::{Area, Circle, GeoPosition, Shape};
 use geonet::iface::{Config, Interface, SocketSet};
-use geonet::network::{GnCore, GnCoreGonfig};
+use geonet::network::{GnCore, GnCoreGonfig, Request, Transport};
 use geonet::phy::{wait as phy_wait, Medium, RawSocket};
 use geonet::storage::PacketBuffer;
-use geonet::time::Instant;
-use geonet::types::{degree, meter};
+use geonet::time::{Duration, Instant};
+use geonet::types::{degree, meter, Distance, Latitude};
 use geonet::utils;
-use geonet::wire::{EthernetAddress, GnAddress, StationType};
+use geonet::wire::{BtpBHeader, EthernetAddress, GnAddress, StationType};
 use geonet::{socket, time};
 use uom::si::f32::Angle;
 
-//use std::io;
 use std::os::unix::io::AsRawFd;
 
-use crate::geonet::common::area::{Area, Circle, GeoPosition, Shape};
-use crate::geonet::config::{GN_DEFAULT_PACKET_LIFETIME, GN_DEFAULT_TRAFFIC_CLASS};
-use crate::geonet::network::{Request, Transport, UpperProtocol};
-use crate::geonet::time::Duration;
-use crate::geonet::types::{Distance, Latitude};
-//use tokio::net::UdpSocket;
+use crate::geonet::network::UpperProtocol;
+use crate::geonet::wire::{btp, BtpBRepr};
 
 fn main() {
     utils::setup_logging("trace");
     let ll_addr = EthernetAddress([0x00, 0x0c, 0x6c, 0x0d, 0x14, 0x70]);
 
     // Configure device
-    let mut device = RawSocket::new("en7", Medium::Ethernet).unwrap();
+    let mut device = RawSocket::new("en0", Medium::Ethernet).unwrap();
     let fd = device.as_raw_fd();
 
     // Configure interface
@@ -121,7 +116,17 @@ fn main() {
         if timestamp >= next_gbc_transmit {
             trace!("next_gbc_transmit");
             let data = [0xfe, 0x1e, 0xe7];
+            let mut buf = [0u8; 7];
+            let mut btp_hdr = BtpBHeader::new_unchecked(&mut buf);
+            let btp_repr = BtpBRepr {
+                dst_port: btp::ports::CAM,
+                dst_port_info: 0,
+            };
+            btp_repr.emit(&mut btp_hdr);
+            btp_hdr.payload_mut().copy_from_slice(&data);
+
             let req_meta = Request {
+                upper_proto: UpperProtocol::BtpB,
                 transport: Transport::Broadcast(Area {
                     shape: Shape::Circle(Circle {
                         radius: Distance::new::<meter>(500.0),
@@ -136,7 +141,7 @@ fn main() {
                 }),
                 ..Default::default()
             };
-            socket.send_slice(&data, req_meta).unwrap();
+            socket.send_slice(&buf, req_meta).unwrap();
             next_gbc_transmit = timestamp + Duration::from_secs(7);
         }
 

@@ -1,9 +1,19 @@
-use crate::geonet::iface::SocketSet;
+use uom::si::angle::{degree, radian};
+use uom::si::f32::{Angle, Length};
+use uom::si::length::meter;
+
+use crate::geonet::common::CbfIdentifier;
+use crate::geonet::config::{
+    GN_BROADCAST_CBF_DEF_SECTOR_ANGLE, GN_CBF_MAX_TIME, GN_CBF_MIN_TIME,
+    GN_DEFAULT_MAX_COMMUNICATION_RANGE, VELOCE_CBF_MAX_RETRANSMIT,
+};
 use crate::geonet::iface::location_service::LocationServiceRequest;
+use crate::geonet::iface::SocketSet;
 use crate::geonet::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, SingleHopReqMeta,
     TopoScopedReqMeta, Transport, UnicastReqMeta,
 };
+use crate::geonet::wire::EthernetRepr;
 use crate::geonet::{
     common::area::{Area, DistanceAB, Shape},
     config::{
@@ -57,13 +67,13 @@ impl InterfaceInner {
         svcs: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
         gn_packet: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) -> Option<(
         InterfaceServices<'svcs>,
         EthernetAddress,
         GeonetPacket<'packet>,
     )> {
-        self.process_basic_header(svcs, sockets, gn_packet, snd_addr)
+        self.process_basic_header(svcs, sockets, gn_packet, link_layer)
     }
 
     /// Processes the Basic Header of a Geonetworking packet.
@@ -72,7 +82,7 @@ impl InterfaceInner {
         svcs: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
         gn_packet: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) -> Option<(
         InterfaceServices<'svcs>,
         EthernetAddress,
@@ -92,7 +102,7 @@ impl InterfaceInner {
 
         match bh_repr.next_header {
             BHNextHeader::Any | BHNextHeader::CommonHeader => {
-                self.process_common_header(svcs, sockets, bh_repr, bh.payload(), snd_addr)
+                self.process_common_header(svcs, sockets, bh_repr, bh.payload(), link_layer)
             }
             BHNextHeader::SecuredHeader => todo!(),
             BHNextHeader::Unknown(_) => {
@@ -109,7 +119,7 @@ impl InterfaceInner {
         sockets: &mut SocketSet,
         bh_repr: BasicHeaderRepr,
         bh_payload: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) -> Option<(
         InterfaceServices<'svcs>,
         EthernetAddress,
@@ -134,32 +144,32 @@ impl InterfaceInner {
                 return None;
             }
             GeonetPacketType::Beacon => {
-                self.process_beacon(svcs, bh_repr, ch_repr, ch_payload, snd_addr)
+                self.process_beacon(svcs, bh_repr, ch_repr, ch_payload, link_layer)
             }
             GeonetPacketType::GeoUnicast => {
-                self.process_unicast(svcs, sockets, bh_repr, ch_repr, ch_payload, snd_addr)
+                self.process_unicast(svcs, sockets, bh_repr, ch_repr, ch_payload, link_layer)
             }
             GeonetPacketType::GeoAnycastCircle
             | GeonetPacketType::GeoAnycastRect
             | GeonetPacketType::GeoAnycastElip => {
-                self.process_geo_anycast(svcs, sockets, bh_repr, ch_repr, ch_payload, snd_addr)
+                self.process_geo_anycast(svcs, sockets, bh_repr, ch_repr, ch_payload, link_layer)
             }
             GeonetPacketType::GeoBroadcastCircle
             | GeonetPacketType::GeoBroadcastRect
             | GeonetPacketType::GeoBroadcastElip => {
-                self.process_geo_broadcast(svcs, sockets, bh_repr, ch_repr, ch_payload, snd_addr)
+                self.process_geo_broadcast(svcs, sockets, bh_repr, ch_repr, ch_payload, link_layer)
             }
             GeonetPacketType::TsbSingleHop => self.process_single_hop_broadcast(
-                svcs, sockets, bh_repr, ch_repr, ch_payload, snd_addr,
+                svcs, sockets, bh_repr, ch_repr, ch_payload, link_layer,
             ),
             GeonetPacketType::TsbMultiHop => self.process_topo_scoped_broadcast(
-                svcs, sockets, bh_repr, ch_repr, ch_payload, snd_addr,
+                svcs, sockets, bh_repr, ch_repr, ch_payload, link_layer,
             ),
             GeonetPacketType::LsRequest => {
-                self.process_ls_request(svcs, bh_repr, ch_repr, ch_payload, snd_addr)
+                self.process_ls_request(svcs, bh_repr, ch_repr, ch_payload, link_layer)
             }
             GeonetPacketType::LsReply => {
-                self.process_ls_reply(svcs, bh_repr, ch_repr, ch_payload, snd_addr)
+                self.process_ls_reply(svcs, bh_repr, ch_repr, ch_payload, link_layer)
             }
             GeonetPacketType::Unknown(u) => {
                 net_trace!("network: discard 'Unknown={}' packet type", u);
@@ -175,7 +185,7 @@ impl InterfaceInner {
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) -> Option<(
         InterfaceServices<'svcs>,
         EthernetAddress,
@@ -187,8 +197,10 @@ impl InterfaceInner {
         // TODO: check if payload length is 0.
 
         /* Step 3: perform duplicate address detection. */
-        svcs.core
-            .duplicate_address_detection(snd_addr, beacon_repr.source_position_vector.address);
+        svcs.core.duplicate_address_detection(
+            link_layer.src_addr,
+            beacon_repr.source_position_vector.address,
+        );
 
         /* Step 4: update Location table */
         let entry = self
@@ -240,7 +252,7 @@ impl InterfaceInner {
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) -> Option<(
         InterfaceServices<'svcs>,
         EthernetAddress,
@@ -264,8 +276,10 @@ impl InterfaceInner {
         }
 
         /* Step 4: perform duplicate address detection. */
-        svcs.core
-            .duplicate_address_detection(snd_addr, ls_req_repr.source_position_vector.address);
+        svcs.core.duplicate_address_detection(
+            link_layer.src_addr,
+            ls_req_repr.source_position_vector.address,
+        );
 
         /* Step 5-6: add/update location table */
         let entry = self
@@ -397,7 +411,7 @@ impl InterfaceInner {
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) -> Option<(
         InterfaceServices<'svcs>,
         EthernetAddress,
@@ -424,8 +438,10 @@ impl InterfaceInner {
             }
 
             /* Step 3: perform duplicate address detection. */
-            svcs.core
-                .duplicate_address_detection(snd_addr, ls_rep_repr.source_position_vector.address);
+            svcs.core.duplicate_address_detection(
+                link_layer.src_addr,
+                ls_rep_repr.source_position_vector.address,
+            );
 
             /* Step 4: update Location table */
             let entry = self
@@ -478,7 +494,7 @@ impl InterfaceInner {
                 ch_repr,
                 ls_rep_repr,
                 ls_rep.payload(),
-                snd_addr,
+                link_layer,
             )
         }
     }
@@ -491,7 +507,7 @@ impl InterfaceInner {
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) -> Option<(
         InterfaceServices<'svcs>,
         EthernetAddress,
@@ -501,8 +517,10 @@ impl InterfaceInner {
         let shb_repr = check!(SingleHopHeaderRepr::parse(&shb));
 
         /* Step 3: perform duplicate address detection. */
-        svcs.core
-            .duplicate_address_detection(snd_addr, shb_repr.source_position_vector.address);
+        svcs.core.duplicate_address_detection(
+            link_layer.src_addr,
+            shb_repr.source_position_vector.address,
+        );
 
         let ls_pending = {
             /* Step 4: update Location table */
@@ -575,7 +593,7 @@ impl InterfaceInner {
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) -> Option<(
         InterfaceServices<'svcs>,
         EthernetAddress,
@@ -595,8 +613,10 @@ impl InterfaceInner {
         }
 
         /* Step 4: perform duplicate address detection. */
-        svcs.core
-            .duplicate_address_detection(snd_addr, tsb_repr.source_position_vector.address);
+        svcs.core.duplicate_address_detection(
+            link_layer.src_addr,
+            tsb_repr.source_position_vector.address,
+        );
 
         let ls_pending = {
             /* Step 5-6: update Location table */
@@ -705,7 +725,7 @@ impl InterfaceInner {
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) -> Option<(
         InterfaceServices<'svcs>,
         EthernetAddress,
@@ -724,11 +744,11 @@ impl InterfaceInner {
                 ch_repr,
                 uc_repr,
                 uc.payload(),
-                snd_addr,
+                link_layer,
             );
             None
         } else {
-            self.forward_unicast(svcs, bh_repr, ch_repr, uc_repr, uc.payload(), snd_addr)
+            self.forward_unicast(svcs, bh_repr, ch_repr, uc_repr, uc.payload(), link_layer)
         }
     }
 
@@ -740,7 +760,7 @@ impl InterfaceInner {
         ch_repr: CommonHeaderRepr,
         uc_repr: UnicastRepr,
         payload: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) -> Option<(
         InterfaceServices<'svcs>,
         EthernetAddress,
@@ -788,8 +808,10 @@ impl InterfaceInner {
         };
 
         /* Step 3: perform duplicate address detection. */
-        svcs.core
-            .duplicate_address_detection(snd_addr, uc_repr.source_position_vector.address);
+        svcs.core.duplicate_address_detection(
+            link_layer.src_addr,
+            uc_repr.source_position_vector.address,
+        );
 
         /* Step 4: update Location table */
         let entry = self
@@ -888,7 +910,7 @@ impl InterfaceInner {
         ch_repr: CommonHeaderRepr,
         uc_repr: UnicastRepr,
         payload: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) {
         /* Step 3: duplicate packet detection */
         let dup_opt = self.location_table.duplicate_packet_detection(
@@ -901,8 +923,10 @@ impl InterfaceInner {
         }
 
         /* Step 4: perform duplicate address detection */
-        svcs.core
-            .duplicate_address_detection(snd_addr, uc_repr.source_position_vector.address);
+        svcs.core.duplicate_address_detection(
+            link_layer.src_addr,
+            uc_repr.source_position_vector.address,
+        );
 
         /* Step 5-6: update Location table */
         let entry = self
@@ -971,7 +995,7 @@ impl InterfaceInner {
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) -> Option<(
         InterfaceServices<'svcs>,
         EthernetAddress,
@@ -999,8 +1023,10 @@ impl InterfaceInner {
         }
 
         /* Step 4: perform duplicate address detection. */
-        svcs.core
-            .duplicate_address_detection(snd_addr, gbc_repr.source_position_vector.address);
+        svcs.core.duplicate_address_detection(
+            link_layer.src_addr,
+            gbc_repr.source_position_vector.address,
+        );
 
         let ls_pending = {
             /* Step 5-6: update Location table */
@@ -1099,7 +1125,7 @@ impl InterfaceInner {
         );
 
         /* Step 11: forwarding algorithm */
-        let dst_ll_addr_opt = self.forwarding_algorithm(&mut svcs, &packet, Some(snd_addr));
+        let dst_ll_addr_opt = self.forwarding_algorithm(&mut svcs, &packet, Some(link_layer));
 
         /* Step 12: check if packet has been buffered or dropped */
         let Some(dst_addr) = dst_ll_addr_opt else {
@@ -1119,7 +1145,7 @@ impl InterfaceInner {
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
-        snd_addr: EthernetAddress,
+        link_layer: EthernetRepr,
     ) -> Option<(
         InterfaceServices<'svcs>,
         EthernetAddress,
@@ -1139,8 +1165,10 @@ impl InterfaceInner {
         }
 
         /* Step 4: perform duplicate address detection. */
-        svcs.core
-            .duplicate_address_detection(snd_addr, gac_repr.source_position_vector.address);
+        svcs.core.duplicate_address_detection(
+            link_layer.src_addr,
+            gac_repr.source_position_vector.address,
+        );
 
         /* Step 5-6: update Location table */
         let entry = self
@@ -1239,7 +1267,7 @@ impl InterfaceInner {
         );
 
         /* Step 11: forwarding algorithm */
-        let dst_ll_addr_opt = self.forwarding_algorithm(&mut svcs, &packet, Some(snd_addr));
+        let dst_ll_addr_opt = self.forwarding_algorithm(&mut svcs, &packet, Some(link_layer));
 
         /* Step 12: check if packet has been buffered or dropped */
         let Some(dst_addr) = dst_ll_addr_opt else {
@@ -1332,7 +1360,7 @@ impl InterfaceInner {
         net_trace!("dispatch_ls_request()");
 
         for r in svcs.ls.ls_requests.iter_mut() {
-            if let Some(LocationServiceRequest{state, ..}) = r {
+            if let Some(LocationServiceRequest { state, .. }) = r {
                 match state {
                     LocationServiceState::Pending(pr) => {
                         // Max attempts reached. Query failed.
@@ -1966,8 +1994,16 @@ impl InterfaceInner {
 
             // Update the packet lifetime.
             meta.basic_header.lifetime = expiry - svcs.core.now;
-            // Update ego position in packet.
-            meta.extended_header.source_position_vector = svcs.core.ego_position_vector();
+            // Update position in packet only if we are the origin.
+            if meta
+                .extended_header
+                .source_position_vector
+                .address
+                .mac_addr()
+                == svcs.core.address().mac_addr()
+            {
+                meta.extended_header.source_position_vector = svcs.core.ego_position_vector();
+            }
 
             emit(
                 self,
@@ -1985,7 +2021,6 @@ impl InterfaceInner {
 
     /// Dequeue one packet marked as flushable from the unicast buffer.
     /// Returns `None` when no packets are available.
-    /// FIXME: this implementation is basic and not compliant with routing algorithms.
     pub(crate) fn dispatch_broadcast_buffer<F, E>(
         &mut self,
         svcs: InterfaceServices,
@@ -2006,8 +2041,10 @@ impl InterfaceInner {
 
             // Update the packet lifetime.
             meta.set_lifetime(expiry - svcs.core.now);
-            // Update ego position in packet.
-            meta.set_source_position_vector(svcs.core.ego_position_vector());
+            // Update position in packet only if we are the origin.
+            if meta.source_position_vector().address.mac_addr() == svcs.core.address().mac_addr() {
+                meta.set_source_position_vector(svcs.core.ego_position_vector());
+            }
 
             emit(
                 self,
@@ -2021,6 +2058,48 @@ impl InterfaceInner {
         })
     }
 
+    /// Dequeue one expired packet from the contention buffer.
+    /// Returns `None` when no packets are available.
+    pub(crate) fn dispatch_contention_buffer<F, E>(
+        &mut self,
+        svcs: InterfaceServices,
+        emit: F,
+    ) -> Option<Result<(), E>>
+    where
+        F: FnOnce(
+            &mut InterfaceInner,
+            &mut GnCore,
+            (EthernetAddress, GeonetRepr, &[u8]),
+        ) -> Result<(), E>,
+    {
+        net_trace!("dispatch_contention_buffer()");
+
+        svcs.cb_forwarding_buffer
+            .dequeue_expired(svcs.core.now, |packet| {
+                let expiry = packet.expires_at();
+                let meta = packet.metadata();
+
+                // Update the packet lifetime.
+                meta.set_lifetime(expiry - svcs.core.now);
+                // Update position in packet only if we are the origin.
+                if meta.source_position_vector().address.mac_addr()
+                    == svcs.core.address().mac_addr()
+                {
+                    meta.set_source_position_vector(svcs.core.ego_position_vector());
+                }
+
+                emit(
+                    self,
+                    svcs.core,
+                    (
+                        EthernetAddress::BROADCAST,
+                        meta.to_owned(),
+                        packet.payload(),
+                    ),
+                )
+            })
+    }
+
     /// Executes the forwarding algorithm selection procedure
     /// as described in ETSI TS 103 836-4-1 V2.1.1 clause D.
     ///
@@ -2031,7 +2110,7 @@ impl InterfaceInner {
         &mut self,
         svcs: &mut InterfaceServices,
         packet: &GeonetPacket,
-        sender: Option<EthernetAddress>,
+        link_layer: Option<EthernetRepr>,
     ) -> Option<EthernetAddress> {
         let area = packet.geo_area();
         let f_ego = area.inside_or_at_border(svcs.core.position());
@@ -2041,12 +2120,16 @@ impl InterfaceInner {
                 GnAreaForwardingAlgorithm::Unspecified | GnAreaForwardingAlgorithm::Simple => {
                     self.area_simple_forwarding()
                 }
-                GnAreaForwardingAlgorithm::Cbf => unimplemented!(),
-                GnAreaForwardingAlgorithm::Advanced => unimplemented!(),
+                GnAreaForwardingAlgorithm::Cbf => {
+                    self.area_contention_based_forwarding(svcs, packet, link_layer)
+                }
+                GnAreaForwardingAlgorithm::Advanced => {
+                    self.area_advanced_forwarding(svcs, packet, link_layer)
+                }
             }
         } else {
-            let inside = sender
-                .and_then(|sender_ll_addr| self.location_table.find(&sender_ll_addr))
+            let inside = link_layer
+                .and_then(|ll| self.location_table.find(&ll.src_addr))
                 .is_some_and(|neigh| {
                     neigh.position_vector.is_accurate && area.inside_or_at_border(neigh.position())
                 });
@@ -2057,7 +2140,9 @@ impl InterfaceInner {
                     GnNonAreaForwardingAlgorithm::Unspecified
                     | GnNonAreaForwardingAlgorithm::Greedy,
                 ) => self.non_area_greedy_forwarding(svcs, packet),
-                (true, GnNonAreaForwardingAlgorithm::Cbf) => unimplemented!(),
+                (true, GnNonAreaForwardingAlgorithm::Cbf) => {
+                    self.non_area_contention_based_forwarding(svcs, packet, link_layer)
+                }
                 _ => None,
             }
         };
@@ -2117,12 +2202,240 @@ impl InterfaceInner {
         ll_addr
     }
 
+    /// Executes the non area contention algorithm as
+    /// described in ETSI TS 103 836-4-1 V2.1.1 clause E.3.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if `packet` does not contain a destination nor a payload.
+    fn non_area_contention_based_forwarding(
+        &mut self,
+        svcs: &mut InterfaceServices,
+        packet: &GeonetPacket,
+        link_layer: Option<EthernetRepr>,
+    ) -> Option<EthernetAddress> {
+        let Some(EthernetRepr { src_addr, .. }) = link_layer else {
+            return Some(EthernetAddress::BROADCAST.into());
+        };
+
+        let cbf_id = CbfIdentifier(packet.source_address(), packet.sequence_number());
+        if svcs.cb_forwarding_buffer.remove(cbf_id) {
+            return None;
+        }
+
+        let entry_opt = self.location_table.find(&src_addr);
+        let pai_ego = svcs.core.ego_position_vector.is_accurate;
+        let payload = packet.payload().into_option().unwrap();
+
+        match (entry_opt, pai_ego) {
+            (Some(entry), true) if entry.position_vector.is_accurate => {
+                let destination = packet.geo_destination();
+                let dist_p_se = destination.distance_to(&entry.position());
+                let dist_p_ego = destination.distance_to(&svcs.core.position());
+                let progress = dist_p_se - dist_p_ego;
+
+                if progress > Length::new::<meter>(0.0) {
+                    let cbf_timer = Self::cbf_timeout_equation(progress);
+                    let meta = packet.geonet_repr();
+                    svcs.cb_forwarding_buffer
+                        .enqueue(meta, payload, cbf_id, cbf_timer, svcs.core.now, src_addr)
+                        .ok();
+                }
+            }
+            _ => {
+                let meta = packet.geonet_repr();
+                svcs.cb_forwarding_buffer
+                    .enqueue(
+                        meta,
+                        payload,
+                        cbf_id,
+                        GN_CBF_MAX_TIME,
+                        svcs.core.now,
+                        src_addr,
+                    )
+                    .ok();
+            }
+        };
+
+        None
+    }
+
     /// Executes the simple GeoBroadcast forwarding algorithm as
     /// described in ETSI TS 103 836-4-1 V2.1.1 clause F.2.
     ///
     /// Always return the link layer broadcast address.
     fn area_simple_forwarding(&self) -> Option<EthernetAddress> {
         Some(EthernetAddress::BROADCAST.into())
+    }
+
+    /// Executes the non area contention algorithm as
+    /// described in ETSI TS 103 836-4-1 V2.1.1 clause F.3.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if `packet` does not contain a destination nor a payload.
+    fn area_contention_based_forwarding(
+        &mut self,
+        svcs: &mut InterfaceServices,
+        packet: &GeonetPacket,
+        link_layer: Option<EthernetRepr>,
+    ) -> Option<EthernetAddress> {
+        let Some(EthernetRepr { src_addr, .. }) = link_layer else {
+            return Some(EthernetAddress::BROADCAST.into());
+        };
+
+        let cbf_id = CbfIdentifier(packet.source_address(), packet.sequence_number());
+        if svcs.cb_forwarding_buffer.remove(cbf_id) {
+            return None;
+        }
+
+        let entry_opt = self.location_table.find(&src_addr);
+        let pai_ego = svcs.core.ego_position_vector.is_accurate;
+        let payload = packet.payload().into_option().unwrap();
+
+        let cbf_timer = match (entry_opt, pai_ego) {
+            (Some(entry), true) if entry.position_vector.is_accurate => {
+                let dist_se_ego = entry.position().distance_to(&svcs.core.position());
+                Self::cbf_timeout_equation(dist_se_ego)
+            }
+            _ => GN_CBF_MAX_TIME,
+        };
+
+        let meta = packet.geonet_repr();
+        svcs.cb_forwarding_buffer
+            .enqueue(meta, payload, cbf_id, cbf_timer, svcs.core.now, src_addr)
+            .ok();
+
+        None
+    }
+
+    /// Executes the non area contention algorithm as
+    /// described in ETSI TS 103 836-4-1 V2.1.1 clause F.4.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if `packet` does not contain a destination nor a payload.
+    fn area_advanced_forwarding(
+        &mut self,
+        svcs: &mut InterfaceServices,
+        packet: &GeonetPacket,
+        link_layer: Option<EthernetRepr>,
+    ) -> Option<EthernetAddress> {
+        let Some(EthernetRepr {
+            src_addr, dst_addr, ..
+        }) = link_layer
+        else {
+            return Some(EthernetAddress::BROADCAST.into());
+        };
+
+        let cbf_id = CbfIdentifier(packet.source_address(), packet.sequence_number());
+
+        let payload = packet.payload().into_option().unwrap();
+        let meta = packet.geonet_repr();
+
+        let rc = if let Some(_popped) = svcs.cb_forwarding_buffer.pop_if(cbf_id, |e| {
+            if e.cbf_counter >= VELOCE_CBF_MAX_RETRANSMIT {
+                true
+            } else {
+                let entry_sndr_opt = self.location_table.find(&e.sender());
+                let entry_fwdr_opt = self.location_table.find(&src_addr);
+                let inside = match (entry_sndr_opt, entry_fwdr_opt) {
+                    (Some(entry_sndr), Some(entry_fwdr)) => {
+                        let dist_r = entry_sndr.position().distance_to(&svcs.core.position());
+                        let dist_f = entry_fwdr.position().distance_to(&svcs.core.position());
+                        let dist_rf = entry_sndr.position().distance_to(&entry_fwdr.position());
+                        let mut angle_fsr = Angle::new::<radian>(0.0);
+                        if dist_r > Length::new::<meter>(0.0) && dist_f > Length::new::<meter>(0.0)
+                        {
+                            let cos_fsr = (dist_rf * dist_rf - dist_r * dist_r - dist_f * dist_f)
+                                / (-2.0 * dist_r * dist_f);
+                            angle_fsr = cos_fsr.acos();
+                        }
+
+                        dist_r < dist_f
+                            && dist_f < Length::new::<meter>(GN_DEFAULT_MAX_COMMUNICATION_RANGE)
+                            && angle_fsr < Angle::new::<degree>(GN_BROADCAST_CBF_DEF_SECTOR_ANGLE)
+                    }
+                    _ => false,
+                };
+                if inside {
+                    true
+                } else {
+                    let pai_ego = svcs.core.ego_position_vector.is_accurate;
+
+                    let cbf_timer = match (entry_fwdr_opt, pai_ego) {
+                        (Some(entry), true) if entry.position_vector.is_accurate => {
+                            let dist_se_ego = entry.position().distance_to(&svcs.core.position());
+                            Self::cbf_timeout_equation(dist_se_ego)
+                        }
+                        _ => GN_CBF_MAX_TIME,
+                    };
+
+                    e.cbf_counter += 1;
+                    e.cbf_expires_at = svcs.core.now + cbf_timer;
+
+                    false
+                }
+            }
+        }) {
+            None
+        } else {
+            if dst_addr == svcs.core.address().mac_addr() {
+                let nh = self.non_area_greedy_forwarding(svcs, packet);
+                svcs.cb_forwarding_buffer
+                    .enqueue(
+                        meta,
+                        payload,
+                        cbf_id,
+                        GN_CBF_MAX_TIME,
+                        svcs.core.now,
+                        src_addr,
+                    )
+                    .ok();
+                nh
+            } else {
+                /* Contention buffering. There is a modification in our implementation since the condition
+                ((PV_SE EXISTS) OR (PV_SE = EPV)) AND (PAI_SE = TRUE)) is weird and does not make sense.
+                PV_SE cannot be EPV since SE is deduced from the link layer sender mac address, the OR condition
+                seems to be a mistake. On ETSI EN 302 636-4-1 V1.2.1, this condition does not exists, our
+                implementation follows that version.
+                */
+                let entry_opt = self.location_table.find(&src_addr);
+                let pai_ego = svcs.core.ego_position_vector.is_accurate;
+
+                let cbf_timer = match (entry_opt, pai_ego) {
+                    (Some(entry), true) if entry.position_vector.is_accurate => {
+                        let dist_se_ego = entry.position().distance_to(&svcs.core.position());
+                        Self::cbf_timeout_equation(dist_se_ego)
+                    }
+                    _ => GN_CBF_MAX_TIME,
+                };
+                svcs.cb_forwarding_buffer
+                    .enqueue(meta, payload, cbf_id, cbf_timer, svcs.core.now, src_addr)
+                    .ok();
+
+                None
+            }
+        };
+
+        rc
+    }
+
+    /// Computes the Non Area Contention Based Forwarding algorithm equation.
+    /// This equation is defined in ETSI 103 836-4-1 V2.1.1 clauses E.3 and F3.
+    fn cbf_timeout_equation(progress: Length) -> Duration {
+        let max_range = Length::new::<meter>(GN_DEFAULT_MAX_COMMUNICATION_RANGE);
+        if progress > max_range {
+            GN_CBF_MIN_TIME
+        } else if progress > Length::new::<meter>(0.0) {
+            let eq = GN_CBF_MAX_TIME.millis()
+                + (GN_CBF_MIN_TIME.millis() - GN_CBF_MAX_TIME.millis())
+                    / GN_DEFAULT_MAX_COMMUNICATION_RANGE as u64
+                    * progress.get::<meter>() as u64;
+            Duration::from_millis(eq)
+        } else {
+            GN_CBF_MAX_TIME
+        }
     }
 
     /// Pass received Geonetworking payload to upper layer.
