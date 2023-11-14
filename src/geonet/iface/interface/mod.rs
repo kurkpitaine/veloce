@@ -5,6 +5,8 @@ mod tests;
 mod ethernet;
 #[cfg(feature = "proto-geonet")]
 mod geonet;
+#[cfg(feature = "proto-btp")]
+mod btp;
 
 use super::location_service::LocationService;
 use super::location_table::LocationTable;

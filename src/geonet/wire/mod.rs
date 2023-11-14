@@ -5,6 +5,7 @@ mod field {
 
 pub mod btp;
 pub mod ethernet;
+pub mod etsi_its;
 pub mod geonet;
 pub mod pretty_print;
 

@@ -1,5 +1,6 @@
 pub mod geonet;
 
+use geonet::wire::etsi_its::{self, ItsPduHeader};
 use log::trace;
 
 #[macro_use]
@@ -15,11 +16,14 @@ use geonet::types::{degree, meter, Distance, Latitude};
 use geonet::utils;
 use geonet::wire::{BtpBHeader, EthernetAddress, GnAddress, StationType};
 use geonet::{socket, time};
+use rasn::types::SequenceOf;
 use uom::si::f32::Angle;
 
 use std::os::unix::io::AsRawFd;
 
 use crate::geonet::network::UpperProtocol;
+use crate::geonet::types::tenth_of_microdegree;
+use crate::geonet::wire::etsi_its::*;
 use crate::geonet::wire::{btp, BtpBRepr};
 
 fn main() {
@@ -27,7 +31,7 @@ fn main() {
     let ll_addr = EthernetAddress([0x00, 0x0c, 0x6c, 0x0d, 0x14, 0x70]);
 
     // Configure device
-    let mut device = RawSocket::new("en0", Medium::Ethernet).unwrap();
+    let mut device = RawSocket::new("en7", Medium::Ethernet).unwrap();
     let fd = device.as_raw_fd();
 
     // Configure interface
@@ -115,15 +119,24 @@ fn main() {
 
         if timestamp >= next_gbc_transmit {
             trace!("next_gbc_transmit");
-            let data = [0xfe, 0x1e, 0xe7];
-            let mut buf = [0u8; 7];
+            let lat = Latitude::new::<degree>(48.271947);
+            let lon = Latitude::new::<degree>(-3.614961);
+
+            let cam = fill_cam(
+                etsi_its::Latitude(lat.get::<tenth_of_microdegree>() as i32),
+                etsi_its::Longitude(lon.get::<tenth_of_microdegree>() as i32),
+            );
+
+            let res = rasn::uper::encode(&cam).unwrap();
+
+            let mut buf = vec![0u8; res.len() + 4];
             let mut btp_hdr = BtpBHeader::new_unchecked(&mut buf);
             let btp_repr = BtpBRepr {
                 dst_port: btp::ports::CAM,
                 dst_port_info: 0,
             };
             btp_repr.emit(&mut btp_hdr);
-            btp_hdr.payload_mut().copy_from_slice(&data);
+            btp_hdr.payload_mut().copy_from_slice(&res);
 
             let req_meta = Request {
                 upper_proto: UpperProtocol::BtpB,
@@ -132,10 +145,8 @@ fn main() {
                         radius: Distance::new::<meter>(500.0),
                     }),
                     position: GeoPosition {
-                        latitude: Latitude::new::<degree>(48.271947),
-                        longitude: Latitude::new::<degree>(-3.614961),
-                        /* latitude: Latitude::new::<degree>(48.276434),
-                        longitude: Latitude::new::<degree>(-3.5519532), */
+                        latitude: lat,
+                        longitude: lon,
                     },
                     angle: Angle::new::<degree>(0.0),
                 }),
@@ -186,4 +197,43 @@ fn main() {
         trace!("phy_wait");
         phy_wait(fd, poll_timeout).expect("wait error");
     }
+}
+
+/// Fills a CAM message with basic content
+fn fill_cam(lat: etsi_its::Latitude, lon: etsi_its::Longitude) -> CAM {
+    let header = ItsPduHeader::new(2, 2, StationID(123));
+
+    let station_type = StationType(15);
+
+    let alt = etsi_its::Altitude::new(AltitudeValue(1000), AltitudeConfidence::Unavailable);
+
+    let pos_confidence = PosConfidenceEllipse::new(
+        SemiAxisLength(4095),
+        SemiAxisLength(4095),
+        HeadingValue(3601),
+    );
+    let ref_pos = ReferencePosition::new(lat.clone(), lon.clone(), pos_confidence, alt);
+    let basic_container = BasicContainer::new(station_type, ref_pos);
+
+    let prot_zone = ProtectedCommunicationZone::new(
+        ProtectedZoneType::PermanentCenDsrcTolling,
+        None,
+        lat,
+        lon,
+        None,
+        Some(ProtectedZoneID(0xfe)),
+    );
+
+    let mut prot_zones = ProtectedCommunicationZonesRSU(SequenceOf::new());
+    prot_zones.0.push(prot_zone);
+
+    let hf_container = HighFrequencyContainer::RsuContainerHighFrequency(
+        RSUContainerHighFrequency::new(Some(prot_zones)),
+    );
+
+    let cam_params = CamParameters::new(basic_container, hf_container, None, None);
+    let gen_time = GenerationDeltaTime(12345);
+    let coop_awareness = CoopAwareness::new(gen_time, cam_params);
+
+    CAM::new(header, coop_awareness)
 }

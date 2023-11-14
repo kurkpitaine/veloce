@@ -17,6 +17,9 @@ use crate::geonet::time::Instant;
 #[cfg(feature = "socket-geonet")]
 pub mod geonet;
 
+#[cfg(feature = "socket-btp")]
+pub mod btp;
+
 #[cfg(feature = "async")]
 mod waker;
 

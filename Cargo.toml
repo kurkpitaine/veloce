@@ -15,7 +15,7 @@ heapless = { path = "../heapless" }
 libc = { version = "0.2.149", optional = true }
 log = { version = "0.4.20", default-features = false, optional = true }
 managed = { version = "0.8", default-features = false, features = ["map"] }
-#tokio = { version = "1.28.2", features = ["full"] }
+rasn = "0.12.1"
 uom = { version = "0.34.0", features = ["autoconvert", "f32"] }
 
 [features]
@@ -31,11 +31,12 @@ defmt = ["dep:defmt", "heapless/defmt", "heapless/defmt-impl"]
 "phy-tuntap_interface" = ["std", "libc", "medium-ethernet"]
 
 "proto-geonet" = []
-"proto-map" = ["proto-geonet"]
-"proto-cam" = ["proto-geonet"]
-"proto-denm" = ["proto-geonet"]
-"proto-spat" = ["proto-geonet"]
-"proto-ivi" = ["proto-geonet"]
+"proto-btp" = ["proto-geonet"]
+"proto-map" = ["proto-geonet", "proto-btp"]
+"proto-cam" = ["proto-geonet", "proto-btp"]
+"proto-denm" = ["proto-geonet", "proto-btp"]
+"proto-spat" = ["proto-geonet", "proto-btp"]
+"proto-ivi" = ["proto-geonet", "proto-btp"]
 
 "socket" = []
 "socket-geonet" = ["socket", "proto-geonet"]
