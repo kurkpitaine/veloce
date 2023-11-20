@@ -6,7 +6,7 @@ mandatory data structures of a Geonetworking router and handles the incoming and
 pub mod core;
 pub mod request;
 
-use crate::geonet::common::area::Area;
+use crate::geonet::common::geo_area::GeoArea;
 use crate::geonet::time::Duration;
 use crate::geonet::wire::GnProtocol;
 use crate::geonet::wire::{GnAddress, GnTrafficClass};
@@ -124,9 +124,9 @@ pub enum Transport {
     /// Unicast transport.
     Unicast(GnAddress),
     ///Anycast transport.
-    Anycast(Area),
+    Anycast(GeoArea),
     /// Broadcast transport.
-    Broadcast(Area),
+    Broadcast(GeoArea),
     /// Single Hop Broadcast transport.
     SingleHopBroadcast,
     /// Topologically Scoped Broadcast transport.

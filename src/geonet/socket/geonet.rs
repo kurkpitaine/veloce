@@ -2,6 +2,10 @@ use core::cmp::min;
 #[cfg(feature = "async")]
 use core::task::Waker;
 
+use uom::si::area::square_kilometer;
+use uom::si::f32::Area;
+
+use crate::geonet::config;
 use crate::geonet::iface::{Context, ContextMeta};
 use crate::geonet::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, Request, SingleHopReqMeta,
@@ -14,7 +18,9 @@ use crate::geonet::socket::WakerRegistration;
 use crate::geonet::storage::Empty;
 use crate::geonet::wire::{EthernetAddress, GeonetRepr};
 
-/// Error returned by [`Socket::bind`]
+use super::SendError;
+
+/* /// Error returned by [`Socket::bind`]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum BindError {
@@ -32,25 +38,7 @@ impl core::fmt::Display for BindError {
 }
 
 #[cfg(feature = "std")]
-impl std::error::Error for BindError {}
-
-/// Error returned by [`Socket::send`]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum SendError {
-    BufferFull,
-}
-
-impl core::fmt::Display for SendError {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        match self {
-            SendError::BufferFull => write!(f, "buffer full"),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for SendError {}
+impl std::error::Error for BindError {} */
 
 /// Error returned by [`Socket::recv`]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -182,6 +170,21 @@ impl<'a> Socket<'a> {
     /// and `Err(Error::Truncated)` if there is not enough transmit buffer capacity
     /// to ever send this packet.
     pub fn send(&mut self, size: usize, meta: Request) -> Result<&mut [u8], SendError> {
+        if size > config::GN_MAX_SDU_SIZE {
+            return Err(SendError::SizeTooLong);
+        }
+        if meta.max_lifetime > config::GN_MAX_PACKET_LIFETIME {
+            return Err(SendError::LifetimeTooHigh);
+        }
+        match meta.transport {
+            Transport::Anycast(a) | Transport::Broadcast(a)
+                if a.size() > Area::new::<square_kilometer>(config::GN_MAX_GEO_AREA_SIZE) =>
+            {
+                return Err(SendError::AreaTooBig)
+            }
+            _ => {}
+        };
+
         let packet_buf = self
             .tx_buffer
             .enqueue(size, meta)
@@ -199,6 +202,21 @@ impl<'a> Socket<'a> {
     where
         F: FnOnce(&mut [u8]) -> usize,
     {
+        if max_size > config::GN_MAX_SDU_SIZE {
+            return Err(SendError::SizeTooLong);
+        }
+        if meta.max_lifetime > config::GN_MAX_PACKET_LIFETIME {
+            return Err(SendError::LifetimeTooHigh);
+        }
+        match meta.transport {
+            Transport::Anycast(a) | Transport::Broadcast(a)
+                if a.size() > Area::new::<square_kilometer>(config::GN_MAX_GEO_AREA_SIZE) =>
+            {
+                return Err(SendError::AreaTooBig)
+            }
+            _ => {}
+        };
+
         let size = self
             .tx_buffer
             .enqueue_with_infallible(max_size, meta, f)

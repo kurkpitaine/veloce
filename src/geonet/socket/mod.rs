@@ -53,7 +53,7 @@ pub enum Socket<'a> {
     #[cfg(feature = "socket-geonet")]
     Geonet(geonet::Socket<'a>),
     #[cfg(feature = "socket-btp")]
-    Btp(btp::Socket<'a>),
+    BtpB(btp::SocketB<'a>),
 }
 
 impl<'a> Socket<'a> {
@@ -62,7 +62,7 @@ impl<'a> Socket<'a> {
             #[cfg(feature = "socket-geonet")]
             Socket::Geonet(s) => s.poll_at(cx),
             #[cfg(feature = "socket-btp")]
-            Socket::Btp(s) => s.poll_at(cx),
+            Socket::BtpB(s) => s.poll_at(cx),
         }
     }
 }
@@ -107,4 +107,28 @@ macro_rules! from_socket {
 #[cfg(feature = "socket-geonet")]
 from_socket!(geonet::Socket<'a>, Geonet);
 #[cfg(feature = "socket-btp")]
-from_socket!(btp::Socket<'a>, Btp);
+from_socket!(btp::SocketB<'a>, BtpB);
+
+/// Error returned by [`Socket::send`]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum SendError {
+    SizeTooLong,
+    LifetimeTooHigh,
+    AreaTooBig,
+    BufferFull,
+}
+
+impl core::fmt::Display for SendError {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        match self {
+            SendError::SizeTooLong => todo!("size too long"),
+            SendError::LifetimeTooHigh => todo!("lifetime too high"),
+            SendError::AreaTooBig => todo!("area size too big"),
+            SendError::BufferFull => write!(f, "buffer full"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for SendError {}

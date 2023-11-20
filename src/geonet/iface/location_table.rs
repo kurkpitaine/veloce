@@ -1,4 +1,4 @@
-use crate::geonet::common::area::GeoPosition;
+use crate::geonet::common::geo_area::GeoPosition;
 use crate::geonet::config::{
     GN_DPL_LENGTH, GN_LOC_TABLE_ENTRY_COUNT, GN_LOC_TABLE_ENTRY_LIFETIME,
     GN_MAX_PACKET_DATA_RATE_EMA_BETA,

@@ -1,12 +1,12 @@
 #[cfg(test)]
 mod tests;
 
+#[cfg(feature = "proto-btp")]
+mod btp;
 #[cfg(feature = "medium-ethernet")]
 mod ethernet;
 #[cfg(feature = "proto-geonet")]
 mod geonet;
-#[cfg(feature = "proto-btp")]
-mod btp;
 
 use super::location_service::LocationService;
 use super::location_table::LocationTable;
@@ -415,6 +415,20 @@ impl Interface {
                             PacketMeta::default(),
                             dst_ll_addr,
                             GeonetPacket::new(gn, GeonetPayload::Raw(raw)),
+                        )
+                    },
+                ),
+                #[cfg(feature = "socket-btp")]
+                Socket::BtpB(socket) => socket.dispatch(
+                    &mut self.inner,
+                    srv,
+                    |inner, core, (dst_ll_addr, gn, pl)| {
+                        respond(
+                            inner,
+                            core,
+                            PacketMeta::default(),
+                            dst_ll_addr,
+                            GeonetPacket::new(gn, GeonetPayload::Raw(pl)),
                         )
                     },
                 ),

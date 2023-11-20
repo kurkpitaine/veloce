@@ -54,7 +54,9 @@ default = [
    "medium-pc5",
    "phy-raw_socket",
    "proto-geonet",
+   "proto-btp",
    "socket",
    "socket-geonet",
+   "socket-btp",
    "packetmeta-id",
 ]

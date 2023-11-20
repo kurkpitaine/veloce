@@ -1,6 +1,6 @@
 use ::core::marker::PhantomData;
 
-use crate::geonet::common::area::Area;
+use crate::geonet::common::geo_area::GeoArea;
 use crate::geonet::time::Duration;
 use crate::geonet::wire::{GnAddress, GnTrafficClass};
 
@@ -21,7 +21,7 @@ pub struct AddressableRequest<Transport> {
 #[non_exhaustive]
 pub struct GeoZonableRequest<Transport> {
     pub upper_proto: UpperProtocol,
-    pub destination: Area,
+    pub destination: GeoArea,
     pub ali_id: (),
     pub its_aid: (),
     pub max_lifetime: Duration,
@@ -67,7 +67,7 @@ impl<Transport: Addressable> AddressableRequest<Transport> {
 impl<Transport: GeoZonable> GeoZonableRequest<Transport> {
     pub fn new(
         upper_proto: UpperProtocol,
-        destination: Area,
+        destination: GeoArea,
         ali_id: (),
         its_aid: (),
         max_lifetime: Duration,

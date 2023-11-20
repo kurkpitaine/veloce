@@ -3,7 +3,10 @@ use crate::geonet::types::{meter, radian, Distance, Latitude, Longitude};
 use crate::geonet::wire::{GeoAnycastRepr, GeoBroadcastRepr, GeonetPacketType};
 
 use core::f32::consts::FRAC_PI_2;
-use uom::si::f32::{Angle, Length, Ratio};
+use core::f32::consts::PI;
+use uom::si::area::square_kilometer;
+use uom::si::f32::{Angle, Area, Length, Ratio};
+use uom::si::length::kilometer;
 use uom::si::ratio::ratio;
 use uom::typenum::P2;
 
@@ -215,7 +218,7 @@ impl DistanceAB for Shape {
 /// An area is a geometric `shape` [`Shape`], centered at a `position` [`GeoPosition`] and oriented towards an `angle` [`Angle`].
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, Clone, Copy)]
-pub struct Area {
+pub struct GeoArea {
     /// Shape of the area.
     pub shape: Shape,
     /// Position (center) of the area.
@@ -224,7 +227,7 @@ pub struct Area {
     pub angle: Angle,
 }
 
-impl Area {
+impl GeoArea {
     /// Constructs a new Area from a [`GeoAnycastRepr`].
     ///
     /// # Panics
@@ -248,7 +251,7 @@ impl Area {
             _ => panic!(),
         };
 
-        Area {
+        Self {
             shape,
             position: GeoPosition {
                 latitude: gac_repr.latitude,
@@ -258,7 +261,7 @@ impl Area {
         }
     }
 
-    /// Constructs a new Area from a [`GeoBroadcastRepr`].
+    /// Constructs a new GeoArea from a [`GeoBroadcastRepr`].
     ///
     /// # Panics
     ///
@@ -281,7 +284,7 @@ impl Area {
             _ => panic!(),
         };
 
-        Area {
+        Self {
             shape,
             position: GeoPosition {
                 latitude: gbc_repr.latitude,
@@ -291,10 +294,26 @@ impl Area {
         }
     }
 
+    /// Query wether `position` is inside or at border of the [GeoArea].
     pub fn inside_or_at_border(&self, position: GeoPosition) -> bool {
         let local = to_cartesian(self.position, position);
         let rotated = rotate(local, self.angle);
         !self.shape.outside_shape(rotated)
+    }
+
+    /// Computes the [GeoArea] size.
+    pub fn size(&self) -> Area {
+        match self.shape {
+            Shape::Circle(c) => Area::new::<square_kilometer>(
+                PI * c.distance_a().get::<kilometer>() * c.distance_a().get::<kilometer>(),
+            ),
+            Shape::Rectangle(r) => Area::new::<square_kilometer>(
+                4.0 * r.distance_a().get::<kilometer>() * r.distance_b().get::<kilometer>(),
+            ),
+            Shape::Ellipse(e) => Area::new::<square_kilometer>(
+                PI * e.distance_a().get::<kilometer>() * e.distance_b().get::<kilometer>(),
+            ),
+        }
     }
 }
 

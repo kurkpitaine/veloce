@@ -62,6 +62,8 @@ pub const GN_CBF_MAX_TIME: Duration = Duration::from_millis(100);
 pub const GN_DEFAULT_MAX_COMMUNICATION_RANGE: f32 = 1000.0;
 /// Default threshold angle for area advanced forwarding algorithm in degrees.
 pub const GN_BROADCAST_CBF_DEF_SECTOR_ANGLE: f32 = 30.0;
+/// Maximum Geographical area size in square kilometers.
+pub const GN_MAX_GEO_AREA_SIZE: f32 = 10.0;
 
 /// The GeoNetworking protocol Address configuration method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

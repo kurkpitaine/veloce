@@ -65,8 +65,8 @@ pub use self::geonet::{
 
 pub use btp::{
     ports,
-    type_a::{Header as BtpAHeader, Repr as BtpARepr},
-    type_b::{Header as BtpBHeader, Repr as BtpBRepr},
+    type_a::{Header as BtpAHeader, Repr as BtpARepr, HEADER_LEN as BTP_A_HEADER_LEN},
+    type_b::{Header as BtpBHeader, Repr as BtpBRepr, HEADER_LEN as BTP_B_HEADER_LEN},
 };
 
 pub use self::pc5::Layer2Address as PC5Address;

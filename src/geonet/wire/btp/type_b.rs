@@ -145,14 +145,23 @@ impl<'a, T: AsRef<[u8]> + ?Sized> fmt::Display for Header<&'a T> {
 
 impl fmt::Display for Repr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "BTP-B dst={} dst_info={}", self.dst_port, self.dst_port_info)
+        write!(
+            f,
+            "BTP-B dst={} dst_info={}",
+            self.dst_port, self.dst_port_info
+        )
     }
 }
 
 #[cfg(feature = "defmt")]
 impl defmt::Format for Repr {
     fn format(&self, fmt: defmt::Formatter) {
-        defmt::write!(fmt, "BTP-B dst={} dst_info={}", self.dst_port, self.dst_port_info);
+        defmt::write!(
+            fmt,
+            "BTP-B dst={} dst_info={}",
+            self.dst_port,
+            self.dst_port_info
+        );
     }
 }
 

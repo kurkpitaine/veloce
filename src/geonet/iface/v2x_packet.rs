@@ -1,11 +1,12 @@
-use crate::geonet::common::area::{Area, GeoPosition};
+use crate::geonet::common::geo_area::{GeoArea, GeoPosition};
 use crate::geonet::phy::DeviceCapabilities;
 use crate::geonet::wire::{
-    BasicHeaderRepr, BeaconHeaderRepr, CommonHeaderRepr, GeoAnycastRepr, GeoBroadcastRepr,
-    GeonetBeacon, GeonetGeoAnycast, GeonetGeoBroadcast, GeonetLocationServiceReply,
-    GeonetLocationServiceRequest, GeonetRepr, GeonetSingleHop, GeonetTopoBroadcast, GeonetUnicast,
-    GnAddress, LocationServiceReplyRepr, LocationServiceRequestRepr, SequenceNumber,
-    SingleHopHeaderRepr, TopoBroadcastRepr, UnicastRepr,
+    BasicHeaderRepr, BeaconHeaderRepr, BtpBHeader, CommonHeaderRepr, GeoAnycastRepr,
+    GeoBroadcastRepr, GeonetBeacon, GeonetGeoAnycast, GeonetGeoBroadcast,
+    GeonetLocationServiceReply, GeonetLocationServiceRequest, GeonetRepr, GeonetSingleHop,
+    GeonetTopoBroadcast, GeonetUnicast, GnAddress, LocationServiceReplyRepr,
+    LocationServiceRequestRepr, SequenceNumber, SingleHopHeaderRepr, TopoBroadcastRepr,
+    UnicastRepr,
 };
 
 #[allow(clippy::large_enum_variant)]
@@ -392,7 +393,7 @@ impl<'p> GeonetPacket<'p> {
     /// # Panics
     ///
     /// This method panics if the packet does not contain a destination area.
-    pub(crate) fn geo_area(&self) -> Area {
+    pub(crate) fn geo_area(&self) -> GeoArea {
         match self {
             GeonetPacket::Beacon(_) => panic!("No geo area in a Beacon packet!"),
             GeonetPacket::SingleHopBroadcast(_) => {
@@ -407,10 +408,10 @@ impl<'p> GeonetPacket<'p> {
             }
             GeonetPacket::Unicast(_) => panic!("No geo area in a Unicast packet!"),
             GeonetPacket::Anycast(a) => {
-                Area::from_gac(&a.common_header.header_type, &a.extended_header)
+                GeoArea::from_gac(&a.common_header.header_type, &a.extended_header)
             }
             GeonetPacket::Broadcast(b) => {
-                Area::from_gbc(&b.common_header.header_type, &b.extended_header)
+                GeoArea::from_gbc(&b.common_header.header_type, &b.extended_header)
             }
         }
     }
@@ -437,12 +438,18 @@ impl<'p> GeonetPacket<'p> {
         _caps: &DeviceCapabilities,
     ) {
         match self.payload() {
-            GeonetPayload::Raw(raw_payload) => {
-                payload.copy_from_slice(raw_payload);
+            GeonetPayload::Raw(pl) => {
+                payload.copy_from_slice(pl);
             }
-            GeonetPayload::Any(_) => {}
+            GeonetPayload::Any(pl) => {
+                payload.copy_from_slice(pl);
+            }
+            #[cfg(feature = "socket-btp")]
             GeonetPayload::BtpA(_) => {}
-            GeonetPayload::BtpB(_) => {}
+            #[cfg(feature = "socket-btp")]
+            GeonetPayload::BtpB(pl) => {
+                payload.copy_from_slice(pl);
+            }
             GeonetPayload::IPv6(_) => {}
             GeonetPayload::NoPayload => {}
         }
@@ -501,7 +508,8 @@ pub(crate) enum GeonetPayload<'p> {
     /// Payload is IPv6 type.
     IPv6(&'p [u8]),
     /// Payload is Raw type.
-    /// Used for forwarding and on Geonet socket.
+    /// Used for forwarding when BTP layer is not
+    /// processed and on Geonet socket.
     Raw(&'p [u8]),
     /// No Payload carried in packet.
     NoPayload,

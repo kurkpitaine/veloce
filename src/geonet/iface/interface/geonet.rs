@@ -11,11 +11,11 @@ use crate::geonet::iface::location_service::LocationServiceRequest;
 use crate::geonet::iface::SocketSet;
 use crate::geonet::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, SingleHopReqMeta,
-    TopoScopedReqMeta, Transport, UnicastReqMeta,
+    TopoScopedReqMeta, Transport, UnicastReqMeta, UpperProtocol,
 };
 use crate::geonet::wire::EthernetRepr;
 use crate::geonet::{
-    common::area::{Area, DistanceAB, Shape},
+    common::geo_area::{GeoArea, DistanceAB, Shape},
     config::{
         GnAreaForwardingAlgorithm, GnNonAreaForwardingAlgorithm, GN_AREA_FORWARDING_ALGORITHM,
         GN_BEACON_SERVICE_MAX_JITTER, GN_BEACON_SERVICE_RETRANSMIT_TIMER, GN_DEFAULT_HOP_LIMIT,
@@ -1005,7 +1005,7 @@ impl InterfaceInner {
         let gbc_repr = check!(GeoBroadcastRepr::parse(&gbc));
 
         /* Step 3: determine function F(x,y) */
-        let dst_area = Area::from_gbc(&ch_repr.header_type, &gbc_repr);
+        let dst_area = GeoArea::from_gbc(&ch_repr.header_type, &gbc_repr);
         let inside = dst_area.inside_or_at_border(svcs.core.position());
 
         /* Step 3a-3b: duplicate packet detection */
@@ -1188,7 +1188,7 @@ impl InterfaceInner {
         entry.update_pdr(packet_size, svcs.core.now);
 
         /* Step 7: determine function F(x,y) */
-        let dst_area = Area::from_gac(&ch_repr.header_type, &gac_repr);
+        let dst_area = GeoArea::from_gac(&ch_repr.header_type, &gac_repr);
         let inside = dst_area.inside_or_at_border(svcs.core.position());
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
@@ -2441,8 +2441,16 @@ impl InterfaceInner {
     /// Pass received Geonetworking payload to upper layer.
     fn pass_up(&mut self, sockets: &mut SocketSet, ind: Indication, payload: &[u8]) {
         #[cfg(feature = "socket-geonet")]
-        let _handled_by_geonet_socket = self.geonet_socket_filter(sockets, ind, payload);
+        let handled_by_geonet_socket = self.geonet_socket_filter(sockets, ind, payload);
         #[cfg(not(feature = "socket-geonet"))]
-        let _handled_by_geonet_socket = false;
+        let handled_by_geonet_socket = false;
+
+        match ind.upper_proto {
+            UpperProtocol::BtpA => self.process_btp_a(sockets, ind, handled_by_geonet_socket, payload),
+            UpperProtocol::BtpB => self.process_btp_b(sockets, ind, handled_by_geonet_socket, payload),
+            UpperProtocol::Any => todo!(),
+            UpperProtocol::Ipv6 => todo!(),
+           // _ if handled_by_geonet_socket => None,
+        };
     }
 }

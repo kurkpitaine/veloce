@@ -6,32 +6,32 @@ use log::trace;
 #[macro_use]
 extern crate uom;
 
-use geonet::common::area::{Area, Circle, GeoPosition, Shape};
+use geonet::common::geo_area::{Circle, GeoArea, GeoPosition, Shape};
 use geonet::iface::{Config, Interface, SocketSet};
 use geonet::network::{GnCore, GnCoreGonfig, Request, Transport};
 use geonet::phy::{wait as phy_wait, Medium, RawSocket};
+use geonet::socket::btp::Request as BtpRequest;
 use geonet::storage::PacketBuffer;
 use geonet::time::{Duration, Instant};
 use geonet::types::{degree, meter, Distance, Latitude};
 use geonet::utils;
-use geonet::wire::{BtpBHeader, EthernetAddress, GnAddress, StationType};
+use geonet::wire::{EthernetAddress, GnAddress, StationType};
 use geonet::{socket, time};
 use rasn::types::SequenceOf;
 use uom::si::f32::Angle;
 
 use std::os::unix::io::AsRawFd;
 
-use crate::geonet::network::UpperProtocol;
 use crate::geonet::types::tenth_of_microdegree;
+use crate::geonet::wire::btp;
 use crate::geonet::wire::etsi_its::*;
-use crate::geonet::wire::{btp, BtpBRepr};
 
 fn main() {
     utils::setup_logging("trace");
     let ll_addr = EthernetAddress([0x00, 0x0c, 0x6c, 0x0d, 0x14, 0x70]);
 
     // Configure device
-    let mut device = RawSocket::new("en7", Medium::Ethernet).unwrap();
+    let mut device = RawSocket::new("en0", Medium::Ethernet).unwrap();
     let fd = device.as_raw_fd();
 
     // Configure interface
@@ -44,7 +44,7 @@ fn main() {
     let router_config = GnCoreGonfig::new(router_addr);
     let mut router = GnCore::new(router_config, Instant::now());
 
-    // Create socket
+    // Create gn socket
     let gn_rx_buffer = PacketBuffer::new(
         vec![
             socket::geonet::RxPacketMetadata::EMPTY,
@@ -63,9 +63,30 @@ fn main() {
     );
     let gn_socket = socket::geonet::Socket::new(gn_rx_buffer, gn_tx_buffer);
 
+    // Create BTP-B socket
+    let btp_b_rx_buffer = PacketBuffer::new(
+        vec![
+            socket::btp::RxPacketMetadata::EMPTY,
+            socket::btp::RxPacketMetadata::EMPTY,
+            socket::btp::RxPacketMetadata::EMPTY,
+        ],
+        vec![0; 65535],
+    );
+
+    let btp_b_tx_buffer = PacketBuffer::new(
+        vec![
+            socket::btp::TxPacketMetadata::EMPTY,
+            socket::btp::TxPacketMetadata::EMPTY,
+            socket::btp::TxPacketMetadata::EMPTY,
+        ],
+        vec![0; 65535],
+    );
+    let btp_b_socket = socket::btp::SocketB::new(btp_b_rx_buffer, btp_b_tx_buffer);
+
     // Add it to a SocketSet
     let mut sockets = SocketSet::new(vec![]);
     let gn_handle = sockets.add(gn_socket);
+    let btp_b_handle = sockets.add(btp_b_socket);
 
     let mut next_shb_transmit = Instant::now() + Duration::from_millis(500);
     let mut next_tsb_transmit = Instant::now() + Duration::from_secs(2);
@@ -117,50 +138,11 @@ fn main() {
             next_uc_transmit = timestamp + Duration::from_secs(15);
         }
 
-        if timestamp >= next_gbc_transmit {
-            trace!("next_gbc_transmit");
-            let lat = Latitude::new::<degree>(48.271947);
-            let lon = Latitude::new::<degree>(-3.614961);
-
-            let cam = fill_cam(
-                etsi_its::Latitude(lat.get::<tenth_of_microdegree>() as i32),
-                etsi_its::Longitude(lon.get::<tenth_of_microdegree>() as i32),
-            );
-
-            let res = rasn::uper::encode(&cam).unwrap();
-
-            let mut buf = vec![0u8; res.len() + 4];
-            let mut btp_hdr = BtpBHeader::new_unchecked(&mut buf);
-            let btp_repr = BtpBRepr {
-                dst_port: btp::ports::CAM,
-                dst_port_info: 0,
-            };
-            btp_repr.emit(&mut btp_hdr);
-            btp_hdr.payload_mut().copy_from_slice(&res);
-
-            let req_meta = Request {
-                upper_proto: UpperProtocol::BtpB,
-                transport: Transport::Broadcast(Area {
-                    shape: Shape::Circle(Circle {
-                        radius: Distance::new::<meter>(500.0),
-                    }),
-                    position: GeoPosition {
-                        latitude: lat,
-                        longitude: lon,
-                    },
-                    angle: Angle::new::<degree>(0.0),
-                }),
-                ..Default::default()
-            };
-            socket.send_slice(&buf, req_meta).unwrap();
-            next_gbc_transmit = timestamp + Duration::from_secs(7);
-        }
-
         if timestamp >= next_gac_transmit {
             trace!("next_gac_transmit");
             let data = [0x51, 0x16, 0x64];
             let req_meta = Request {
-                transport: Transport::Anycast(Area {
+                transport: Transport::Anycast(GeoArea {
                     shape: Shape::Circle(Circle {
                         radius: Distance::new::<meter>(500.0),
                     }),
@@ -176,6 +158,40 @@ fn main() {
             };
             socket.send_slice(&data, req_meta).unwrap();
             next_gac_transmit = timestamp + Duration::from_secs(8);
+        }
+
+        let socket = sockets.get_mut::<socket::btp::SocketB>(btp_b_handle);
+        if !socket.is_open() {
+            socket.bind(btp::ports::CAM).unwrap()
+        }
+
+        if timestamp >= next_gbc_transmit {
+            trace!("next_gbc_transmit");
+            let lat = Latitude::new::<degree>(48.271947);
+            let lon = Latitude::new::<degree>(-3.614961);
+
+            let cam = fill_cam(
+                etsi_its::Latitude(lat.get::<tenth_of_microdegree>() as i32),
+                etsi_its::Longitude(lon.get::<tenth_of_microdegree>() as i32),
+            );
+
+            let buf = rasn::uper::encode(&cam).unwrap();
+
+            let req_meta = BtpRequest {
+                transport: Transport::Broadcast(GeoArea {
+                    shape: Shape::Circle(Circle {
+                        radius: Distance::new::<meter>(500.0),
+                    }),
+                    position: GeoPosition {
+                        latitude: lat,
+                        longitude: lon,
+                    },
+                    angle: Angle::new::<degree>(0.0),
+                }),
+                ..Default::default()
+            };
+            socket.send_slice(&buf, req_meta).unwrap();
+            next_gbc_transmit = timestamp + Duration::from_secs(7);
         }
 
         router.ego_position_vector.latitude = Latitude::new::<degree>(48.276434);
