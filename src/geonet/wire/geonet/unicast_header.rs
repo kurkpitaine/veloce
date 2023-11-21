@@ -187,28 +187,49 @@ impl fmt::Display for Repr {
     }
 }
 
-/* #[cfg(test)]
+#[cfg(test)]
 mod test {
     use super::*;
+    use crate::geonet::time::Instant;
     use crate::geonet::types::*;
     use crate::geonet::wire::ethernet::Address as MacAddress;
     use crate::geonet::wire::geonet::{Address as GnAddress, StationType};
 
     static BYTES_HEADER: [u8; 48] = [
-        0x09, 0x29, 0x00, 0x00, 0x3c, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x12, 0x5b, 0x43,
-        0x44, 0x1d, 0x11, 0x37, 0x60, 0x01, 0x7b, 0x0d, 0x4e, 0x80, 0x18, 0x0b, 0x2c, 0x14, 0x00,
-        0x16, 0x33, 0x12, 0x28, 0x26, 0x45, 0x21, 0xf2, 0x41, 0x39, 0x01, 0xa4, 0xa9, 0xaf, 0x1d,
-        0x0f, 0xa0, 0x22,
+        0x09, 0x29, 0x00, 0x00, 0xbc, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x00, 0x00, 0x00,
+        0x78, 0x1c, 0xc6, 0x66, 0x60, 0xfd, 0xe2, 0x03, 0xd4, 0x80, 0x18, 0x0b, 0x2c, 0xbc, 0x00,
+        0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x00, 0x00, 0x00, 0x78, 0x1c, 0xc6, 0x66, 0x60, 0xfd,
+        0xe2, 0x03, 0xd4,
     ];
 
-    static BYTES_SO_PV: [u8; 24] = [
-        0x3c, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x12, 0x5b, 0x43, 0x44, 0x1d, 0x11, 0x37,
-        0x60, 0x01, 0x7b, 0x0d, 0x4e, 0x80, 0x18, 0x0b, 0x2c,
-    ];
-    static BYTES_DE_PV: [u8; 20] = [
-        0x14, 0x00, 0x16, 0x33, 0x12, 0x28, 0x26, 0x45, 0x21, 0xf2, 0x41, 0x39, 0x01, 0xa4, 0xa9,
-        0xaf, 0x1d, 0x0f, 0xa0, 0x22,
-    ];
+    fn lpv_repr() -> LongPositionVector {
+        LongPositionVector {
+            address: GnAddress::new(
+                true,
+                StationType::RoadSideUnit,
+                MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
+            ),
+            timestamp: Instant::from_millis(120),
+            latitude: Latitude::new::<tenth_of_microdegree>(482764384.0),
+            longitude: Longitude::new::<tenth_of_microdegree>(-35519532.0),
+            is_accurate: true,
+            speed: Speed::new::<centimeter_per_second>(24.0),
+            heading: Heading::new::<decidegree>(2860.0),
+        }
+    }
+
+    fn spv_repr() -> ShortPositionVector {
+        ShortPositionVector {
+            address: GnAddress::new(
+                true,
+                StationType::RoadSideUnit,
+                MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
+            ),
+            timestamp: Instant::from_millis(120),
+            latitude: Latitude::new::<tenth_of_microdegree>(482764384.0),
+            longitude: Longitude::new::<tenth_of_microdegree>(-35519532.0),
+        }
+    }
 
     #[test]
     fn test_check_len() {
@@ -224,14 +245,8 @@ mod test {
     fn test_deconstruct() {
         let header = Header::new_unchecked(&BYTES_HEADER);
         assert_eq!(header.sequence_number(), SequenceNumber(2345));
-        assert_eq!(
-            header.source_position_vector(),
-            LongPositionVector::from_bytes(&BYTES_SO_PV)
-        );
-        assert_eq!(
-            header.destination_position_vector(),
-            ShortPositionVector::from_bytes(&BYTES_DE_PV)
-        );
+        assert_eq!(header.source_position_vector().unwrap(), lpv_repr());
+        assert_eq!(header.destination_position_vector().unwrap(), spv_repr());
     }
 
     #[test]
@@ -242,29 +257,8 @@ mod test {
             repr,
             Repr {
                 sequence_number: SequenceNumber(2345),
-                source_position_vector: LongPositionVector::new(
-                    GnAddress::new(
-                        false,
-                        StationType::RoadSideUnit,
-                        MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1])
-                    ),
-                    307970884,
-                    Latitude::new::<tenth_of_microdegree>(487667533.0),
-                    Longitude::new::<tenth_of_microdegree>(24841520.0),
-                    true,
-                    Speed::new::<centimeter_per_second>(24.0),
-                    Heading::new::<decidegree>(2860.0),
-                ),
-                destination_position_vector: ShortPositionVector::new(
-                    GnAddress::new(
-                        false,
-                        StationType::PassengerCar,
-                        MacAddress([0x16, 0x33, 0x12, 0x28, 0x26, 0x45])
-                    ),
-                    569524537,
-                    Latitude::new::<tenth_of_microdegree>(27568559.0),
-                    Longitude::new::<tenth_of_microdegree>(487563298.0),
-                ),
+                source_position_vector: lpv_repr(),
+                destination_position_vector: spv_repr(),
             }
         );
     }
@@ -273,29 +267,8 @@ mod test {
     fn test_repr_emit() {
         let repr = Repr {
             sequence_number: SequenceNumber(2345),
-            source_position_vector: LongPositionVector::new(
-                GnAddress::new(
-                    false,
-                    StationType::RoadSideUnit,
-                    MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
-                ),
-                307970884,
-                Latitude::new::<tenth_of_microdegree>(487667533.0),
-                Longitude::new::<tenth_of_microdegree>(24841520.0),
-                true,
-                Speed::new::<centimeter_per_second>(24.0),
-                Heading::new::<decidegree>(2860.0),
-            ),
-            destination_position_vector: ShortPositionVector::new(
-                GnAddress::new(
-                    false,
-                    StationType::PassengerCar,
-                    MacAddress([0x16, 0x33, 0x12, 0x28, 0x26, 0x45]),
-                ),
-                569524537,
-                Latitude::new::<tenth_of_microdegree>(27568559.0),
-                Longitude::new::<tenth_of_microdegree>(487563298.0),
-            ),
+            source_position_vector: lpv_repr(),
+            destination_position_vector: spv_repr(),
         };
         let mut bytes = [0u8; HEADER_LEN];
         let mut long = Header::new_unchecked(&mut bytes);
@@ -310,4 +283,3 @@ mod test {
         assert_eq!(repr.buffer_len(), BYTES_HEADER.len());
     }
 }
- */

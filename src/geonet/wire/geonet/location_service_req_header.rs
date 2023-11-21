@@ -175,24 +175,37 @@ impl fmt::Display for Repr {
     }
 }
 
-/* #[cfg(test)]
+#[cfg(test)]
 mod test {
     use super::*;
+    use crate::geonet::time::Instant;
     use crate::geonet::types::*;
     use crate::geonet::wire::ethernet::Address as MacAddress;
     use crate::geonet::wire::geonet::{Address as GnAddress, StationType};
 
     static BYTES_HEADER: [u8; 36] = [
-        0x09, 0x29, 0x00, 0x00, 0x3c, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x12, 0x5b, 0x43,
-        0x44, 0x1d, 0x11, 0x37, 0x60, 0x01, 0x7b, 0x0d, 0x4e, 0x80, 0x18, 0x0b, 0x2c, 0x14, 0x00,
+        0x09, 0x29, 0x00, 0x00, 0xbc, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x00, 0x00, 0x00,
+        0x78, 0x1c, 0xc6, 0x66, 0x60, 0xfd, 0xe2, 0x03, 0xd4, 0x80, 0x18, 0x0b, 0x2c, 0x14, 0x00,
         0x16, 0x33, 0x12, 0x28, 0x26, 0x45,
     ];
 
-    static BYTES_SO_PV: [u8; 24] = [
-        0x3c, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x12, 0x5b, 0x43, 0x44, 0x1d, 0x11, 0x37,
-        0x60, 0x01, 0x7b, 0x0d, 0x4e, 0x80, 0x18, 0x0b, 0x2c,
-    ];
     static BYTES_REQ_ADDR: [u8; 8] = [0x14, 0x00, 0x16, 0x33, 0x12, 0x28, 0x26, 0x45];
+
+    fn lpv_repr() -> LongPositionVector {
+        LongPositionVector {
+            address: GnAddress::new(
+                true,
+                StationType::RoadSideUnit,
+                MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
+            ),
+            timestamp: Instant::from_millis(120),
+            latitude: Latitude::new::<tenth_of_microdegree>(482764384.0),
+            longitude: Longitude::new::<tenth_of_microdegree>(-35519532.0),
+            is_accurate: true,
+            speed: Speed::new::<centimeter_per_second>(24.0),
+            heading: Heading::new::<decidegree>(2860.0),
+        }
+    }
 
     #[test]
     fn test_check_len() {
@@ -208,10 +221,7 @@ mod test {
     fn test_deconstruct() {
         let header = Header::new_unchecked(&BYTES_HEADER);
         assert_eq!(header.sequence_number(), SequenceNumber(2345));
-        assert_eq!(
-            header.source_position_vector(),
-            LongPositionVector::from_bytes(&BYTES_SO_PV)
-        );
+        assert_eq!(header.source_position_vector().unwrap(), lpv_repr());
         assert_eq!(
             header.request_address(),
             GnAddress::from_bytes(&BYTES_REQ_ADDR)
@@ -226,19 +236,7 @@ mod test {
             repr,
             Repr {
                 sequence_number: SequenceNumber(2345),
-                source_position_vector: LongPositionVector::new(
-                    GnAddress::new(
-                        false,
-                        StationType::RoadSideUnit,
-                        MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1])
-                    ),
-                    307970884,
-                    Latitude::new::<tenth_of_microdegree>(487667533.0),
-                    Longitude::new::<tenth_of_microdegree>(24841520.0),
-                    true,
-                    Speed::new::<centimeter_per_second>(24.0),
-                    Heading::new::<decidegree>(2860.0),
-                ),
+                source_position_vector: lpv_repr(),
                 request_address: GnAddress::new(
                     false,
                     StationType::PassengerCar,
@@ -252,19 +250,7 @@ mod test {
     fn test_repr_emit() {
         let repr = Repr {
             sequence_number: SequenceNumber(2345),
-            source_position_vector: LongPositionVector::new(
-                GnAddress::new(
-                    false,
-                    StationType::RoadSideUnit,
-                    MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
-                ),
-                307970884,
-                Latitude::new::<tenth_of_microdegree>(487667533.0),
-                Longitude::new::<tenth_of_microdegree>(24841520.0),
-                true,
-                Speed::new::<centimeter_per_second>(24.0),
-                Heading::new::<decidegree>(2860.0),
-            ),
+            source_position_vector: lpv_repr(),
             request_address: GnAddress::new(
                 false,
                 StationType::PassengerCar,
@@ -283,4 +269,4 @@ mod test {
         let repr = Repr::parse(&header).unwrap();
         assert_eq!(repr.buffer_len(), BYTES_HEADER.len());
     }
-} */
+}

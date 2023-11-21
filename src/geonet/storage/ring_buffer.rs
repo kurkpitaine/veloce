@@ -774,10 +774,10 @@ mod test {
 
         // Call all functions that calculate the remainder against rx_buffer.capacity()
         // with a backing storage with a length of 0.
-        assert_eq!(no_capacity.get_unallocated(0, 0), &[]);
-        assert_eq!(no_capacity.get_allocated(0, 0), &[]);
+        assert_eq!(no_capacity.get_unallocated(0, 0), &[] as &[u8]);
+        assert_eq!(no_capacity.get_allocated(0, 0), &[] as &[u8]);
         no_capacity.dequeue_allocated(0);
-        assert_eq!(no_capacity.enqueue_many(0), &[]);
+        assert_eq!(no_capacity.enqueue_many(0), &[] as &[u8]);
         assert_eq!(no_capacity.enqueue_one(), Err(Full));
         assert_eq!(no_capacity.contiguous_window(), 0);
     }

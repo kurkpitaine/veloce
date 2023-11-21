@@ -5,7 +5,7 @@ provides lookup and caching of hardware addresses, and handles management packet
 */
 
 mod interface;
-mod interface_set;
+//mod interface_set;
 #[cfg(feature = "proto-geonet")]
 mod location_service;
 #[cfg(feature = "proto-geonet")]

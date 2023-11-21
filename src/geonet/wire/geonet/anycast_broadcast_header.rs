@@ -282,3 +282,92 @@ impl fmt::Display for Repr {
         )
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::geonet::time::Instant;
+    use crate::geonet::wire::ethernet::Address as MacAddress;
+    use crate::geonet::wire::geonet::{Address as GnAddress, StationType};
+
+    static BYTES_HEADER: [u8; 44] = [
+        0x00, 0x0f, 0x00, 0x00, 0xbc, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x00, 0x00, 0x00,
+        0x78, 0x1c, 0xc6, 0x66, 0x60, 0xfd, 0xe2, 0x03, 0xd4, 0x80, 0x18, 0x0b, 0x2c, 0x1c, 0xc5,
+        0xb7, 0x20, 0xfd, 0xd8, 0x66, 0x90, 0x01, 0xf4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+
+    fn lpv_repr() -> LongPositionVector {
+        LongPositionVector {
+            address: GnAddress::new(
+                true,
+                StationType::RoadSideUnit,
+                MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
+            ),
+            timestamp: Instant::from_millis(120),
+            latitude: Latitude::new::<tenth_of_microdegree>(482764384.0),
+            longitude: Longitude::new::<tenth_of_microdegree>(-35519532.0),
+            is_accurate: true,
+            speed: Speed::new::<centimeter_per_second>(24.0),
+            heading: Heading::new::<decidegree>(2860.0),
+        }
+    }
+
+    #[test]
+    fn test_check_len() {
+        assert_eq!(
+            Err(Error::Truncated),
+            Header::new_unchecked(&BYTES_HEADER[..HEADER_LEN - 1]).check_len()
+        );
+
+        assert_eq!(Ok(()), Header::new_unchecked(&BYTES_HEADER).check_len());
+    }
+
+    #[test]
+    fn test_deconstruct() {
+        let header = Header::new_unchecked(&BYTES_HEADER);
+        assert_eq!(header.source_position_vector().unwrap(), lpv_repr());
+    }
+
+    #[test]
+    fn test_repr_parse_valid() {
+        let header = Header::new_unchecked(&BYTES_HEADER);
+        let repr = Repr::parse(&header).unwrap();
+
+        assert_eq!(
+            repr,
+            Repr {
+                sequence_number: SequenceNumber(15),
+                source_position_vector: lpv_repr(),
+                latitude: Latitude::new::<tenth_of_microdegree>(482719520.0),
+                longitude: Longitude::new::<tenth_of_microdegree>(-36149616.0),
+                distance_a: Distance::new::<meter>(500.0),
+                distance_b: Distance::new::<meter>(0.0),
+                angle: Angle::new::<degree>(0.0)
+            }
+        );
+    }
+
+    #[test]
+    fn test_repr_emit() {
+        let repr = Repr {
+            sequence_number: SequenceNumber(15),
+            source_position_vector: lpv_repr(),
+            latitude: Latitude::new::<tenth_of_microdegree>(482719488.0),
+            longitude: Longitude::new::<tenth_of_microdegree>(-36149612.0),
+            distance_a: Distance::new::<meter>(500.0),
+            distance_b: Distance::new::<meter>(0.0),
+            angle: Angle::new::<degree>(0.0),
+        };
+        let mut bytes = [0u8; HEADER_LEN];
+        let mut long = Header::new_unchecked(&mut bytes);
+        repr.emit(&mut long);
+        assert_eq!(long.into_inner(), &BYTES_HEADER);
+    }
+
+    #[test]
+    fn test_buffer_len() {
+        let header = Header::new_unchecked(&BYTES_HEADER);
+        let repr = Repr::parse(&header).unwrap();
+        assert_eq!(repr.buffer_len(), BYTES_HEADER.len());
+    }
+}

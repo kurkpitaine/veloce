@@ -21,9 +21,8 @@ use super::location_service::LocationServiceRequestHandle;
 /// and contains the timestamp past which the mapping should be discarded.
 #[derive(Debug, Clone)]
 pub(super) struct LocationTableEntry {
-    /// Geonetworking address of the station.
-    pub geonet_addr: GnAddress,
     /// Geonetworking Long Position Vector of the station.
+    /// Contains the Geonetworking address.
     pub position_vector: LongPositionVector,
     /// Handle of the Location Service request for the station.
     pub ls_pending: Option<LocationServiceRequestHandle>,
@@ -157,7 +156,6 @@ impl LocationTable {
         } else {
             /* Entry does not exist. Insert a new one inside storage. */
             let new_entry = LocationTableEntry {
-                geonet_addr: position_vector.address,
                 position_vector: *position_vector,
                 ls_pending: None,
                 is_neighbour: false,
@@ -230,7 +228,6 @@ impl LocationTable {
         } else {
             /* Entry does not exist. Insert a new one inside storage. */
             let new_entry = LocationTableEntry {
-                geonet_addr: position_vector.address,
                 position_vector: *position_vector,
                 ls_pending: None,
                 is_neighbour: false,

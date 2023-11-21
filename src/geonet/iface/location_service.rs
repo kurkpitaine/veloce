@@ -13,14 +13,6 @@ pub enum LocationServiceRequestError {
     NoFreeSlot,
 }
 
-/// Error returned by [`AccessHandler::ls_get_request_result`]
-pub enum LocationServiceGetRequestError {
-    /// Request is not done yet.
-    Pending,
-    /// Request failed.
-    Failed,
-}
-
 /// Location Service request entry.
 #[derive(Debug)]
 pub struct LocationServiceRequest {

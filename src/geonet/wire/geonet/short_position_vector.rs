@@ -209,101 +209,93 @@ impl fmt::Display for Repr {
     }
 }
 
-/* #[cfg(test)]
+#[cfg(test)]
 mod test {
     use super::*;
     use crate::geonet::wire::ethernet::Address as MacAddress;
     use crate::geonet::wire::geonet::{Address as GnAddress, StationType};
 
-    static BYTES_LPV: [u8; 24] = [
-        0x3c, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x12, 0x5b, 0x43, 0x44, 0x1d, 0x11, 0x37,
-        0x60, 0x01, 0x7b, 0x0d, 0x4e, 0x80, 0x18, 0x0b, 0x2c,
-    ];
-
     static BYTES_SPV: [u8; 20] = [
-        0x3c, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x12, 0x5b, 0x43, 0x44, 0x1d, 0x11, 0x37,
-        0x60, 0x01, 0x7b, 0x0d, 0x4e,
+        0xbc, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x00, 0x00, 0x00, 0x78, 0x1c, 0xc6, 0x66,
+        0x60, 0xfd, 0xe2, 0x03, 0xd4,
     ];
 
     #[test]
-    fn test_lpv_new() {
-        let lpv = LongVector::new(
+    fn test_check_len() {
+        assert_eq!(
+            Err(Error::Truncated),
+            Header::new_unchecked(&BYTES_SPV[..2]).check_len()
+        );
+
+        // valid
+        assert_eq!(Ok(()), Header::new_unchecked(&BYTES_SPV).check_len());
+    }
+
+    #[test]
+    fn test_header_deconstruct() {
+        let header = Header::new_unchecked(&BYTES_SPV);
+        assert_eq!(
+            header.address(),
             GnAddress::new(
-                false,
+                true,
+                StationType::RoadSideUnit,
+                MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
+            )
+        );
+        assert_eq!(header.timestamp(), 120);
+        assert_eq!(
+            header.latitude(),
+            Latitude::new::<tenth_of_microdegree>(482764384.0)
+        );
+        assert_eq!(
+            header.longitude(),
+            Longitude::new::<tenth_of_microdegree>(-35519532.0)
+        );
+    }
+
+    #[test]
+    fn test_repr_parse_valid() {
+        let header = Header::new_unchecked(&BYTES_SPV);
+        let repr = Repr::parse(&header).unwrap();
+        assert_eq!(
+            repr,
+            Repr {
+                address: GnAddress::new(
+                    true,
+                    StationType::RoadSideUnit,
+                    MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
+                ),
+                timestamp: Instant::from_millis(120),
+                latitude: Latitude::new::<tenth_of_microdegree>(482764384.0),
+                longitude: Longitude::new::<tenth_of_microdegree>(-35519532.0),
+            }
+        );
+    }
+
+    #[test]
+    fn test_repr_emit() {
+        let repr = Repr {
+            address: GnAddress::new(
+                true,
                 StationType::RoadSideUnit,
                 MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
             ),
-            307970884,
-            Latitude::new::<tenth_of_microdegree>(487667533.0),
-            Longitude::new::<tenth_of_microdegree>(24841520.0),
-            true,
-            Speed::new::<centimeter_per_second>(24.0),
-            Heading::new::<decidegree>(2860.0),
-        );
+            timestamp: Instant::from_millis(120),
+            latitude: Latitude::new::<tenth_of_microdegree>(482764384.0),
+            longitude: Longitude::new::<tenth_of_microdegree>(-35519532.0),
+        };
 
-        assert_eq!(lpv.as_bytes(), &BYTES_LPV);
+        let mut bytes = [0u8; 20];
+        let mut header = Header::new_unchecked(&mut bytes);
+        repr.emit(&mut header);
+
+        assert_eq!(header.into_inner(), &BYTES_SPV);
     }
 
     #[test]
-    fn test_spv_new() {
-        let spv = ShortVector::new(
-            GnAddress::new(
-                false,
-                StationType::RoadSideUnit,
-                MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
-            ),
-            307970884,
-            Latitude::new::<tenth_of_microdegree>(487667533.0),
-            Longitude::new::<tenth_of_microdegree>(24841520.0),
-        );
-
-        assert_eq!(spv.as_bytes(), &BYTES_SPV);
+    fn test_buffer_len() {
+        let header = Header::new_unchecked(&BYTES_SPV);
+        let repr = Repr::parse(&header).unwrap();
+        assert_eq!(repr.buffer_len(), BYTES_SPV.len());
     }
-
-    #[test]
-    fn test_lpv_from_bytes() {
-        let lpv = LongVector::from_bytes(&BYTES_LPV);
-        assert_eq!(
-            lpv.address(),
-            GnAddress::new(
-                false,
-                StationType::RoadSideUnit,
-                MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1])
-            )
-        );
-        assert_eq!(lpv.timestamp(), 307970884);
-        assert_eq!(lpv.latitude().get::<tenth_of_microdegree>(), 487667533.0);
-        assert_eq!(lpv.longitude().get::<tenth_of_microdegree>(), 24841520.0);
-        assert_eq!(lpv.is_accurate(), true);
-        assert_eq!(lpv.speed(), Speed::new::<centimeter_per_second>(24.0));
-        assert_eq!(lpv.heading(), Heading::new::<decidegree>(2860.0));
-    }
-
-    #[test]
-    fn test_spv_from_bytes() {
-        let spv = ShortVector::from_bytes(&BYTES_SPV);
-        assert_eq!(
-            spv.address(),
-            GnAddress::new(
-                false,
-                StationType::RoadSideUnit,
-                MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1])
-            )
-        );
-        assert_eq!(spv.timestamp(), 307970884);
-        assert_eq!(spv.latitude().get::<tenth_of_microdegree>(), 487667533.0);
-        assert_eq!(spv.longitude().get::<tenth_of_microdegree>(), 24841520.0);
-    }
-
-    #[test]
-    #[should_panic(expected = "length")]
-    fn test_lpv_from_bytes_too_long() {
-        let _ = LongVector::from_bytes(&[0u8; 25]);
-    }
-
-    #[test]
-    #[should_panic(expected = "length")]
-    fn test_spv_from_bytes_too_long() {
-        let _ = ShortVector::from_bytes(&[0u8; 21]);
-    }
-} */
+}

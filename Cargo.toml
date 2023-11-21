@@ -18,6 +18,9 @@ managed = { version = "0.8", default-features = false, features = ["map"] }
 rasn = "0.12.1"
 uom = { version = "0.34.0", features = ["autoconvert", "f32"] }
 
+[dev-dependencies]
+approx = "0.5.1"
+
 [features]
 std = ["managed/std", "alloc"]
 alloc = ["managed/alloc", "defmt?/alloc"]

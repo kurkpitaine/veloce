@@ -142,7 +142,7 @@ where
         // Make push return a reference on the pushed element.
         node.payload[0..payload.len()].copy_from_slice(payload);
 
-        self.push(node, timestamp)
+        self.push(node)
             .map_err(|_| PacketBufferError::PacketTooBig)?;
 
         self.update_poll();
@@ -151,7 +151,7 @@ where
     }
 
     /// Push a new element in the buffer.
-    fn push(&mut self, node: Node<T>, timestamp: Instant) -> Result<(), TooBig> {
+    fn push(&mut self, node: Node<T>) -> Result<(), TooBig> {
         // Check packet could fit in the buffer
         if node.size > self.capacity() {
             return Err(TooBig);

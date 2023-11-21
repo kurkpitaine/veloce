@@ -30,7 +30,7 @@ impl RawSocket {
         let mut lower = sys::RawSocketDesc::new(name, medium)?;
         lower.bind_interface()?;
 
-        let mut mtu = lower.interface_mtu()?;
+        let mtu = lower.interface_mtu()?;
 
         #[cfg(feature = "medium-ethernet")]
         if medium == Medium::Ethernet {

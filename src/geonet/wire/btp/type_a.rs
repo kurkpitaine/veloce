@@ -170,3 +170,62 @@ impl<T: AsRef<[u8]>> PrettyPrint for Header<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    // A BTP-B Header
+    static BYTES_HEADER: [u8; 4] = [0x7f, 0x4b, 0x3a, 0x98];
+
+    #[test]
+    fn test_check_len() {
+        // less than 4 bytes
+        assert_eq!(
+            Err(Error::Truncated),
+            Header::new_unchecked(&BYTES_HEADER[..2]).check_len()
+        );
+
+        // valid
+        assert_eq!(Ok(()), Header::new_unchecked(&BYTES_HEADER).check_len());
+    }
+
+    #[test]
+    fn test_header_deconstruct() {
+        let header = Header::new_unchecked(&BYTES_HEADER);
+        assert_eq!(header.destination_port(), 32587);
+        assert_eq!(header.source_port(), 15000);
+    }
+
+    #[test]
+    fn test_repr_parse_valid() {
+        let header = Header::new_unchecked(&BYTES_HEADER);
+        let repr = Repr::parse(&header).unwrap();
+        assert_eq!(
+            repr,
+            Repr {
+                dst_port: 32587,
+                src_port: 15000
+            }
+        );
+    }
+
+    #[test]
+    fn test_repr_emit() {
+        let repr = Repr {
+            dst_port: 32587,
+            src_port: 15000,
+        };
+        let mut bytes = [0u8; 4];
+        let mut header = Header::new_unchecked(&mut bytes);
+        repr.emit(&mut header);
+        assert_eq!(header.into_inner(), &BYTES_HEADER);
+    }
+
+    #[test]
+    fn test_buffer_len() {
+        let header = Header::new_unchecked(&BYTES_HEADER);
+        let repr = Repr::parse(&header).unwrap();
+        assert_eq!(repr.buffer_len(), BYTES_HEADER.len());
+    }
+}

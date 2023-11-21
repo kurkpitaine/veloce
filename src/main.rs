@@ -31,7 +31,7 @@ fn main() {
     let ll_addr = EthernetAddress([0x00, 0x0c, 0x6c, 0x0d, 0x14, 0x70]);
 
     // Configure device
-    let mut device = RawSocket::new("en0", Medium::Ethernet).unwrap();
+    let mut device = RawSocket::new("en7", Medium::Ethernet).unwrap();
     let fd = device.as_raw_fd();
 
     // Configure interface

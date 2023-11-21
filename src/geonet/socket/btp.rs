@@ -13,7 +13,6 @@ use crate::geonet::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, SingleHopReqMeta, TopoScopedReqMeta, Transport,
     UnicastReqMeta, UpperProtocol,
 };
-use crate::geonet::socket::btp;
 use crate::geonet::{config, wire};
 
 use crate::geonet::storage::Empty;
@@ -135,7 +134,7 @@ impl std::error::Error for RecvError {}
 /// transmit and receive packet buffers.
 #[derive(Debug)]
 pub struct SocketB<'a> {
-    endpoint: u16,
+    port: u16,
     rx_buffer: RxPacketBuffer<'a>,
     tx_buffer: TxPacketBuffer<'a>,
     #[cfg(feature = "async")]
@@ -148,7 +147,7 @@ impl<'a> SocketB<'a> {
     /// Create a geonet socket with the given buffers.
     pub fn new(rx_buffer: RxPacketBuffer<'a>, tx_buffer: TxPacketBuffer<'a>) -> SocketB<'a> {
         SocketB {
-            endpoint: Default::default(),
+            port: Default::default(),
             rx_buffer,
             tx_buffer,
             #[cfg(feature = "async")]
@@ -193,19 +192,19 @@ impl<'a> SocketB<'a> {
         self.tx_waker.register(waker)
     }
 
-    /// Return the bound endpoint.
+    /// Return the bound port.
     #[inline]
-    pub fn endpoint(&self) -> u16 {
-        self.endpoint
+    pub fn port(&self) -> u16 {
+        self.port
     }
 
-    /// Bind the socket to the given endpoint.
+    /// Bind the socket to the given port.
     ///
     /// This function returns `Err(Error::Illegal)` if the socket was open
     /// (see [is_open](#method.is_open)), and `Err(Error::Unaddressable)`
-    /// if the port in the given endpoint is zero.
-    pub fn bind(&mut self, endpoint: u16) -> Result<(), BindError> {
-        if endpoint == 0 {
+    /// if the port is zero.
+    pub fn bind(&mut self, port: u16) -> Result<(), BindError> {
+        if port == 0 {
             return Err(BindError::Unaddressable);
         }
 
@@ -213,7 +212,7 @@ impl<'a> SocketB<'a> {
             return Err(BindError::InvalidState);
         }
 
-        self.endpoint = endpoint;
+        self.port = port;
 
         #[cfg(feature = "async")]
         {
@@ -226,8 +225,8 @@ impl<'a> SocketB<'a> {
 
     /// Close the socket.
     pub fn close(&mut self) {
-        // Clear the bound endpoint of the socket.
-        self.endpoint = Default::default();
+        // Clear the bound port of the socket.
+        self.port = Default::default();
 
         // Reset the RX and TX buffers of the socket.
         self.tx_buffer.reset();
@@ -243,7 +242,7 @@ impl<'a> SocketB<'a> {
     /// Check whether the socket is open.
     #[inline]
     pub fn is_open(&self) -> bool {
-        self.endpoint != 0
+        self.port != 0
     }
 
     /// Check whether the transmit buffer is full.
@@ -313,7 +312,7 @@ impl<'a> SocketB<'a> {
         // We need to serialize it early because it might be buffer
         // on the Geonetworking layer.
         let btp_repr = BtpBRepr {
-            dst_port: self.endpoint,
+            dst_port: self.port,
             dst_port_info: Default::default(),
         };
 
@@ -350,7 +349,7 @@ impl<'a> SocketB<'a> {
             .tx_buffer
             .enqueue_with_infallible(max_size, meta, |mut buf| {
                 let btp_repr = BtpBRepr {
-                    dst_port: self.endpoint,
+                    dst_port: self.port,
                     dst_port_info: Default::default(),
                 };
 
@@ -422,8 +421,8 @@ impl<'a> SocketB<'a> {
     }
 
     /// Query wether this BTP-B socket accepts the segment.
-    pub(crate) fn accepts(&self, cx: &mut Context, repr: &wire::BtpBRepr) -> bool {
-        if self.endpoint != repr.dst_port {
+    pub(crate) fn accepts(&self, _cx: &mut Context, repr: &wire::BtpBRepr) -> bool {
+        if self.port != repr.dst_port {
             return false;
         }
 

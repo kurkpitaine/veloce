@@ -167,7 +167,7 @@ pub enum Shape {
 
 impl Shape {
     /// Geometric function for each [`Shape`].
-    pub(crate) fn geometric_function(&self, position: CartesianPosition) -> Ratio {
+    fn geometric_function(&self, position: CartesianPosition) -> Ratio {
         match self {
             Shape::Circle(c) => c.geometric_function(position),
             Shape::Rectangle(r) => r.geometric_function(position),
@@ -319,7 +319,7 @@ impl GeoArea {
 
 /// Converts a geographic position `position` into a cartesian position in the
 /// coordinates system centered on `origin`.
-pub(crate) fn to_cartesian(origin: GeoPosition, position: GeoPosition) -> CartesianPosition {
+fn to_cartesian(origin: GeoPosition, position: GeoPosition) -> CartesianPosition {
     let geocentric_system = Geocentric::wgs_84();
     let system = LocalCartesian::new_unchecked(
         geocentric_system,
@@ -341,12 +341,115 @@ pub(crate) fn to_cartesian(origin: GeoPosition, position: GeoPosition) -> Cartes
 }
 
 /// Rotate a `point` using `azimuth` angle.
-pub(crate) fn rotate(point: CartesianPosition, azimuth: Angle) -> CartesianPosition {
+fn rotate(point: CartesianPosition, azimuth: Angle) -> CartesianPosition {
     let zenith = Angle::new::<radian>(FRAC_PI_2) - azimuth;
     let (sin_z, cos_z) = zenith.sin_cos();
 
     CartesianPosition {
         x: cos_z * point.x + sin_z * point.y,
         y: -sin_z * point.x + cos_z * point.y,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{Circle, GeoArea, GeoPosition, Shape};
+    use crate::geonet::{types::{Distance, Latitude, Longitude}, common::geo_area::{Rectangle, Ellipse}};
+    use uom::si::{angle::degree, f32::Angle, length::meter};
+
+    #[test]
+    fn test_circle_geo_zone() {
+        let area = GeoArea {
+            shape: Shape::Circle(Circle {
+                radius: Distance::new::<meter>(500.0),
+            }),
+            position: GeoPosition {
+                latitude: Latitude::new::<degree>(48.2764384),
+                longitude: Longitude::new::<degree>(-3.5519532),
+            },
+            angle: Angle::new::<degree>(0.0),
+        };
+
+        let inside = GeoPosition {
+            latitude: Latitude::new::<degree>(48.277888),
+            longitude: Longitude::new::<degree>(-3.552507),
+        };
+
+        assert!(area.inside_or_at_border(inside));
+
+        let outside = GeoPosition {
+            latitude: Latitude::new::<degree>(48.273751),
+            longitude: Longitude::new::<degree>(-3.535616),
+        };
+
+        assert!(!area.inside_or_at_border(outside));
+    }
+
+    #[test]
+    fn test_rectangle_geo_zone() {
+        let mut area = GeoArea {
+            shape: Shape::Rectangle(Rectangle {
+                a: Distance::new::<meter>(125.0),
+                b: Distance::new::<meter>(250.0),
+            }),
+            position: GeoPosition {
+                latitude: Latitude::new::<degree>(48.2764384),
+                longitude: Longitude::new::<degree>(-3.5519532),
+            },
+            angle: Angle::new::<degree>(0.0),
+        };
+
+        let inside = GeoPosition {
+            latitude: Latitude::new::<degree>(48.277027),
+            longitude: Longitude::new::<degree>(-3.552216),
+        };
+
+        assert!(area.inside_or_at_border(inside));
+
+        let outside = GeoPosition {
+            latitude: Latitude::new::<degree>(48.278316),
+            longitude: Longitude::new::<degree>(-3.553161),
+        };
+
+        assert!(!area.inside_or_at_border(outside));
+
+        // Rotate shape to make "outside" point inside the rectangle.
+        area.angle = Angle::new::<degree>(45.0);
+
+        assert!(area.inside_or_at_border(outside));
+    }
+
+    #[test]
+    fn test_ellipse_geo_zone() {
+        let mut area = GeoArea {
+            shape: Shape::Ellipse(Ellipse {
+                a: Distance::new::<meter>(125.0),
+                b: Distance::new::<meter>(250.0),
+            }),
+            position: GeoPosition {
+                latitude: Latitude::new::<degree>(48.2764384),
+                longitude: Longitude::new::<degree>(-3.5519532),
+            },
+            angle: Angle::new::<degree>(0.0),
+        };
+
+        let inside = GeoPosition {
+            latitude: Latitude::new::<degree>(48.277027),
+            longitude: Longitude::new::<degree>(-3.552216),
+        };
+
+        assert!(area.inside_or_at_border(inside));
+
+        let outside = GeoPosition {
+            latitude: Latitude::new::<degree>(48.278316),
+            longitude: Longitude::new::<degree>(-3.553161),
+        };
+
+        assert!(!area.inside_or_at_border(outside));
+
+        // Rotate shape to make "outside" point inside the ellipse.
+        area.angle = Angle::new::<degree>(65.0);
+
+        assert!(area.inside_or_at_border(outside));
     }
 }

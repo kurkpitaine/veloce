@@ -2,7 +2,7 @@ use crate::geonet::types::{meter, Latitude, LatitudeTrait, Longitude, LongitudeT
 use uom::si::f32::{Length, Ratio};
 use uom::si::ratio::ratio;
 
-/// The equatorial radius of WGS84 ellipsoid (6378137 m).
+/// The equatorial radius of WGS84 ellipsoid (6_378_137 m).
 const WGS84_A: f32 = 6_378_137.0;
 /// The inverse flattening of WGS84 ellipsoid (1/298.257223563).
 const WGS84_F: f32 = 1.0 / (298_257_223_563.0 / 1_000_000_000.0);
@@ -70,7 +70,7 @@ impl Geocentric {
         let n = self.a / (Ratio::new::<ratio>(1.0) - self.e_sq * sin_phi * sin_phi).sqrt();
 
         let x = (n + alt) * cos_phi;
-        let y = x * cos_lambda;
+        let y = x * sin_lambda;
         let z = (self.e_sq_m * n + alt) * sin_phi;
 
         if let Some(mat) = transform {

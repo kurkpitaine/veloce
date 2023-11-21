@@ -11,13 +11,13 @@ impl InterfaceInner {
     /// Processes a BTP-A packet.
     pub(super) fn process_btp_a(
         &mut self,
-        sockets: &mut SocketSet,
-        ind: Indication,
-        handled_by_geonet_socket: bool,
+        _sockets: &mut SocketSet,
+        _ind: Indication,
+        _handled_by_geonet_socket: bool,
         payload: &[u8],
     ) {
         let btp_a = check!(BtpAHeader::new_checked(payload));
-        let btp_a_repr = check!(BtpARepr::parse(&btp_a));
+        let _btp_a_repr = check!(BtpARepr::parse(&btp_a));
     }
 
     /// Processes a BTP-B packet.
