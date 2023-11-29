@@ -1,11 +1,12 @@
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
-use crate::geonet::time::Instant;
 use crate::geonet::types::*;
 use crate::geonet::wire::geonet::Address as GnAddress;
 use crate::geonet::wire::LongPositionVectorRepr;
-use crate::geonet::{Error, Result};
+use crate::geonet::wire::{Error, Result};
+
+use super::PositionVectorTimestamp;
 
 /// A read/write wrapper around a Long/Short Position Vector Header.
 #[derive(Debug, PartialEq)]
@@ -49,13 +50,13 @@ impl<T: AsRef<[u8]>> Header<T> {
     }
 
     /// Ensure that no accessor method will panic if called.
-    /// Returns `Err(Error::Truncated)` if the buffer is too short.
+    /// Returns `Err(Error)` if the buffer is too short.
     pub fn check_len(&self) -> Result<()> {
         let data = self.buffer.as_ref();
         let len = data.len();
 
         if len < HEADER_LEN {
-            Err(Error::Truncated)
+            Err(Error)
         } else {
             Ok(())
         }
@@ -151,7 +152,7 @@ pub struct Repr {
     /// The Geonetworking address contained inside the Short Position Vector header.
     pub address: GnAddress,
     /// The timestamp contained inside the Short Position Vector header.
-    pub timestamp: Instant,
+    pub timestamp: PositionVectorTimestamp,
     /// The latitude contained inside the Short Position Vector header.
     pub latitude: Latitude,
     /// The longitude contained inside the Short Position Vector header.
@@ -164,7 +165,7 @@ impl Repr {
         header.check_len()?;
         Ok(Repr {
             address: header.address(),
-            timestamp: Instant::from_millis(header.timestamp()),
+            timestamp: PositionVectorTimestamp(header.timestamp()),
             latitude: header.latitude(),
             longitude: header.longitude(),
         })
@@ -179,7 +180,7 @@ impl Repr {
     /// Emit a high-level representation into a Short Position Vector Header.
     pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<T>) {
         header.set_address(self.address);
-        header.set_timestamp(self.timestamp.millis() as u32);
+        header.set_timestamp(self.timestamp.0);
         header.set_latitude(self.latitude);
         header.set_longitude(self.longitude);
     }
@@ -200,9 +201,9 @@ impl fmt::Display for Repr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Short Position Vector addr={} tst={}s lat={}° lon={}°",
+            "Short Position Vector addr={} tst={}ms lat={}° lon={}°",
             self.address,
-            self.timestamp,
+            self.timestamp.0,
             self.latitude.get::<degree>(),
             self.longitude.get::<degree>(),
         )
@@ -223,7 +224,7 @@ mod test {
     #[test]
     fn test_check_len() {
         assert_eq!(
-            Err(Error::Truncated),
+            Err(Error),
             Header::new_unchecked(&BYTES_SPV[..2]).check_len()
         );
 
@@ -265,7 +266,7 @@ mod test {
                     StationType::RoadSideUnit,
                     MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
                 ),
-                timestamp: Instant::from_millis(120),
+                timestamp: PositionVectorTimestamp(120),
                 latitude: Latitude::new::<tenth_of_microdegree>(482764384.0),
                 longitude: Longitude::new::<tenth_of_microdegree>(-35519532.0),
             }
@@ -280,7 +281,7 @@ mod test {
                 StationType::RoadSideUnit,
                 MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
             ),
-            timestamp: Instant::from_millis(120),
+            timestamp: PositionVectorTimestamp(120),
             latitude: Latitude::new::<tenth_of_microdegree>(482764384.0),
             longitude: Longitude::new::<tenth_of_microdegree>(-35519532.0),
         };

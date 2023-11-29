@@ -1,4 +1,4 @@
-use crate::geonet::{Error, Result};
+use crate::geonet::wire::{Error, Result};
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
@@ -95,13 +95,13 @@ impl<T: AsRef<[u8]>> Header<T> {
     }
 
     /// Ensure that no accessor method will panic if called.
-    /// Returns `Err(Error::Truncated)` if the buffer is too short.
+    /// Returns `Err(Error)` if the buffer is too short.
     pub fn check_len(&self) -> Result<()> {
         let data = self.buffer.as_ref();
         let len = data.len();
 
         if len < field::RESERVED + 1 {
-            Err(Error::Truncated)
+            Err(Error)
         } else {
             Ok(())
         }
@@ -321,7 +321,7 @@ mod test {
     fn test_check_len() {
         // less than 8 bytes
         assert_eq!(
-            Err(Error::Truncated),
+            Err(Error),
             Header::new_unchecked(&BYTES_HEADER[..6]).check_len()
         );
 

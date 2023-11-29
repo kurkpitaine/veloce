@@ -1,11 +1,12 @@
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
-use crate::geonet::time::Instant;
 use crate::geonet::types::*;
 use crate::geonet::wire::geonet::Address as GnAddress;
 use crate::geonet::wire::ShortPositionVectorRepr;
-use crate::geonet::{Error, Result};
+use crate::geonet::wire::{Error, Result};
+
+use super::PositionVectorTimestamp;
 
 /// A read/write wrapper around a Long/Short Position Vector Header.
 #[derive(Debug, PartialEq)]
@@ -55,13 +56,13 @@ impl<T: AsRef<[u8]>> Header<T> {
     }
 
     /// Ensure that no accessor method will panic if called.
-    /// Returns `Err(Error::Truncated)` if the buffer is too short.
+    /// Returns `Err(Error)` if the buffer is too short.
     pub fn check_len(&self) -> Result<()> {
         let data = self.buffer.as_ref();
         let len = data.len();
 
         if len < HEADER_LEN {
-            Err(Error::Truncated)
+            Err(Error)
         } else {
             Ok(())
         }
@@ -207,7 +208,7 @@ pub struct Repr {
     pub address: GnAddress,
     /// The timestamp contained inside the Long Position Vector header.
     /// This is also the time at which this Long Position Vector was generated.
-    pub timestamp: Instant,
+    pub timestamp: PositionVectorTimestamp,
     /// The latitude contained inside the Long Position Vector header.
     pub latitude: Latitude,
     /// The longitude contained inside the Long Position Vector header.
@@ -229,7 +230,7 @@ impl Repr {
         header.check_len()?;
         Ok(Repr {
             address: header.address(),
-            timestamp: Instant::from_millis(header.timestamp()),
+            timestamp: PositionVectorTimestamp(header.timestamp()),
             latitude: header.latitude(),
             longitude: header.longitude(),
             is_accurate: header.position_accuracy_indicator(),
@@ -247,7 +248,7 @@ impl Repr {
     /// Emit a high-level representation into a Long Position Vector Header.
     pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<T>) {
         header.set_address(self.address);
-        header.set_timestamp(self.timestamp.millis() as u32);
+        header.set_timestamp(self.timestamp.0);
         header.set_latitude(self.latitude);
         header.set_longitude(self.longitude);
         header.set_position_accuracy_indicator(self.is_accurate);
@@ -274,9 +275,9 @@ impl fmt::Display for Repr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Long Position Vector addr={} tst={}s lat={}° lon={}° is accurate={} speed={:.01}km/h heading={:.01}°",
+            "Long Position Vector addr={} tst={}ms lat={}° lon={}° is accurate={} speed={:.01}km/h heading={:.01}°",
             self.address,
-            self.timestamp,
+            self.timestamp.0,
             self.latitude.get::<degree>(),
             self.longitude.get::<degree>(),
             self.is_accurate,
@@ -300,7 +301,7 @@ mod test {
     #[test]
     fn test_check_len() {
         assert_eq!(
-            Err(Error::Truncated),
+            Err(Error),
             Header::new_unchecked(&BYTES_LPV[..2]).check_len()
         );
 
@@ -345,7 +346,7 @@ mod test {
                     StationType::RoadSideUnit,
                     MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
                 ),
-                timestamp: Instant::from_millis(120),
+                timestamp: PositionVectorTimestamp(120),
                 latitude: Latitude::new::<tenth_of_microdegree>(482764384.0),
                 longitude: Longitude::new::<tenth_of_microdegree>(-35519532.0),
                 is_accurate: true,
@@ -363,7 +364,7 @@ mod test {
                 StationType::RoadSideUnit,
                 MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
             ),
-            timestamp: Instant::from_millis(120),
+            timestamp: PositionVectorTimestamp(120),
             latitude: Latitude::new::<tenth_of_microdegree>(482764384.0),
             longitude: Longitude::new::<tenth_of_microdegree>(-35519532.0),
             is_accurate: true,

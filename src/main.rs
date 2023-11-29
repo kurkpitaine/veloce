@@ -13,7 +13,7 @@ use geonet::phy::{wait as phy_wait, Medium, RawSocket};
 use geonet::socket::btp::Request as BtpRequest;
 use geonet::storage::PacketBuffer;
 use geonet::time::{Duration, Instant};
-use geonet::types::{degree, meter, Distance, Latitude};
+use geonet::types::{degree, meter, Distance, Latitude, Longitude};
 use geonet::utils;
 use geonet::wire::{EthernetAddress, GnAddress, StationType};
 use geonet::{socket, time};
@@ -195,7 +195,7 @@ fn main() {
         }
 
         router.ego_position_vector.latitude = Latitude::new::<degree>(48.276434);
-        router.ego_position_vector.longitude = Latitude::new::<degree>(-3.5519532);
+        router.ego_position_vector.longitude = Longitude::new::<degree>(-3.5519532);
 
         let main_timeout = [
             next_shb_transmit,

@@ -1,4 +1,4 @@
-use crate::geonet::wire::ethernet::Address as MacAddress;
+use crate::geonet::{time::TAI2004, wire::ethernet::Address as MacAddress};
 use byteorder::{ByteOrder, NetworkEndian};
 use core::{cmp, fmt, ops, u16};
 
@@ -13,6 +13,41 @@ pub mod short_position_vector;
 pub mod single_hop_header;
 pub mod topo_header;
 pub mod unicast_header;
+
+/// Position vector timestamp.
+///
+/// Number of elapsed TAI milliseconds since
+/// 2004-01-01 00:00:00.000 UTC.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Clone, Copy, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct PositionVectorTimestamp(pub u32);
+
+impl fmt::Display for PositionVectorTimestamp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} ms", self.0)
+    }
+}
+
+impl From<TAI2004> for PositionVectorTimestamp {
+    fn from(value: TAI2004) -> Self {
+        let modulo = value.total_millis() & 0xffff_ffff;
+        PositionVectorTimestamp(modulo as u32)
+    }
+}
+
+impl From<PositionVectorTimestamp> for TAI2004 {
+    fn from(value: PositionVectorTimestamp) -> Self {
+        TAI2004::from_millis(value.0)
+    }
+}
+
+impl ops::Sub<PositionVectorTimestamp> for PositionVectorTimestamp {
+    type Output = PositionVectorTimestamp;
+
+    fn sub(self, rhs: PositionVectorTimestamp) -> PositionVectorTimestamp {
+        PositionVectorTimestamp(self.0 - rhs.0)
+    }
+}
 
 /// A Geonetworking sequence number.
 ///

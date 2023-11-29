@@ -1,5 +1,5 @@
 use crate::geonet::types::*;
-use crate::geonet::{Error, Result};
+use crate::geonet::wire::{Error, Result};
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
@@ -56,13 +56,13 @@ impl<T: AsRef<[u8]>> Header<T> {
     }
 
     /// Ensure that no accessor method will panic if called.
-    /// Returns `Err(Error::Truncated)` if the buffer is too short.
+    /// Returns `Err(Error)` if the buffer is too short.
     pub fn check_len(&self) -> Result<()> {
         let data = self.buffer.as_ref();
         let len = data.len();
 
         if len < HEADER_LEN {
-            Err(Error::Truncated)
+            Err(Error)
         } else {
             Ok(())
         }
@@ -286,9 +286,8 @@ impl fmt::Display for Repr {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::geonet::time::Instant;
     use crate::geonet::wire::ethernet::Address as MacAddress;
-    use crate::geonet::wire::geonet::{Address as GnAddress, StationType};
+    use crate::geonet::wire::geonet::{Address as GnAddress, PositionVectorTimestamp, StationType};
 
     static BYTES_HEADER: [u8; 44] = [
         0x00, 0x0f, 0x00, 0x00, 0xbc, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x00, 0x00, 0x00,
@@ -303,7 +302,7 @@ mod test {
                 StationType::RoadSideUnit,
                 MacAddress([0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1]),
             ),
-            timestamp: Instant::from_millis(120),
+            timestamp: PositionVectorTimestamp(120),
             latitude: Latitude::new::<tenth_of_microdegree>(482764384.0),
             longitude: Longitude::new::<tenth_of_microdegree>(-35519532.0),
             is_accurate: true,
@@ -315,7 +314,7 @@ mod test {
     #[test]
     fn test_check_len() {
         assert_eq!(
-            Err(Error::Truncated),
+            Err(Error),
             Header::new_unchecked(&BYTES_HEADER[..HEADER_LEN - 1]).check_len()
         );
 

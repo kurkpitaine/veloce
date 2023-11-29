@@ -4,7 +4,8 @@ use crate::geonet::config::{
     GN_MAX_PACKET_DATA_RATE_EMA_BETA,
 };
 
-use crate::geonet::time::{Duration, Instant};
+use crate::geonet::time::Instant;
+use crate::geonet::wire::geonet::PositionVectorTimestamp;
 use crate::geonet::wire::GnAddress;
 use crate::geonet::wire::{
     EthernetAddress as MacAddress, LongPositionVectorRepr as LongPositionVector, SequenceNumber,
@@ -309,7 +310,7 @@ pub fn compare_position_vector_freshness(
 ) -> bool {
     let tst_left = left.timestamp;
     let tst_right = right.timestamp;
-    let half_tst_max = Duration::from_millis(0x7fff_ffff);
+    let half_tst_max = PositionVectorTimestamp(0x7fff_ffff);
     (tst_left > tst_right) && ((tst_left - tst_right) <= half_tst_max)
         || ((tst_right > tst_left) && ((tst_right - tst_left) > half_tst_max))
 }

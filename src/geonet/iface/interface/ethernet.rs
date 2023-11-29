@@ -1,3 +1,5 @@
+use core::result::Result;
+
 use super::check;
 use super::DispatchError;
 use super::EthernetPacket;

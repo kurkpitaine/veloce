@@ -7,7 +7,10 @@ pub mod btp;
 pub mod ethernet;
 pub mod etsi_its;
 pub mod geonet;
+pub mod ieee80211;
 pub mod pretty_print;
+
+use core::fmt;
 
 pub use self::ethernet::{
     Address as EthernetAddress, EtherType as EthernetProtocol, Frame as EthernetFrame,
@@ -69,7 +72,27 @@ pub use btp::{
     type_b::{Header as BtpBHeader, Repr as BtpBRepr, HEADER_LEN as BTP_B_HEADER_LEN},
 };
 
+/// Parsing a packet failed.
+///
+/// Either it is malformed, or it is not supported by Veloce.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Error;
+
+#[cfg(feature = "std")]
+impl std::error::Error for Error {}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "wire::Error")
+    }
+}
+
+pub type Result<T> = core::result::Result<T, Error>;
+
 pub use self::pc5::Layer2Address as PC5Address;
+
+use super::phy::Medium;
 
 mod pc5 {
     use super::HardwareAddress;
@@ -198,6 +221,18 @@ impl HardwareAddress {
             HardwareAddress::PC5(addr) => *addr,
             #[allow(unreachable_patterns)]
             _ => panic!("HardwareAddress is not PC5."),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn medium(&self) -> Medium {
+        match self {
+            #[cfg(feature = "medium-pc5")]
+            HardwareAddress::PC5(_) => Medium::PC5,
+            #[cfg(feature = "medium-ethernet")]
+            HardwareAddress::Ethernet(_) => Medium::Ethernet,
+            #[cfg(all(feature = "medium-ieee80211p", not(feature = "medium-ethernet")))]
+            HardwareAddress::Ethernet() => Medium::Ieee80211p,
         }
     }
 }

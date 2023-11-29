@@ -283,9 +283,11 @@ impl<'a> SocketB<'a> {
 
     /// Enqueue a packet to send, and return a pointer to its payload.
     ///
-    /// This function returns `Err(Error::Exhausted)` if the transmit buffer is full,
-    /// and `Err(Error::Truncated)` if there is not enough transmit buffer capacity
-    /// to ever send this packet.
+    /// This function returns `Err(SendError::SizeTooLong)` if packet size is too long,
+    /// `Err(SendError::LifetimeTooHigh)` if packet lifetime is too high,
+    /// `Err(SendError::AreaTooBig)` if the packet contains a destination area size which is too big,
+    /// `Err(SendError::BufferFull)` if the transmit buffer is full,
+    /// or if there is not enough transmit buffer capacity to ever send this packet.
     pub fn send(&mut self, size: usize, meta: Request) -> Result<&mut [u8], SendError> {
         let segment_len = size + wire::BTP_B_HEADER_LEN;
         if segment_len > config::GN_MAX_SDU_SIZE {

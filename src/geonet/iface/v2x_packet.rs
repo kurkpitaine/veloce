@@ -1,7 +1,7 @@
 use crate::geonet::common::geo_area::{GeoArea, GeoPosition};
 use crate::geonet::phy::DeviceCapabilities;
 use crate::geonet::wire::{
-    BasicHeaderRepr, BeaconHeaderRepr, BtpBHeader, CommonHeaderRepr, GeoAnycastRepr,
+    BasicHeaderRepr, BeaconHeaderRepr, CommonHeaderRepr, GeoAnycastRepr,
     GeoBroadcastRepr, GeonetBeacon, GeonetGeoAnycast, GeonetGeoBroadcast,
     GeonetLocationServiceReply, GeonetLocationServiceRequest, GeonetRepr, GeonetSingleHop,
     GeonetTopoBroadcast, GeonetUnicast, GnAddress, LocationServiceReplyRepr,

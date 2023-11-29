@@ -4,7 +4,7 @@
 use crate::geonet::common::geo_area::GeoPosition;
 use crate::geonet::config::GnAddrConfMethod;
 use crate::geonet::rand::Rand;
-use crate::geonet::time::Instant;
+use crate::geonet::time::{Instant, TAI2004};
 use crate::geonet::types::{degree, kilometer_per_hour, Heading, Latitude, Longitude, Speed};
 use crate::geonet::wire::{
     EthernetAddress, GnAddress, LongPositionVectorRepr as LongPositionVector,
@@ -66,7 +66,7 @@ impl Core {
         let rand = Rand::new(config.random_seed);
         let ego_position_vector = LongPositionVector {
             address: config.geonet_addr,
-            timestamp: now,
+            timestamp: TAI2004::from_unix_instant(now).into(),
             latitude: config.latitude,
             longitude: config.longitude,
             is_accurate: config.position_accurate,
@@ -138,7 +138,7 @@ mod test {
         let mut core = Core {
             ego_position_vector: LongPositionVector {
                 address: ADDR,
-                timestamp: Instant::from_secs(10),
+                timestamp: TAI2004::from_secs(10).into(),
                 latitude: Latitude::new::<degree>(48.276446),
                 longitude: Longitude::new::<degree>(-3.551753),
                 is_accurate: true,
@@ -160,7 +160,7 @@ mod test {
         let mut core = Core {
             ego_position_vector: LongPositionVector {
                 address: ADDR,
-                timestamp: Instant::from_secs(10),
+                timestamp: TAI2004::from_secs(10).into(),
                 latitude: Latitude::new::<degree>(48.276446),
                 longitude: Longitude::new::<degree>(-3.551753),
                 is_accurate: true,

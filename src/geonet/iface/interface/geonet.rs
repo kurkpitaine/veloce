@@ -15,7 +15,7 @@ use crate::geonet::network::{
 };
 use crate::geonet::wire::EthernetRepr;
 use crate::geonet::{
-    common::geo_area::{GeoArea, DistanceAB, Shape},
+    common::geo_area::{DistanceAB, GeoArea, Shape},
     config::{
         GnAreaForwardingAlgorithm, GnNonAreaForwardingAlgorithm, GN_AREA_FORWARDING_ALGORITHM,
         GN_BEACON_SERVICE_MAX_JITTER, GN_BEACON_SERVICE_RETRANSMIT_TIMER, GN_DEFAULT_HOP_LIMIT,
@@ -54,8 +54,6 @@ impl InterfaceInner {
             );
 
             self.retransmit_beacon_at = core.now + GN_BEACON_SERVICE_RETRANSMIT_TIMER + rand_jitter;
-            //println!("self.retransmit_beacon_at = core.now + GN_BEACON_SERVICE_RETRANSMIT_TIMER + rand_jitter");
-            //println!("{} = {} + {} + {}", self.retransmit_beacon_at, core.now, GN_BEACON_SERVICE_RETRANSMIT_TIMER, rand_jitter);
         }
 
         deferred
@@ -881,8 +879,11 @@ impl InterfaceInner {
             return None;
         }
 
-        let packet =
-            GeonetPacket::new_unicast(fwd_bh_repr, ch_repr, uc_repr, GeonetPayload::Raw(payload));
+        let packet = if let GeonetPacketType::LsReply = ch_repr.header_type {
+            GeonetPacket::new_location_service_reply(fwd_bh_repr, ch_repr, uc_repr)
+        } else {
+            GeonetPacket::new_unicast(fwd_bh_repr, ch_repr, uc_repr, GeonetPayload::Raw(payload))
+        };
 
         /* Step 12: execute forwarding algorithm. */
         let addr_opt = if GN_NON_AREA_FORWARDING_ALGORITHM == GnNonAreaForwardingAlgorithm::Cbf {
@@ -2446,11 +2447,14 @@ impl InterfaceInner {
         let handled_by_geonet_socket = false;
 
         match ind.upper_proto {
-            UpperProtocol::BtpA => self.process_btp_a(sockets, ind, handled_by_geonet_socket, payload),
-            UpperProtocol::BtpB => self.process_btp_b(sockets, ind, handled_by_geonet_socket, payload),
-            UpperProtocol::Any => todo!(),
-            UpperProtocol::Ipv6 => todo!(),
-           // _ if handled_by_geonet_socket => None,
+            UpperProtocol::BtpA => {
+                self.process_btp_a(sockets, ind, handled_by_geonet_socket, payload)
+            }
+            UpperProtocol::BtpB => {
+                self.process_btp_b(sockets, ind, handled_by_geonet_socket, payload)
+            }
+            UpperProtocol::Any => {}
+            UpperProtocol::Ipv6 => {} // _ if handled_by_geonet_socket => None,
         };
     }
 }

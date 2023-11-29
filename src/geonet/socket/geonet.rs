@@ -166,9 +166,11 @@ impl<'a> Socket<'a> {
 
     /// Enqueue a packet to send, and return a pointer to its payload.
     ///
-    /// This function returns `Err(Error::Exhausted)` if the transmit buffer is full,
-    /// and `Err(Error::Truncated)` if there is not enough transmit buffer capacity
-    /// to ever send this packet.
+    /// This function returns `Err(SendError::SizeTooLong)` if packet size is too long,
+    /// `Err(SendError::LifetimeTooHigh)` if packet lifetime is too high,
+    /// `Err(SendError::AreaTooBig)` if the packet contains a destination area size which is too big,
+    /// `Err(SendError::BufferFull)` if the transmit buffer is full,
+    /// or if there is not enough transmit buffer capacity to ever send this packet.
     pub fn send(&mut self, size: usize, meta: Request) -> Result<&mut [u8], SendError> {
         if size > config::GN_MAX_SDU_SIZE {
             return Err(SendError::SizeTooLong);
@@ -238,9 +240,6 @@ impl<'a> Socket<'a> {
     /// Dequeue a packet, and return a pointer to the payload.
     ///
     /// This function returns `Err(Error::Exhausted)` if the receive buffer is empty.
-    ///
-    /// **Note:** The IP header is parsed and re-serialized, and may not match
-    /// the header actually received bit for bit.
     pub fn recv(&mut self) -> Result<(&[u8], Indication), RecvError> {
         let (indication, packet_buf) =
             self.rx_buffer.dequeue().map_err(|_| RecvError::Exhausted)?;
