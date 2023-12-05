@@ -83,19 +83,19 @@ pub struct Interface {
     pub(crate) inner: InterfaceInner,
     /// Location service of the interface.
     #[cfg(feature = "proto-geonet")]
-    pub(crate)location_service: LocationService,
+    pub(crate) location_service: LocationService,
     /// Location Service packet buffer.
     #[cfg(feature = "proto-geonet")]
-    pub(crate)ls_buffer: LsBuffer,
+    pub(crate) ls_buffer: LsBuffer,
     /// Unicast forwarding packet buffer.
     #[cfg(feature = "proto-geonet")]
-    pub(crate)uc_forwarding_buffer: UcBuffer,
+    pub(crate) uc_forwarding_buffer: UcBuffer,
     /// Broadcast forwarding packet buffer.
     #[cfg(feature = "proto-geonet")]
     pub(crate) bc_forwarding_buffer: BcBuffer,
     /// Contention Based forwarding packet buffer.
     #[cfg(feature = "proto-geonet")]
-    pub(crate)cb_forwarding_buffer: CbfBuffer,
+    pub(crate) cb_forwarding_buffer: CbfBuffer,
 }
 
 /// The device independent part of an access interface.

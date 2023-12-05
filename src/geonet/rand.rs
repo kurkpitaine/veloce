@@ -2,7 +2,7 @@ use core::ops::Bound;
 use core::ops::RangeBounds;
 
 /// Random number generator.
-/// Copied from Smoltcp https://github.com/smoltcp-rs/smoltcp
+/// Adapted and improved from Smoltcp https://github.com/smoltcp-rs/smoltcp
 #[derive(Debug)]
 pub struct Rand {
     state: u64,

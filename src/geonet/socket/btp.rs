@@ -115,12 +115,14 @@ impl std::error::Error for BindError {}
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum RecvError {
     Exhausted,
+    Truncated,
 }
 
 impl core::fmt::Display for RecvError {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
             RecvError::Exhausted => write!(f, "exhausted"),
+            RecvError::Truncated => write!(f, "truncated"),
         }
     }
 }
@@ -389,9 +391,16 @@ impl<'a> SocketB<'a> {
 
     /// Dequeue a packet, and copy the payload into the given slice.
     ///
+    /// **Note**: when the size of the provided buffer is smaller than the size of the payload,
+    /// the packet is dropped and a `RecvError::Truncated` error is returned.
+    ///
     /// See also [recv](#method.recv).
     pub fn recv_slice(&mut self, data: &mut [u8]) -> Result<(usize, Indication), RecvError> {
         let (buffer, indication) = self.recv()?;
+        if data.len() < buffer.len() {
+            return Err(RecvError::Truncated);
+        }
+
         let length = min(data.len(), buffer.len());
         data[..length].copy_from_slice(&buffer[..length]);
         Ok((length, indication))
@@ -414,9 +423,16 @@ impl<'a> SocketB<'a> {
     /// and return the amount of octets copied without removing the packet from the receive buffer.
     /// This function otherwise behaves identically to [recv_slice](#method.recv_slice).
     ///
+    /// **Note**: when the size of the provided buffer is smaller than the size of the payload,
+    /// no data is copied into the provided buffer and a `RecvError::Truncated` error is returned.
+    ///
     /// See also [peek](#method.peek).
     pub fn peek_slice(&mut self, data: &mut [u8]) -> Result<(usize, &Indication), RecvError> {
         let (buffer, indication) = self.peek()?;
+        if data.len() < buffer.len() {
+            return Err(RecvError::Truncated);
+        }
+
         let length = min(data.len(), buffer.len());
         data[..length].copy_from_slice(&buffer[..length]);
         Ok((length, indication))
