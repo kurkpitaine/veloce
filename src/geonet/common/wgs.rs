@@ -12,8 +12,6 @@ const GEO_TRANSFORM_MATRIX_LEN: usize = 9;
 pub struct Geocentric {
     /// Equatorial radius of the WGS84 ellipsoid.
     a: Length,
-    /// Flattening of the WGS84 ellipsoid.
-    f: Ratio,
     /// Square of Eccentricity.
     e_sq: Ratio,
     /// Square of Eccentricity.
@@ -27,7 +25,7 @@ impl Geocentric {
         let e_sq = f * (Ratio::new::<ratio>(2.0) - f);
         let e_sq_m = (Ratio::new::<ratio>(1.0) - f) * (Ratio::new::<ratio>(1.0) - f);
 
-        Geocentric { a, f, e_sq, e_sq_m }
+        Geocentric { a, e_sq, e_sq_m }
     }
 
     /// Convert from geodetic to geocentric coordinates with 'lat' and 'lon' value validity check.

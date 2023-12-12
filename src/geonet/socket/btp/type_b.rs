@@ -5,81 +5,19 @@ use core::task::Waker;
 use uom::si::area::square_kilometer;
 use uom::si::f32::Area;
 
-#[cfg(feature = "async")]
-use super::WakerRegistration;
-use super::{PollAt, SendError};
+use super::{BindError, Indication, RecvError, Request};
 use crate::geonet::iface::{Context, ContextMeta};
 use crate::geonet::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, SingleHopReqMeta, TopoScopedReqMeta, Transport,
     UnicastReqMeta, UpperProtocol,
 };
+#[cfg(feature = "async")]
+use crate::geonet::socket::WakerRegistration;
+use crate::geonet::socket::{PollAt, SendError};
 use crate::geonet::{config, wire};
 
 use crate::geonet::storage::Empty;
-use crate::geonet::time::Duration;
-use crate::geonet::wire::{BtpBHeader, BtpBRepr, EthernetAddress, GeonetRepr, GnTrafficClass};
-
-/// Data request, aka `BTP-Data.request` in ETSI
-/// EN 302 636-5-1 v2.2.1 paragraph A.2.
-/// Represents metadata associated with a packet transmit
-/// request to the BTP socket.
-/// Used in interfaces between a BTP socket and the
-/// user application layers.
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, Clone, Copy)]
-pub struct Request {
-    /// Geonetworking transport type. See [`Transport`].
-    pub transport: Transport,
-    /// Access layer identifier.
-    pub ali_id: (),
-    /// ITS Application Identifier.
-    pub its_aid: (),
-    /// Maximum lifetime of the packet.
-    pub max_lifetime: Duration,
-    /// Maximum hop limit of the packet.
-    pub max_hop_limit: u8,
-    /// Traffic class.
-    pub traffic_class: GnTrafficClass,
-}
-
-impl Default for Request {
-    fn default() -> Self {
-        Self {
-            transport: Transport::TopoBroadcast,
-            ali_id: Default::default(),
-            its_aid: Default::default(),
-            max_lifetime: config::GN_DEFAULT_PACKET_LIFETIME,
-            max_hop_limit: config::GN_DEFAULT_HOP_LIMIT,
-            traffic_class: config::GN_DEFAULT_TRAFFIC_CLASS,
-        }
-    }
-}
-
-/// Data indication, aka `BTP-Data.indication` in ETSI
-/// EN 302 636-5-1 v2.2.1 paragraph A.3.
-/// Represents metadata associated with a packet after
-/// it has been processed by the Geonetworking router
-/// and the BTP layer.
-/// Used in interfaces between a BTP socket and the
-/// user application layers.
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, Clone, Copy)]
-pub struct Indication {
-    /// Geonetworking transport type. See [`Transport`].
-    pub transport: Transport,
-    /// Access layer identifier.
-    pub ali_id: (),
-    /// ITS Application Identifier.
-    pub its_aid: (),
-    /// Certificate ID.
-    pub cert_id: (),
-    /// Remaining lifetime of the packet.
-    pub rem_lifetime: Duration,
-    /// Remaining hop limit of the packet.
-    pub rem_hop_limit: u8,
-    /// Traffic class.
-    pub traffic_class: GnTrafficClass,
-}
+use crate::geonet::wire::{BtpBHeader, BtpBRepr, EthernetAddress, GeonetRepr};
 
 /// Packet metadata.
 pub type RxPacketMetadata = crate::geonet::storage::PacketMetadata<Indication>;
@@ -89,53 +27,12 @@ pub type TxPacketMetadata = crate::geonet::storage::PacketMetadata<Request>;
 pub type RxPacketBuffer<'a> = crate::geonet::storage::PacketBuffer<'a, Indication>;
 pub type TxPacketBuffer<'a> = crate::geonet::storage::PacketBuffer<'a, Request>;
 
-/// Error returned by [`Socket::bind`]
-/// Only for BTP-A type sockets.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum BindError {
-    InvalidState,
-    Unaddressable,
-}
-
-impl core::fmt::Display for BindError {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        match self {
-            BindError::InvalidState => write!(f, "invalid state"),
-            BindError::Unaddressable => write!(f, "unaddressable"),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for BindError {}
-
-/// Error returned by [`Socket::recv`]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum RecvError {
-    Exhausted,
-    Truncated,
-}
-
-impl core::fmt::Display for RecvError {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        match self {
-            RecvError::Exhausted => write!(f, "exhausted"),
-            RecvError::Truncated => write!(f, "truncated"),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for RecvError {}
-
 /// A BTP-B type socket.
 ///
 /// A BTP-B socket is bound to the BTP type B protocol, and owns
 /// transmit and receive packet buffers.
 #[derive(Debug)]
-pub struct SocketB<'a> {
+pub struct Socket<'a> {
     port: u16,
     rx_buffer: RxPacketBuffer<'a>,
     tx_buffer: TxPacketBuffer<'a>,
@@ -145,10 +42,10 @@ pub struct SocketB<'a> {
     tx_waker: WakerRegistration,
 }
 
-impl<'a> SocketB<'a> {
+impl<'a> Socket<'a> {
     /// Create a geonet socket with the given buffers.
-    pub fn new(rx_buffer: RxPacketBuffer<'a>, tx_buffer: TxPacketBuffer<'a>) -> SocketB<'a> {
-        SocketB {
+    pub fn new(rx_buffer: RxPacketBuffer<'a>, tx_buffer: TxPacketBuffer<'a>) -> Socket<'a> {
+        Socket {
             port: Default::default(),
             rx_buffer,
             tx_buffer,

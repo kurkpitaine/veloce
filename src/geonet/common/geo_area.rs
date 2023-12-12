@@ -235,7 +235,7 @@ impl GeoArea {
     /// This method panics when `header_type` is not one of
     /// [`GeonetPacketType::GeoAnycastCircle`], [`GeonetPacketType::GeoAnycastRect`]
     /// and [`GeonetPacketType::GeoAnycastElip`] type.
-    pub fn from_gac(header_type: &GeonetPacketType, gac_repr: &GeoAnycastRepr) -> Self {
+    pub const fn from_gac(header_type: &GeonetPacketType, gac_repr: &GeoAnycastRepr) -> Self {
         let shape = match header_type {
             GeonetPacketType::GeoAnycastCircle => Shape::Circle(Circle {
                 radius: gac_repr.distance_a,
@@ -268,7 +268,7 @@ impl GeoArea {
     /// This method panics when `header_type` is not one of
     /// [`GeonetPacketType::GeoBroadcastCircle`], [`GeonetPacketType::GeoBroadcastRect`]
     /// and [`GeonetPacketType::GeoBroadcastElip`] type.
-    pub fn from_gbc(header_type: &GeonetPacketType, gbc_repr: &GeoBroadcastRepr) -> Self {
+    pub const fn from_gbc(header_type: &GeonetPacketType, gbc_repr: &GeoBroadcastRepr) -> Self {
         let shape = match header_type {
             GeonetPacketType::GeoBroadcastCircle => Shape::Circle(Circle {
                 radius: gbc_repr.distance_a,

@@ -2,7 +2,7 @@ use crate::geonet::{
     iface::SocketSet,
     network::Indication,
     socket::{btp::Indication as BtpIndication, *},
-    wire::{BtpAHeader, BtpARepr, BtpBHeader, BtpBRepr},
+    wire::{BtpAHeader, BtpARepr, BtpBHeader, BtpBRepr, GeonetRepr},
 };
 
 use super::{check, InterfaceInner};
@@ -11,13 +11,41 @@ impl InterfaceInner {
     /// Processes a BTP-A packet.
     pub(super) fn process_btp_a(
         &mut self,
-        _sockets: &mut SocketSet,
-        _ind: Indication,
+        sockets: &mut SocketSet,
+        ind: Indication,
         _handled_by_geonet_socket: bool,
+        gn_repr: &GeonetRepr,
         payload: &[u8],
     ) {
+        // We only accept unicast packets.
+        let GeonetRepr::Unicast(uc_repr) = gn_repr else {
+            return;
+        };
+
         let btp_a = check!(BtpAHeader::new_checked(payload));
-        let _btp_a_repr = check!(BtpARepr::parse(&btp_a));
+        let btp_a_repr = check!(BtpARepr::parse(&btp_a));
+
+        let payload = btp_a.payload();
+
+        let btp_ind = BtpIndication {
+            transport: ind.transport,
+            ali_id: ind.ali_id,
+            its_aid: ind.its_aid,
+            cert_id: ind.cert_id,
+            rem_lifetime: ind.rem_lifetime,
+            rem_hop_limit: ind.rem_hop_limit,
+            traffic_class: ind.traffic_class,
+        };
+
+        for btp_socket in sockets
+            .items_mut()
+            .filter_map(|i| btp::SocketA::downcast_mut(&mut i.socket))
+        {
+            if btp_socket.accepts(self, &uc_repr, &btp_a_repr) {
+                btp_socket.process(self, btp_ind, &uc_repr, &btp_a_repr, payload);
+                return;
+            }
+        }
     }
 
     /// Processes a BTP-B packet.

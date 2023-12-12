@@ -142,7 +142,7 @@ impl fmt::Display for StationType {
 }
 
 /// An eight-octet Geonetworking address.
-#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Default, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct Address(pub [u8; 8]);
 
 mod field {

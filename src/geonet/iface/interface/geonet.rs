@@ -11,7 +11,7 @@ use crate::geonet::iface::location_service::LocationServiceRequest;
 use crate::geonet::iface::SocketSet;
 use crate::geonet::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, SingleHopReqMeta,
-    TopoScopedReqMeta, Transport, UnicastReqMeta, UpperProtocol,
+    TopoScopedReqMeta, UnicastReqMeta, UpperProtocol,
 };
 use crate::geonet::wire::EthernetRepr;
 use crate::geonet::{
@@ -195,10 +195,8 @@ impl InterfaceInner {
         // TODO: check if payload length is 0.
 
         /* Step 3: perform duplicate address detection. */
-        svcs.core.duplicate_address_detection(
-            link_layer.src_addr,
-            beacon_repr.source_position_vector.address,
-        );
+        svcs.core
+            .duplicate_address_detection(link_layer.src_addr, beacon_repr.src_addr());
 
         /* Step 4: update Location table */
         let entry = self
@@ -217,13 +215,8 @@ impl InterfaceInner {
         /* Step 8: flush location service and unicast buffers for this packet source address */
         if let Some(handle) = entry.ls_pending {
             svcs.ls_buffer.mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == beacon_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == beacon_repr.src_addr().mac_addr()
             });
 
             svcs.ls.cancel_request(handle);
@@ -231,13 +224,8 @@ impl InterfaceInner {
 
         svcs.uc_forwarding_buffer
             .mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == beacon_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == beacon_repr.src_addr().mac_addr()
             });
 
         None
@@ -274,10 +262,8 @@ impl InterfaceInner {
         }
 
         /* Step 4: perform duplicate address detection. */
-        svcs.core.duplicate_address_detection(
-            link_layer.src_addr,
-            ls_req_repr.source_position_vector.address,
-        );
+        svcs.core
+            .duplicate_address_detection(link_layer.src_addr, ls_req_repr.src_addr());
 
         /* Step 5-6: add/update location table */
         let entry = self
@@ -350,13 +336,8 @@ impl InterfaceInner {
             /* Step 8a */
             if let Some(handle) = entry.ls_pending {
                 svcs.ls_buffer.mark_flush(svcs.core.now, |packet_node| {
-                    packet_node
-                        .metadata()
-                        .extended_header
-                        .destination_position_vector
-                        .address
-                        .mac_addr()
-                        == ls_req_repr.source_position_vector.address.mac_addr()
+                    packet_node.metadata().extended_header.dst_addr().mac_addr()
+                        == ls_req_repr.src_addr().mac_addr()
                 });
 
                 svcs.ls.cancel_request(handle);
@@ -365,13 +346,8 @@ impl InterfaceInner {
             /* Step 8b */
             svcs.uc_forwarding_buffer
                 .mark_flush(svcs.core.now, |packet_node| {
-                    packet_node
-                        .metadata()
-                        .extended_header
-                        .destination_position_vector
-                        .address
-                        .mac_addr()
-                        == ls_req_repr.source_position_vector.address.mac_addr()
+                    packet_node.metadata().extended_header.dst_addr().mac_addr()
+                        == ls_req_repr.src_addr().mac_addr()
                 });
 
             /* Step 9: decrement Remaining Hop limit */
@@ -426,20 +402,17 @@ impl InterfaceInner {
         {
             /* We are the destination. */
             /* Step 3: duplicate packet detection */
-            let dup_opt = self.location_table.duplicate_packet_detection(
-                ls_rep_repr.source_position_vector.address,
-                ls_rep_repr.sequence_number,
-            );
+            let dup_opt = self
+                .location_table
+                .duplicate_packet_detection(ls_rep_repr.src_addr(), ls_rep_repr.sequence_number);
 
             if dup_opt.is_some_and(|x| x) {
                 return None;
             }
 
             /* Step 3: perform duplicate address detection. */
-            svcs.core.duplicate_address_detection(
-                link_layer.src_addr,
-                ls_rep_repr.source_position_vector.address,
-            );
+            svcs.core
+                .duplicate_address_detection(link_layer.src_addr, ls_rep_repr.src_addr());
 
             /* Step 4: update Location table */
             let entry = self
@@ -460,13 +433,8 @@ impl InterfaceInner {
             that are destined to the source of the incoming Location Service Reply packet. */
             if let Some(handle) = entry.ls_pending {
                 svcs.ls_buffer.mark_flush(svcs.core.now, |packet_node| {
-                    packet_node
-                        .metadata()
-                        .extended_header
-                        .destination_position_vector
-                        .address
-                        .mac_addr()
-                        == ls_rep_repr.source_position_vector.address.mac_addr()
+                    packet_node.metadata().extended_header.dst_addr().mac_addr()
+                        == ls_rep_repr.src_addr().mac_addr()
                 });
 
                 svcs.ls.cancel_request(handle);
@@ -474,13 +442,8 @@ impl InterfaceInner {
 
             svcs.uc_forwarding_buffer
                 .mark_flush(svcs.core.now, |packet_node| {
-                    packet_node
-                        .metadata()
-                        .extended_header
-                        .destination_position_vector
-                        .address
-                        .mac_addr()
-                        == ls_rep_repr.source_position_vector.address.mac_addr()
+                    packet_node.metadata().extended_header.dst_addr().mac_addr()
+                        == ls_rep_repr.src_addr().mac_addr()
                 });
 
             None
@@ -515,10 +478,8 @@ impl InterfaceInner {
         let shb_repr = check!(SingleHopHeaderRepr::parse(&shb));
 
         /* Step 3: perform duplicate address detection. */
-        svcs.core.duplicate_address_detection(
-            link_layer.src_addr,
-            shb_repr.source_position_vector.address,
-        );
+        svcs.core
+            .duplicate_address_detection(link_layer.src_addr, shb_repr.src_addr());
 
         let ls_pending = {
             /* Step 4: update Location table */
@@ -540,30 +501,15 @@ impl InterfaceInner {
         };
 
         /* Step 7: Go to upper layer */
-        let ind = Indication {
-            upper_proto: ch_repr.next_header.into(),
-            transport: Transport::SingleHopBroadcast,
-            ali_id: (),
-            its_aid: (),
-            cert_id: (),
-            rem_lifetime: bh_repr.lifetime,
-            rem_hop_limit: 0,
-            traffic_class: ch_repr.traffic_class,
-        };
-
-        self.pass_up(sockets, ind, shb.payload());
+        let gn_repr = GeonetRepr::new_single_hop_broadcast(bh_repr, ch_repr, shb_repr);
+        self.pass_up(sockets, &gn_repr, shb.payload());
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming SHB packet. */
         if let Some(handle) = ls_pending {
             svcs.ls_buffer.mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == shb_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == shb_repr.src_addr().mac_addr()
             });
 
             svcs.ls.cancel_request(handle);
@@ -571,13 +517,8 @@ impl InterfaceInner {
 
         svcs.uc_forwarding_buffer
             .mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == shb_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == shb_repr.src_addr().mac_addr()
             });
 
         None
@@ -601,20 +542,17 @@ impl InterfaceInner {
         let tsb_repr = check!(TopoBroadcastRepr::parse(&tsb));
 
         /* Step 3: duplicate packet detection */
-        let dup_opt = self.location_table.duplicate_packet_detection(
-            tsb_repr.source_position_vector.address,
-            tsb_repr.sequence_number,
-        );
+        let dup_opt = self
+            .location_table
+            .duplicate_packet_detection(tsb_repr.src_addr(), tsb_repr.sequence_number);
 
         if dup_opt.is_some_and(|x| x) {
             return None;
         }
 
         /* Step 4: perform duplicate address detection. */
-        svcs.core.duplicate_address_detection(
-            link_layer.src_addr,
-            tsb_repr.source_position_vector.address,
-        );
+        svcs.core
+            .duplicate_address_detection(link_layer.src_addr, tsb_repr.src_addr());
 
         let ls_pending = {
             /* Step 5-6: update Location table */
@@ -638,30 +576,15 @@ impl InterfaceInner {
         };
 
         /* Step 7: Go to upper layer */
-        let ind = Indication {
-            upper_proto: ch_repr.next_header.into(),
-            transport: Transport::TopoBroadcast,
-            ali_id: (),
-            its_aid: (),
-            cert_id: (),
-            rem_lifetime: bh_repr.lifetime,
-            rem_hop_limit: bh_repr.remaining_hop_limit,
-            traffic_class: ch_repr.traffic_class,
-        };
-
-        self.pass_up(sockets, ind, tsb.payload());
+        let gn_repr = GeonetRepr::new_topo_scoped_broadcast(bh_repr, ch_repr, tsb_repr);
+        self.pass_up(sockets, &gn_repr, tsb.payload());
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming TSB packet. */
         if let Some(handle) = ls_pending {
             svcs.ls_buffer.mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == tsb_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == tsb_repr.src_addr().mac_addr()
             });
 
             svcs.ls.cancel_request(handle);
@@ -669,13 +592,8 @@ impl InterfaceInner {
 
         svcs.uc_forwarding_buffer
             .mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == tsb_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == tsb_repr.src_addr().mac_addr()
             });
 
         /* Step 9: Build packet and decrement RHL. */
@@ -765,10 +683,9 @@ impl InterfaceInner {
         GeonetPacket<'packet>,
     )> {
         /* Step 3: duplicate packet detection */
-        let dup_opt = self.location_table.duplicate_packet_detection(
-            uc_repr.source_position_vector.address,
-            uc_repr.sequence_number,
-        );
+        let dup_opt = self
+            .location_table
+            .duplicate_packet_detection(uc_repr.src_addr(), uc_repr.sequence_number);
 
         /* Ignore result only if we are using CBF algorithm */
         if GN_NON_AREA_FORWARDING_ALGORITHM != GnNonAreaForwardingAlgorithm::Cbf
@@ -806,10 +723,8 @@ impl InterfaceInner {
         };
 
         /* Step 3: perform duplicate address detection. */
-        svcs.core.duplicate_address_detection(
-            link_layer.src_addr,
-            uc_repr.source_position_vector.address,
-        );
+        svcs.core
+            .duplicate_address_detection(link_layer.src_addr, uc_repr.src_addr());
 
         /* Step 4: update Location table */
         let entry = self
@@ -832,13 +747,8 @@ impl InterfaceInner {
         that are destined to the source of the incoming Unicast packet. */
         if let Some(handle) = entry.ls_pending {
             svcs.ls_buffer.mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == uc_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == uc_repr.src_addr().mac_addr()
             });
 
             svcs.ls.cancel_request(handle);
@@ -846,13 +756,8 @@ impl InterfaceInner {
 
         svcs.uc_forwarding_buffer
             .mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == uc_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == uc_repr.src_addr().mac_addr()
             });
 
         /* Step 10: Build packet and decrement RHL. */
@@ -914,20 +819,17 @@ impl InterfaceInner {
         link_layer: EthernetRepr,
     ) {
         /* Step 3: duplicate packet detection */
-        let dup_opt = self.location_table.duplicate_packet_detection(
-            uc_repr.source_position_vector.address,
-            uc_repr.sequence_number,
-        );
+        let dup_opt = self
+            .location_table
+            .duplicate_packet_detection(uc_repr.src_addr(), uc_repr.sequence_number);
 
         if dup_opt.is_some_and(|x| x) {
             return;
         }
 
         /* Step 4: perform duplicate address detection */
-        svcs.core.duplicate_address_detection(
-            link_layer.src_addr,
-            uc_repr.source_position_vector.address,
-        );
+        svcs.core
+            .duplicate_address_detection(link_layer.src_addr, uc_repr.src_addr());
 
         /* Step 5-6: update Location table */
         let entry = self
@@ -950,13 +852,8 @@ impl InterfaceInner {
         that are destined to the source of the incoming Unicast packet. */
         if let Some(handle) = entry.ls_pending {
             svcs.ls_buffer.mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == uc_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == uc_repr.src_addr().mac_addr()
             });
 
             svcs.ls.cancel_request(handle);
@@ -964,28 +861,13 @@ impl InterfaceInner {
 
         svcs.uc_forwarding_buffer
             .mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == uc_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == uc_repr.src_addr().mac_addr()
             });
 
         /* Step 8: pass payload to upper protocol. */
-        let ind = Indication {
-            upper_proto: ch_repr.next_header.into(),
-            transport: Transport::Unicast(uc_repr.destination_position_vector.address),
-            ali_id: (),
-            its_aid: (),
-            cert_id: (),
-            rem_lifetime: bh_repr.lifetime,
-            rem_hop_limit: bh_repr.remaining_hop_limit,
-            traffic_class: ch_repr.traffic_class,
-        };
-
-        self.pass_up(sockets, ind, payload);
+        let gn_repr: GeonetRepr = GeonetRepr::new_unicast(bh_repr, ch_repr, uc_repr);
+        self.pass_up(sockets, &gn_repr, payload);
     }
 
     /// Process a Geo Broadcast packet.
@@ -1010,10 +892,9 @@ impl InterfaceInner {
         let inside = dst_area.inside_or_at_border(svcs.core.position());
 
         /* Step 3a-3b: duplicate packet detection */
-        let dup_opt = self.location_table.duplicate_packet_detection(
-            gbc_repr.source_position_vector.address,
-            gbc_repr.sequence_number,
-        );
+        let dup_opt = self
+            .location_table
+            .duplicate_packet_detection(gbc_repr.src_addr(), gbc_repr.sequence_number);
 
         /* Ignore result only if we are using CBF algorithm */
         if ((!inside && GN_NON_AREA_FORWARDING_ALGORITHM != GnNonAreaForwardingAlgorithm::Cbf)
@@ -1024,10 +905,8 @@ impl InterfaceInner {
         }
 
         /* Step 4: perform duplicate address detection. */
-        svcs.core.duplicate_address_detection(
-            link_layer.src_addr,
-            gbc_repr.source_position_vector.address,
-        );
+        svcs.core
+            .duplicate_address_detection(link_layer.src_addr, gbc_repr.src_addr());
 
         let ls_pending = {
             /* Step 5-6: update Location table */
@@ -1052,31 +931,16 @@ impl InterfaceInner {
 
         /* Step 7: pass payload to upper protocol if we are inside the destination area */
         if inside {
-            let ind = Indication {
-                upper_proto: ch_repr.next_header.into(),
-                transport: Transport::Broadcast(dst_area),
-                ali_id: (),
-                its_aid: (),
-                cert_id: (),
-                rem_lifetime: bh_repr.lifetime,
-                rem_hop_limit: bh_repr.remaining_hop_limit,
-                traffic_class: ch_repr.traffic_class,
-            };
-
-            self.pass_up(sockets, ind, gbc.payload());
+            let gn_repr = GeonetRepr::new_broadcast(bh_repr, ch_repr, gbc_repr);
+            self.pass_up(sockets, &gn_repr, gbc.payload());
         }
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming GBC packet. */
         if let Some(handle) = ls_pending {
             svcs.ls_buffer.mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == gbc_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == gbc_repr.src_addr().mac_addr()
             });
 
             svcs.ls.cancel_request(handle);
@@ -1084,13 +948,8 @@ impl InterfaceInner {
 
         svcs.uc_forwarding_buffer
             .mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == gbc_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == gbc_repr.src_addr().mac_addr()
             });
 
         /* Step 9: decrement Remaining Hop limit */
@@ -1156,20 +1015,17 @@ impl InterfaceInner {
         let gac_repr = check!(GeoAnycastRepr::parse(&gac));
 
         /* Step 3: duplicate packet detection */
-        let dup_opt = self.location_table.duplicate_packet_detection(
-            gac_repr.source_position_vector.address,
-            gac_repr.sequence_number,
-        );
+        let dup_opt = self
+            .location_table
+            .duplicate_packet_detection(gac_repr.src_addr(), gac_repr.sequence_number);
 
         if dup_opt.is_some_and(|x| x) {
             return None;
         }
 
         /* Step 4: perform duplicate address detection. */
-        svcs.core.duplicate_address_detection(
-            link_layer.src_addr,
-            gac_repr.source_position_vector.address,
-        );
+        svcs.core
+            .duplicate_address_detection(link_layer.src_addr, gac_repr.src_addr());
 
         /* Step 5-6: update Location table */
         let entry = self
@@ -1196,13 +1052,8 @@ impl InterfaceInner {
         that are destined to the source of the incoming GBC packet. */
         if let Some(handle) = entry.ls_pending {
             svcs.ls_buffer.mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == gac_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == gac_repr.src_addr().mac_addr()
             });
 
             svcs.ls.cancel_request(handle);
@@ -1210,29 +1061,14 @@ impl InterfaceInner {
 
         svcs.uc_forwarding_buffer
             .mark_flush(svcs.core.now, |packet_node| {
-                packet_node
-                    .metadata()
-                    .extended_header
-                    .destination_position_vector
-                    .address
-                    .mac_addr()
-                    == gac_repr.source_position_vector.address.mac_addr()
+                packet_node.metadata().extended_header.dst_addr().mac_addr()
+                    == gac_repr.src_addr().mac_addr()
             });
 
         /* Step 9: pass payload to upper protocol if we are inside the destination area */
         if inside {
-            let ind = Indication {
-                upper_proto: ch_repr.next_header.into(),
-                transport: Transport::Anycast(dst_area),
-                ali_id: (),
-                its_aid: (),
-                cert_id: (),
-                rem_lifetime: bh_repr.lifetime,
-                rem_hop_limit: bh_repr.remaining_hop_limit,
-                traffic_class: ch_repr.traffic_class,
-            };
-
-            self.pass_up(sockets, ind, gac.payload());
+            let gn_repr = GeonetRepr::new_anycast(bh_repr, ch_repr, gac_repr);
+            self.pass_up(sockets, &gn_repr, gac.payload());
         }
 
         /* Step 10a: decrement Remaining Hop limit */
@@ -1413,12 +1249,7 @@ impl InterfaceInner {
                     LocationServiceState::Failure(fr) => {
                         // Query has failed, remove elements inside the ls buffer.
                         svcs.ls_buffer.drop_with(|packet_node| {
-                            packet_node
-                                .metadata()
-                                .extended_header
-                                .destination_position_vector
-                                .address
-                                .mac_addr()
+                            packet_node.metadata().extended_header.dst_addr().mac_addr()
                                 == fr.address.mac_addr()
                         });
 
@@ -1996,13 +1827,7 @@ impl InterfaceInner {
             // Update the packet lifetime.
             meta.basic_header.lifetime = expiry - svcs.core.now;
             // Update position in packet only if we are the origin.
-            if meta
-                .extended_header
-                .source_position_vector
-                .address
-                .mac_addr()
-                == svcs.core.address().mac_addr()
-            {
+            if meta.extended_header.src_addr().mac_addr() == svcs.core.address().mac_addr() {
                 meta.extended_header.source_position_vector = svcs.core.ego_position_vector();
             }
 
@@ -2440,7 +2265,18 @@ impl InterfaceInner {
     }
 
     /// Pass received Geonetworking payload to upper layer.
-    fn pass_up(&mut self, sockets: &mut SocketSet, ind: Indication, payload: &[u8]) {
+    fn pass_up(&mut self, sockets: &mut SocketSet, repr: &GeonetRepr, payload: &[u8]) {
+        let ind = Indication {
+            upper_proto: repr.next_header().into(),
+            transport: repr.transport(),
+            ali_id: (),
+            its_aid: (),
+            cert_id: (),
+            rem_lifetime: repr.lifetime(),
+            rem_hop_limit: repr.hop_limit(),
+            traffic_class: repr.traffic_class(),
+        };
+
         #[cfg(feature = "socket-geonet")]
         let handled_by_geonet_socket = self.geonet_socket_filter(sockets, ind, payload);
         #[cfg(not(feature = "socket-geonet"))]
@@ -2448,7 +2284,7 @@ impl InterfaceInner {
 
         match ind.upper_proto {
             UpperProtocol::BtpA => {
-                self.process_btp_a(sockets, ind, handled_by_geonet_socket, payload)
+                self.process_btp_a(sockets, ind, handled_by_geonet_socket, repr, payload)
             }
             UpperProtocol::BtpB => {
                 self.process_btp_b(sockets, ind, handled_by_geonet_socket, payload)

@@ -3,7 +3,7 @@ use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
 use super::long_position_vector::{Header as LPVBuf, Repr as LongPositionVector};
-use super::SequenceNumber;
+use super::{Address, SequenceNumber};
 
 /// A read/write wrapper around a Geonetworking Topologically Scoped Broadcast Header.
 #[derive(Debug, PartialEq)]
@@ -151,6 +151,12 @@ impl Repr {
         header.set_sequence_number(self.sequence_number);
         header.set_source_position_vector(self.source_position_vector);
     }
+
+    /// Returns the source Geonetworking address contained inside the
+    /// source position vector of the Topo Broadcast header.
+    pub const fn src_addr(&self) -> Address {
+        self.source_position_vector.address
+    }
 }
 
 impl fmt::Display for Repr {
@@ -168,7 +174,7 @@ mod test {
     use super::*;
     use crate::geonet::types::*;
     use crate::geonet::wire::ethernet::Address as MacAddress;
-    use crate::geonet::wire::geonet::{Address as GnAddress, StationType, PositionVectorTimestamp};
+    use crate::geonet::wire::geonet::{Address as GnAddress, PositionVectorTimestamp, StationType};
 
     static BYTES_HEADER: [u8; 28] = [
         0x09, 0x29, 0x00, 0x00, 0xbc, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x00, 0x00, 0x00,

@@ -17,7 +17,7 @@ use crate::geonet::time::Instant;
 #[cfg(feature = "socket-geonet")]
 pub mod geonet;
 
-#[cfg(feature = "socket-btp")]
+#[cfg(any(feature = "socket-btp-a", feature = "socket-btp-b"))]
 pub mod btp;
 
 #[cfg(feature = "async")]
@@ -52,7 +52,9 @@ pub(crate) enum PollAt {
 pub enum Socket<'a> {
     #[cfg(feature = "socket-geonet")]
     Geonet(geonet::Socket<'a>),
-    #[cfg(feature = "socket-btp")]
+    #[cfg(feature = "socket-btp-a")]
+    BtpA(btp::SocketA<'a>),
+    #[cfg(feature = "socket-btp-b")]
     BtpB(btp::SocketB<'a>),
 }
 
@@ -61,7 +63,9 @@ impl<'a> Socket<'a> {
         match self {
             #[cfg(feature = "socket-geonet")]
             Socket::Geonet(s) => s.poll_at(cx),
-            #[cfg(feature = "socket-btp")]
+            #[cfg(feature = "socket-btp-a")]
+            Socket::BtpA(s) => s.poll_at(cx),
+            #[cfg(feature = "socket-btp-b")]
             Socket::BtpB(s) => s.poll_at(cx),
         }
     }
@@ -106,13 +110,16 @@ macro_rules! from_socket {
 
 #[cfg(feature = "socket-geonet")]
 from_socket!(geonet::Socket<'a>, Geonet);
-#[cfg(feature = "socket-btp")]
+#[cfg(feature = "socket-btp-a")]
+from_socket!(btp::SocketA<'a>, BtpA);
+#[cfg(feature = "socket-btp-b")]
 from_socket!(btp::SocketB<'a>, BtpB);
 
 /// Error returned by [`Socket::send`]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SendError {
+    Unaddressable,
     SizeTooLong,
     LifetimeTooHigh,
     AreaTooBig,
@@ -122,6 +129,7 @@ pub enum SendError {
 impl core::fmt::Display for SendError {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
+            SendError::Unaddressable => write!(f, "unadressable"),
             SendError::SizeTooLong => todo!("size too long"),
             SendError::LifetimeTooHigh => todo!("lifetime too high"),
             SendError::AreaTooBig => todo!("area size too big"),

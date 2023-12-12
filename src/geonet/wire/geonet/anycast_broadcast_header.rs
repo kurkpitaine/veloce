@@ -4,7 +4,7 @@ use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
 use super::long_position_vector::{Header as LPVBuf, Repr as LongPositionVector};
-use super::SequenceNumber;
+use super::{Address, SequenceNumber};
 
 /// A read/write wrapper around a Geonetworking Anycast/Broadcast Header.
 #[derive(Debug, PartialEq)]
@@ -264,6 +264,12 @@ impl Repr {
         header.set_distance_a(self.distance_a);
         header.set_distance_b(self.distance_b);
         header.set_angle(self.angle);
+    }
+
+    /// Returns the source Geonetworking address contained inside the
+    /// source position vector of the Anycast/Broadcast header.
+    pub const fn src_addr(&self) -> Address {
+        self.source_position_vector.address
     }
 }
 

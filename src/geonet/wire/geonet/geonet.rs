@@ -1,6 +1,8 @@
 use core::fmt;
 
+use crate::geonet::common::geo_area::GeoArea;
 use crate::geonet::common::PacketBufferMeta;
+use crate::geonet::network::Transport;
 use crate::geonet::time::Duration;
 use crate::geonet::wire::{
     BasicHeader, BasicHeaderRepr, BeaconHeader, BeaconHeaderRepr, CommonHeader, CommonHeaderRepr,
@@ -9,6 +11,8 @@ use crate::geonet::wire::{
     LocationServiceRequestRepr, LongPositionVectorRepr as LongPositionVector, SingleHopHeader,
     SingleHopHeaderRepr, TopoBroadcastHeader, TopoBroadcastRepr, UnicastHeader, UnicastRepr,
 };
+
+use super::TrafficClass;
 
 enum_with_unknown! {
    /// Geonetworking Next Header value as carried inside the Common Header.
@@ -360,6 +364,42 @@ impl Repr {
             Repr::TopoBroadcast(repr) => repr.basic_header.lifetime = lifetime,
             Repr::LocationServiceRequest(repr) => repr.basic_header.lifetime = lifetime,
             Repr::LocationServiceReply(repr) => repr.basic_header.lifetime = lifetime,
+        }
+    }
+
+    /// Return the traffic class field of the packet.
+    pub const fn traffic_class(&self) -> TrafficClass {
+        match self {
+            Repr::Beacon(repr) => repr.common_header.traffic_class,
+            Repr::Unicast(repr) => repr.common_header.traffic_class,
+            Repr::Anycast(repr) => repr.common_header.traffic_class,
+            Repr::Broadcast(repr) => repr.common_header.traffic_class,
+            Repr::SingleHopBroadcast(repr) => repr.common_header.traffic_class,
+            Repr::TopoBroadcast(repr) => repr.common_header.traffic_class,
+            Repr::LocationServiceRequest(repr) => repr.common_header.traffic_class,
+            Repr::LocationServiceReply(repr) => repr.common_header.traffic_class,
+        }
+    }
+
+    /// Return the packet transport type.
+    /// # Panics
+    ///
+    /// This method panics when packet is any of [`Repr::Beacon`],
+    /// [`Repr::LocationServiceRequest`] or [`Repr::LocationServiceReply`] type.
+    pub const fn transport(&self) -> Transport {
+        match self {
+            Repr::Unicast(repr) => Transport::Unicast(repr.extended_header.dst_addr()),
+            Repr::Anycast(repr) => Transport::Anycast(GeoArea::from_gac(
+                &repr.common_header.header_type,
+                &repr.extended_header,
+            )),
+            Repr::Broadcast(repr) => Transport::Broadcast(GeoArea::from_gbc(
+                &repr.common_header.header_type,
+                &repr.extended_header,
+            )),
+            Repr::SingleHopBroadcast(_) => Transport::SingleHopBroadcast,
+            Repr::TopoBroadcast(_) => Transport::TopoBroadcast,
+            _ => panic!(),
         }
     }
 

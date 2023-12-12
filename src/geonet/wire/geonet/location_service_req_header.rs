@@ -163,6 +163,12 @@ impl Repr {
         header.set_source_position_vector(self.source_position_vector);
         header.set_request_address(self.request_address);
     }
+
+    /// Returns the source Geonetworking address contained inside the
+    /// source position vector of the Location Service header.
+    pub const fn src_addr(&self) -> GnAddress {
+        self.source_position_vector.address
+    }
 }
 
 impl fmt::Display for Repr {

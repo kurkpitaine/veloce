@@ -28,10 +28,13 @@ impl Rand {
             Bound::Unbounded => u32::MAX,
         };
 
-        // Normalize number into range.
         let generated = self.rand_u32();
-        let factor = u32::MAX / end;
-        generated / factor
+        // Normalize number into range [0, 1].
+        let ranged = generated / u32::MAX;
+
+        // Scale number into range [start, end].
+        let factor = end - start;
+        (ranged * factor) + start
     }
 
     /// Generates a random u32 integer.
@@ -64,5 +67,20 @@ impl Rand {
         // Clear multicast and locally administered bits.
         addr[0] &= !0x03;
         addr
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_range() {
+        let mut generator = Rand::new(0x123456789abcdef);
+        let number = generator.rand_range(2..88);
+        assert!(number >= 2 && number < 88);
+
+        let number = generator.rand_range(0..1);
+        assert!(number < 1);
     }
 }

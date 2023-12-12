@@ -5,7 +5,7 @@ use core::fmt;
 use super::long_position_vector::{Header as LPVBuf, Repr as LongPositionVector};
 use super::short_position_vector::{Header as SPVBuf, Repr as ShortPositionVector};
 
-use super::SequenceNumber;
+use super::{Address, SequenceNumber};
 
 /// A read/write wrapper around a Geonetworking Unicast Header.
 #[derive(Debug, PartialEq)]
@@ -174,6 +174,18 @@ impl Repr {
         header.set_sequence_number(self.sequence_number);
         header.set_source_position_vector(self.source_position_vector);
         header.set_destination_position_vector(self.destination_position_vector);
+    }
+
+    /// Returns the source Geonetworking address contained inside the
+    /// source position vector of the Unicast header.
+    pub const fn src_addr(&self) -> Address {
+        self.source_position_vector.address
+    }
+
+    /// Returns the destination Geonetworking address contained inside the
+    /// destination position vector of the Unicast header.
+    pub const fn dst_addr(&self) -> Address {
+        self.destination_position_vector.address
     }
 }
 

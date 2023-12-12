@@ -418,7 +418,21 @@ impl Interface {
                         )
                     },
                 ),
-                #[cfg(feature = "socket-btp")]
+                #[cfg(feature = "socket-btp-a")]
+                Socket::BtpA(socket) => socket.dispatch(
+                    &mut self.inner,
+                    srv,
+                    |inner, core, (dst_ll_addr, gn, pl)| {
+                        respond(
+                            inner,
+                            core,
+                            PacketMeta::default(),
+                            dst_ll_addr,
+                            GeonetPacket::new(gn.into(), GeonetPayload::Raw(pl)),
+                        )
+                    },
+                ),
+                #[cfg(feature = "socket-btp-b")]
                 Socket::BtpB(socket) => socket.dispatch(
                     &mut self.inner,
                     srv,

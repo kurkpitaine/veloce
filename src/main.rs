@@ -66,18 +66,18 @@ fn main() {
     // Create BTP-B socket
     let btp_b_rx_buffer = PacketBuffer::new(
         vec![
-            socket::btp::RxPacketMetadata::EMPTY,
-            socket::btp::RxPacketMetadata::EMPTY,
-            socket::btp::RxPacketMetadata::EMPTY,
+            socket::btp::b::RxPacketMetadata::EMPTY,
+            socket::btp::b::RxPacketMetadata::EMPTY,
+            socket::btp::b::RxPacketMetadata::EMPTY,
         ],
         vec![0; 65535],
     );
 
     let btp_b_tx_buffer = PacketBuffer::new(
         vec![
-            socket::btp::TxPacketMetadata::EMPTY,
-            socket::btp::TxPacketMetadata::EMPTY,
-            socket::btp::TxPacketMetadata::EMPTY,
+            socket::btp::b::TxPacketMetadata::EMPTY,
+            socket::btp::b::TxPacketMetadata::EMPTY,
+            socket::btp::b::TxPacketMetadata::EMPTY,
         ],
         vec![0; 65535],
     );

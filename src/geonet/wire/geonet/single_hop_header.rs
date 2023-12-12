@@ -2,7 +2,7 @@ use crate::geonet::wire::{Error, Result};
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
-use super::long_position_vector::{Header as LPVBuf, Repr as LongPositionVector};
+use super::{long_position_vector::{Header as LPVBuf, Repr as LongPositionVector}, Address};
 
 /// A read/write wrapper around a Geonetworking Single Hop Broadcast Header.
 #[derive(Debug, PartialEq)]
@@ -129,6 +129,12 @@ impl Repr {
     /// Emit a high-level representation into a Single Hop Broadcast Header.
     pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<T>) {
         header.set_source_position_vector(self.source_position_vector);
+    }
+
+    /// Returns the source Geonetworking address contained inside the
+    /// source position vector of the Single Hop Broadcast header.
+    pub const fn src_addr(&self) -> Address {
+        self.source_position_vector.address
     }
 }
 
