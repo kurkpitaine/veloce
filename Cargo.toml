@@ -64,4 +64,5 @@ default = [
    "socket-btp-a",
    "socket-btp-b",
    "packetmeta-id",
+   "async",
 ]
