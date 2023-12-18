@@ -10,6 +10,7 @@ pub mod geonet;
 pub mod ieee80211;
 pub mod llc;
 pub mod pretty_print;
+pub mod uppertester;
 
 use core::fmt;
 
