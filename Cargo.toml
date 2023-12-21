@@ -26,6 +26,8 @@ std = ["managed/std", "alloc"]
 alloc = ["managed/alloc", "defmt?/alloc"]
 defmt = ["dep:defmt", "heapless/defmt", "heapless/defmt-impl"]
 
+conformance = []
+
 "medium-ethernet" = []
 "medium-ieee80211p" = []
 "medium-pc5" = []
@@ -65,4 +67,12 @@ default = [
    "socket-btp-b",
    "packetmeta-id",
    "async",
+   "conformance"
 ]
+
+[[example]]
+name = "mix"
+required-features = ["std", "log", "medium-ethernet", "phy-raw_socket", "proto-geonet", "proto-btp", "socket-geonet", "socket-btp-b"]
+
+[profile.release]
+debug = 2
