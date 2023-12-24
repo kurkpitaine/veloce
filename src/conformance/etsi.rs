@@ -1,3 +1,5 @@
+use rasn::de;
+
 use crate::{
     iface::{Interface, SocketHandle, SocketSet},
     network::{GnCore, Request, Transport},
@@ -5,7 +7,7 @@ use crate::{
     time::{Instant, TAI2004},
     wire::{
         GnAddress, UtChangePosition, UtGnTriggerGeoUnicast, UtInitialize, UtMessageType, UtPacket,
-        UtResult,
+        UtResult,UtGnTriggerGeoAnycast, UtGnTriggerGeoBroadcast, UtGnTriggerShb, UtGnTriggerTsb,
     },
 };
 
@@ -60,19 +62,19 @@ impl State {
             }
             UtMessageType::UtGnTriggerGeoBroadcast => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
-                Err(())
+                self.ut_trigger_geo_broadcast(timestamp, sockets, buffer)
             }
             UtMessageType::UtGnTriggerGeoAnycast => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
-                Err(())
+                self.ut_trigger_geo_anycast(timestamp, sockets, buffer)
             }
             UtMessageType::UtGnTriggerShb => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
-                Err(())
+                self.ut_trigger_shb(timestamp, sockets, buffer)
             }
             UtMessageType::UtGnTriggerTsb => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
-                Err(())
+                self.ut_trigger_tsb(timestamp, sockets, buffer)
             }
             UtMessageType::UtBtpTriggerA => {
                 res_packet.set_message_type(UtMessageType::UtBtpTriggerResult);
@@ -165,9 +167,6 @@ impl State {
         let socket = sockets.get_mut::<socket::geonet::Socket>(self.gn_socket_handle);
 
         let ut_guc_pkt = UtGnTriggerGeoUnicast::new(buffer);
-        ut_guc_pkt.payload_len();
-        ut_guc_pkt.payload();
-
         let req_meta = Request {
             transport: Transport::Unicast(ut_guc_pkt.dst_addr()),
             max_lifetime: ut_guc_pkt.lifetime(),
@@ -176,6 +175,86 @@ impl State {
         };
         socket
             .send_slice(&ut_guc_pkt.payload()[..ut_guc_pkt.payload_len()], req_meta)
+            .map_err(|_| ())
+    }
+
+    fn ut_trigger_shb(
+        &self,
+        _timestamp: Instant,
+        sockets: &mut SocketSet<'_>,
+        buffer: &[u8],
+    ) -> Result {
+        let socket = sockets.get_mut::<socket::geonet::Socket>(self.gn_socket_handle);
+
+        let ut_shb_pkt = UtGnTriggerShb::new(buffer);
+        let req_meta = Request {
+            transport: Transport::SingleHopBroadcast,
+            traffic_class: ut_shb_pkt.traffic_class(),
+            ..Default::default()
+        };
+        socket
+            .send_slice(&ut_shb_pkt.payload()[..ut_shb_pkt.payload_len()], req_meta)
+            .map_err(|_| ())
+    }
+
+    fn ut_trigger_tsb(
+        &self,
+        _timestamp: Instant,
+        sockets: &mut SocketSet<'_>,
+        buffer: &[u8],
+    ) -> Result {
+        let socket = sockets.get_mut::<socket::geonet::Socket>(self.gn_socket_handle);
+
+        let ut_tsb_pkt = UtGnTriggerTsb::new(buffer);
+        let req_meta = Request {
+            transport: Transport::TopoBroadcast,
+            max_hop_limit: ut_tsb_pkt.hops(),
+            max_lifetime: ut_tsb_pkt.lifetime(),
+            traffic_class: ut_tsb_pkt.traffic_class(),
+            ..Default::default()
+        };
+        socket
+            .send_slice(&ut_tsb_pkt.payload()[..ut_tsb_pkt.payload_len()], req_meta)
+            .map_err(|_| ())
+    }
+
+    fn ut_trigger_geo_broadcast(
+        &self,
+        _timestamp: Instant,
+        sockets: &mut SocketSet<'_>,
+        buffer: &[u8],
+    ) -> Result {
+        let socket = sockets.get_mut::<socket::geonet::Socket>(self.gn_socket_handle);
+
+        let ut_gbc_pkt = UtGnTriggerGeoBroadcast::new(buffer);
+        let req_meta = Request {
+            transport: Transport::Broadcast(ut_gbc_pkt.area()),
+            max_lifetime: ut_gbc_pkt.lifetime(),
+            traffic_class: ut_gbc_pkt.traffic_class(),
+            ..Default::default()
+        };
+        socket
+            .send_slice(&ut_gbc_pkt.payload()[..ut_gbc_pkt.payload_len()], req_meta)
+            .map_err(|_| ())
+    }
+
+    fn ut_trigger_geo_anycast(
+        &self,
+        _timestamp: Instant,
+        sockets: &mut SocketSet<'_>,
+        buffer: &[u8],
+    ) -> Result {
+        let socket = sockets.get_mut::<socket::geonet::Socket>(self.gn_socket_handle);
+
+        let ut_gbc_pkt = UtGnTriggerGeoAnycast::new(buffer);
+        let req_meta = Request {
+            transport: Transport::Anycast(ut_gbc_pkt.area()),
+            max_lifetime: ut_gbc_pkt.lifetime(),
+            traffic_class: ut_gbc_pkt.traffic_class(),
+            ..Default::default()
+        };
+        socket
+            .send_slice(&ut_gbc_pkt.payload()[..ut_gbc_pkt.payload_len()], req_meta)
             .map_err(|_| ())
     }
 }

@@ -230,9 +230,9 @@ impl<T: AsRef<[u8]>> UtGnTriggerGeoBroadcast<T> {
 
     /// Return the payload length field.
     #[inline]
-    pub fn payload_len(&self) -> u16 {
+    pub fn payload_len(&self) -> usize {
         let data = self.buffer.as_ref();
-        NetworkEndian::read_u16(&data[field::GEN_GABC_PAYLOAD_LEN])
+        NetworkEndian::read_u16(&data[field::GEN_GABC_PAYLOAD_LEN]).into()
     }
 }
 
@@ -271,9 +271,9 @@ impl<T: AsRef<[u8]>> UtGnTriggerShb<T> {
 
     /// Return the payload length field.
     #[inline]
-    pub fn payload_len(&self) -> u16 {
+    pub fn payload_len(&self) -> usize {
         let data = self.buffer.as_ref();
-        NetworkEndian::read_u16(&data[field::GEN_SHB_PAYLOAD_LEN])
+        NetworkEndian::read_u16(&data[field::GEN_SHB_PAYLOAD_LEN]).into()
     }
 }
 
@@ -327,9 +327,9 @@ impl<T: AsRef<[u8]>> UtGnTriggerTsb<T> {
 
     /// Return the payload length field.
     #[inline]
-    pub fn payload_len(&self) -> u16 {
+    pub fn payload_len(&self) -> usize {
         let data = self.buffer.as_ref();
-        NetworkEndian::read_u16(&data[field::GEN_TSB_PAYLOAD_LEN])
+        NetworkEndian::read_u16(&data[field::GEN_TSB_PAYLOAD_LEN]).into()
     }
 }
 
