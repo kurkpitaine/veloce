@@ -109,7 +109,7 @@ mod tuntap_interface;
     any(feature = "phy-raw_socket", feature = "phy-tuntap_interface"),
     unix
 ))]
-pub use self::sys::wait;
+pub use self::sys::{wait, wait_many};
 
 #[cfg(all(feature = "phy-raw_socket", unix))]
 pub use self::raw_socket::RawSocket;
@@ -180,8 +180,7 @@ impl DeviceCapabilities {
         match self.medium {
             #[cfg(feature = "medium-ethernet")]
             Medium::Ethernet => {
-                self.max_transmission_unit
-                    - crate::wire::EthernetFrame::<&[u8]>::header_len()
+                self.max_transmission_unit - crate::wire::EthernetFrame::<&[u8]>::header_len()
             }
             Medium::Ieee80211p => self.max_transmission_unit,
             Medium::PC5 => self.max_transmission_unit,

@@ -117,9 +117,9 @@ impl<T: AsRef<[u8]>> UtGnTriggerGeoUnicast<T> {
 
     /// Return the payload length field.
     #[inline]
-    pub fn payload_len(&self) -> u16 {
+    pub fn payload_len(&self) -> usize {
         let data = self.buffer.as_ref();
-        NetworkEndian::read_u16(&data[field::GEN_GUC_PAYLOAD_LEN])
+        NetworkEndian::read_u16(&data[field::GEN_GUC_PAYLOAD_LEN]).into()
     }
 }
 
