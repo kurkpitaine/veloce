@@ -21,8 +21,10 @@ impl RawSocketDesc {
         let protocol = match medium {
             #[cfg(feature = "medium-ethernet")]
             Medium::Ethernet => imp::ETH_P_ALL,
-            #[cfg(feature = "medium-ip")]
-            Medium::Ip => imp::ETH_P_ALL,
+            #[cfg(feature = "medium-ieee80211p")]
+            Medium::Ieee80211p => imp::ETH_P_ALL,
+            #[cfg(feature = "medium-pc5")]
+            Medium::PC5 => imp::ETH_P_ALL,
         };
 
         let lower = unsafe {

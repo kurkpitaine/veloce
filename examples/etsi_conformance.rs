@@ -17,7 +17,7 @@ use veloce::conformance::etsi::State as UpperTester;
 use std::os::unix::io::AsRawFd;
 
 fn main() {
-    utils::setup_logging("info");
+    utils::setup_logging("debug");
 
     let udp_socket = UdpSocket::bind("0.0.0.0:29000").expect("Failed to bind to address");
     udp_socket
@@ -75,6 +75,7 @@ fn main() {
                     );
                     if let Some(res) = res_opt {
                         udp_socket.send_to(&res, source).unwrap();
+                        debug!("Sent {} bytes to {}", res.len(), source);
                     }
                 }
             }

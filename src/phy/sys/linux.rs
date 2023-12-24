@@ -3,7 +3,6 @@
 pub const SIOCGIFMTU: libc::c_ulong = 0x8921;
 pub const SIOCGIFINDEX: libc::c_ulong = 0x8933;
 pub const ETH_P_ALL: libc::c_short = 0x0003;
-pub const ETH_P_IEEE802154: libc::c_short = 0x00F6;
 
 // Constant definition as per
 // https://github.com/golang/sys/blob/master/unix/zerrors_linux_<arch>.go
