@@ -1,5 +1,3 @@
-use rasn::de;
-
 use crate::{
     iface::{Interface, SocketHandle, SocketSet},
     network::{GnCore, Request, Transport},
@@ -10,6 +8,8 @@ use crate::{
         UtResult,UtGnTriggerGeoAnycast, UtGnTriggerGeoBroadcast, UtGnTriggerShb, UtGnTriggerTsb,
     },
 };
+
+use log::{error, debug};
 
 pub type Result = core::result::Result<(), ()>;
 
@@ -50,31 +50,31 @@ impl State {
             }
             UtMessageType::UtChangePosition => {
                 res_packet.set_message_type(UtMessageType::UtChangePositionResult);
-                self.ut_change_position(timestamp, iface, router, buffer)
+                self.ut_change_position(timestamp, iface, router, ut_packet.payload())
             }
             UtMessageType::UtChangePseudonym => {
                 res_packet.set_message_type(UtMessageType::UtChangePseudonymResult);
-                self.ut_change_pseudonym(timestamp, iface, router, buffer)
+                self.ut_change_pseudonym(timestamp, iface, router, ut_packet.payload())
             }
             UtMessageType::UtGnTriggerGeoUnicast => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
-                self.ut_trigger_geo_unicast(timestamp, sockets, buffer)
+                self.ut_trigger_geo_unicast(timestamp, sockets, ut_packet.payload())
             }
             UtMessageType::UtGnTriggerGeoBroadcast => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
-                self.ut_trigger_geo_broadcast(timestamp, sockets, buffer)
+                self.ut_trigger_geo_broadcast(timestamp, sockets, ut_packet.payload())
             }
             UtMessageType::UtGnTriggerGeoAnycast => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
-                self.ut_trigger_geo_anycast(timestamp, sockets, buffer)
+                self.ut_trigger_geo_anycast(timestamp, sockets, ut_packet.payload())
             }
             UtMessageType::UtGnTriggerShb => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
-                self.ut_trigger_shb(timestamp, sockets, buffer)
+                self.ut_trigger_shb(timestamp, sockets, ut_packet.payload())
             }
             UtMessageType::UtGnTriggerTsb => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
-                self.ut_trigger_tsb(timestamp, sockets, buffer)
+                self.ut_trigger_tsb(timestamp, sockets, ut_packet.payload())
             }
             UtMessageType::UtBtpTriggerA => {
                 res_packet.set_message_type(UtMessageType::UtBtpTriggerResult);
@@ -173,9 +173,13 @@ impl State {
             traffic_class: ut_guc_pkt.traffic_class(),
             ..Default::default()
         };
+        debug!("GUC meta: {:?}", req_meta);
         socket
             .send_slice(&ut_guc_pkt.payload()[..ut_guc_pkt.payload_len()], req_meta)
-            .map_err(|_| ())
+            .map_err(|e| {
+                error!("Failed to send GUC packet: {}", e);
+                ()
+            })
     }
 
     fn ut_trigger_shb(
@@ -192,9 +196,13 @@ impl State {
             traffic_class: ut_shb_pkt.traffic_class(),
             ..Default::default()
         };
+        debug!("SHB meta: {:?}", req_meta);
         socket
             .send_slice(&ut_shb_pkt.payload()[..ut_shb_pkt.payload_len()], req_meta)
-            .map_err(|_| ())
+            .map_err(|e| {
+                error!("Failed to send SHB packet: {}", e);
+                ()
+            })
     }
 
     fn ut_trigger_tsb(
@@ -213,9 +221,13 @@ impl State {
             traffic_class: ut_tsb_pkt.traffic_class(),
             ..Default::default()
         };
+        debug!("TSB meta: {:?}", req_meta);
         socket
             .send_slice(&ut_tsb_pkt.payload()[..ut_tsb_pkt.payload_len()], req_meta)
-            .map_err(|_| ())
+            .map_err(|e| {
+                error!("Failed to send TSB packet: {}", e);
+                ()
+            })
     }
 
     fn ut_trigger_geo_broadcast(
@@ -233,9 +245,13 @@ impl State {
             traffic_class: ut_gbc_pkt.traffic_class(),
             ..Default::default()
         };
+        debug!("GBC meta: {:?}", req_meta);
         socket
             .send_slice(&ut_gbc_pkt.payload()[..ut_gbc_pkt.payload_len()], req_meta)
-            .map_err(|_| ())
+            .map_err(|e| {
+                error!("Failed to send GBC packet: {}", e);
+                ()
+            })
     }
 
     fn ut_trigger_geo_anycast(
@@ -253,8 +269,12 @@ impl State {
             traffic_class: ut_gbc_pkt.traffic_class(),
             ..Default::default()
         };
+        debug!("GAC meta: {:?}", req_meta);
         socket
             .send_slice(&ut_gbc_pkt.payload()[..ut_gbc_pkt.payload_len()], req_meta)
-            .map_err(|_| ())
+            .map_err(|e| {
+                error!("Failed to send GAC packet: {}", e);
+                ()
+            })
     }
 }

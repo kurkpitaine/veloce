@@ -130,9 +130,9 @@ impl core::fmt::Display for SendError {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
             SendError::Unaddressable => write!(f, "unadressable"),
-            SendError::SizeTooLong => todo!("size too long"),
-            SendError::LifetimeTooHigh => todo!("lifetime too high"),
-            SendError::AreaTooBig => todo!("area size too big"),
+            SendError::SizeTooLong => write!(f, "size too long"),
+            SendError::LifetimeTooHigh => write!(f, "lifetime too high"),
+            SendError::AreaTooBig => write!(f, "area size too big"),
             SendError::BufferFull => write!(f, "buffer full"),
         }
     }

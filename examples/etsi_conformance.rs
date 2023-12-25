@@ -3,6 +3,7 @@ use std::net::UdpSocket;
 
 use log::{debug, info, trace};
 
+use veloce::conformance::etsi::State as UpperTester;
 use veloce::iface::{Config, Interface, SocketSet};
 use veloce::network::{GnCore, GnCoreGonfig};
 use veloce::phy::{wait_many, Medium, RawSocket};
@@ -12,12 +13,23 @@ use veloce::time::Instant;
 use veloce::utils;
 use veloce::wire::{EthernetAddress, GnAddress, StationType};
 
-use veloce::conformance::etsi::State as UpperTester;
-
 use std::os::unix::io::AsRawFd;
 
+use clap::Parser;
+
+#[derive(Parser, Default, Debug)]
+struct Arguments {
+    dev: String,
+    log_level: String,
+}
+
 fn main() {
-    utils::setup_logging("debug");
+    let args = Arguments::parse();
+    utils::setup_logging(args.log_level.as_str());
+
+    let ll_addr = mac_address::mac_address_by_name(args.dev.as_str())
+        .unwrap()
+        .expect("Failed to get device mac address");
 
     let udp_socket = UdpSocket::bind("0.0.0.0:29000").expect("Failed to bind to address");
     udp_socket
@@ -28,7 +40,7 @@ fn main() {
     info!("Uppertester server listening on 0.0.0.0:29000");
 
     // Configure geonetworking device
-    let ll_addr = EthernetAddress([0x00, 0x0c, 0x6c, 0x0d, 0x14, 0x70]);
+    let ll_addr = EthernetAddress(ll_addr.bytes());
     let mut device = RawSocket::new("en0", Medium::Ethernet).unwrap();
     let dev_fd = device.as_raw_fd();
     let fds = vec![udp_fd, dev_fd];

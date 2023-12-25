@@ -20,6 +20,8 @@ uom = { version = "0.34.0", features = ["autoconvert", "f32"] }
 
 [dev-dependencies]
 approx = "0.5.1"
+mac_address = "1.1.5"
+clap = { version = "4.4.11", features = ["derive"] }
 
 [features]
 std = ["managed/std", "alloc"]
