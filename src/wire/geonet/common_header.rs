@@ -137,7 +137,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     #[inline]
     pub fn mobile(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::FLAGS] & 0x01 != 0
+        data[field::FLAGS] & 0x80 != 0
     }
 
     /// Return the payload length field.
@@ -206,7 +206,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     pub fn set_mobile(&mut self, value: bool) {
         let data = self.buffer.as_mut();
         let raw = data[field::FLAGS];
-        data[field::FLAGS] = if value { raw | 0x01 } else { raw & !0x01 };
+        data[field::FLAGS] = if value { raw | 0x80 } else { raw & !0x80 };
     }
 
     /// Set the payload length field.
@@ -315,7 +315,7 @@ mod test {
     use super::*;
 
     // A Common Header
-    static BYTES_HEADER: [u8; 8] = [0x20, 0x50, 0x08, 0x00, 0x00, 0x1e, 0x01, 0x00];
+    static BYTES_HEADER: [u8; 8] = [0x20, 0x50, 0x02, 0x00, 0x00, 0x1e, 0x01, 0x00];
 
     #[test]
     fn test_check_len() {

@@ -231,11 +231,11 @@ pub struct TrafficClass(pub u8);
 impl TrafficClass {
     /// Construct a Geonetworking traffic class
     pub const fn new(store_carry_forward: bool, id: u8) -> TrafficClass {
-        let mut tc = id << 2;
+        let mut tc = id & 0x3f;
         tc = if store_carry_forward {
-            tc | 0x01
+            tc | 0x80
         } else {
-            tc & !0x01
+            tc & !0x80
         };
 
         TrafficClass(tc)
@@ -253,12 +253,12 @@ impl TrafficClass {
 
     /// Return the store carry forward field.
     pub const fn store_carry_forward(&self) -> bool {
-        (self.0 & 0x01) != 0
+        (self.0 & 0x80) != 0
     }
 
     /// Return the traffic class id field.
     pub const fn id(&self) -> u8 {
-        self.0 >> 2
+        self.0 & 0x3F
     }
 }
 
@@ -314,7 +314,7 @@ mod test {
     #[test]
     fn test_traffic_class_new() {
         let tc = TrafficClass::new(true, 61);
-        let raw: u8 = 0xf5;
+        let raw: u8 = 0xbd;
         assert_eq!(tc.as_byte(), &raw);
     }
 
@@ -323,6 +323,6 @@ mod test {
         let byte: u8 = 0xa5;
         let tc = TrafficClass::from_byte(&byte);
         assert_eq!(tc.store_carry_forward(), true);
-        assert_eq!(tc.id(), 41);
+        assert_eq!(tc.id(), 37);
     }
 }

@@ -9,7 +9,7 @@ pub const VELOCE_CBF_MAX_RETRANSMIT: u8 = 2;
 /// Geonetworking protocol version supported by Veloce.
 pub const GN_PROTOCOL_VERSION: u8 = 1;
 /// Flag indicating wether the station could move.
-pub const GN_IS_MOBILE: bool = false;
+pub const GN_IS_MOBILE: bool = true;
 /// Maximum number of Duplicate Packet List (DPL) per source.
 pub const GN_DPL_LENGTH: usize = 8;
 pub const GN_LOCAL_ADDR_CONF_METHOD: GnAddrConfMethod = GnAddrConfMethod::Managed;
