@@ -33,21 +33,21 @@ mod field {
     /// Packet Packet traffic class.
     pub const GEN_GABC_TC: usize = 3;
     /// Reserved.
-    pub const GEN_GABC_RES: Field = 4..8;
+    pub const GEN_GABC_RES: Field = 4..7;
     /// Destination area latitude (1/10 degrees).
-    pub const GEN_GABC_LAT: Field = 8..12;
+    pub const GEN_GABC_LAT: Field = 7..11;
     /// Destination area longitude (1/10 degrees).
-    pub const GEN_GABC_LON: Field = 12..16;
+    pub const GEN_GABC_LON: Field = 11..15;
     /// Destination area distance A.
-    pub const GEN_GABC_DIST_A: Field = 16..18;
+    pub const GEN_GABC_DIST_A: Field = 15..17;
     /// Destination area distance B.
-    pub const GEN_GABC_DIST_B: Field = 18..20;
+    pub const GEN_GABC_DIST_B: Field = 17..19;
     /// Destination area angle.
-    pub const GEN_GABC_ANGLE: Field = 20..22;
+    pub const GEN_GABC_ANGLE: Field = 19..21;
     /// Length of 'Payload' field.
-    pub const GEN_GABC_PAYLOAD_LEN: Field = 22..24;
+    pub const GEN_GABC_PAYLOAD_LEN: Field = 21..23;
     /// Packet Payload.
-    pub const GEN_GABC_PAYLOAD: Rest = 24..;
+    pub const GEN_GABC_PAYLOAD: Rest = 23..;
 
     /// UtGnTriggerShb fields.
     /// Packet traffic class.

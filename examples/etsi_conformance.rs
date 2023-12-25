@@ -41,7 +41,7 @@ fn main() {
 
     // Configure geonetworking device
     let ll_addr = EthernetAddress(ll_addr.bytes());
-    let mut device = RawSocket::new("en0", Medium::Ethernet).unwrap();
+    let mut device = RawSocket::new(args.dev.as_str(), Medium::Ethernet).unwrap();
     let dev_fd = device.as_raw_fd();
     let fds = vec![udp_fd, dev_fd];
 

@@ -126,6 +126,7 @@ impl InterfaceInner {
         let ch = check!(CommonHeader::new_checked(bh_payload));
         let ch_repr = check!(CommonHeaderRepr::parse(&ch));
 
+        // Step 1: check the MHL field.
         if ch_repr.max_hop_limit < bh_repr.remaining_hop_limit {
             net_trace!(
                 "network: malformed {}",
@@ -133,6 +134,8 @@ impl InterfaceInner {
             );
             return None;
         }
+
+        // Step 2: TODO: process the BC forwarding packet buffer
 
         // TODO: Process the BC forwarding packet buffer and the forwarding algorithm having caused the buffering needs to be re-executed.
         let ch_payload = ch.payload();

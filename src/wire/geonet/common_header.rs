@@ -315,7 +315,7 @@ mod test {
     use super::*;
 
     // A Common Header
-    static BYTES_HEADER: [u8; 8] = [0x20, 0x50, 0x02, 0x00, 0x00, 0x1e, 0x01, 0x00];
+    static BYTES_HEADER: [u8; 8] = [0x20, 0x50, 0x08, 0x00, 0x00, 0x1e, 0x01, 0x00];
 
     #[test]
     fn test_check_len() {
@@ -334,7 +334,7 @@ mod test {
         let header = Header::new_unchecked(&BYTES_HEADER);
         assert_eq!(header.next_header(), Protocol::BtpB);
         assert_eq!(header.header_type(), HeaderType::TsbSingleHop);
-        assert_eq!(header.traffic_class(), TrafficClass::new(false, false, 2));
+        assert_eq!(header.traffic_class(), TrafficClass::new(false, 2));
         assert_eq!(header.mobile(), false);
         assert_eq!(header.payload_length(), 30);
         assert_eq!(header.maximum_hop_limit(), 1);
@@ -349,7 +349,7 @@ mod test {
             Repr {
                 next_header: Protocol::BtpB,
                 header_type: HeaderType::TsbSingleHop,
-                traffic_class: TrafficClass::new(false, false, 2),
+                traffic_class: TrafficClass::new(false, 2),
                 mobile: false,
                 payload_len: 30,
                 max_hop_limit: 1,
@@ -362,7 +362,7 @@ mod test {
         let repr = Repr {
             next_header: Protocol::BtpB,
             header_type: HeaderType::TsbSingleHop,
-            traffic_class: TrafficClass::new(false, false, 2),
+            traffic_class: TrafficClass::new(false, 2),
             mobile: false,
             payload_len: 30,
             max_hop_limit: 1,
