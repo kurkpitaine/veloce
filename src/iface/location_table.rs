@@ -36,6 +36,7 @@ pub(super) struct LocationTableEntry {
     /// Packet data rate last update time point.
     pub packet_data_rate_updated_at: Instant,
     /// Extensions for the station.
+    #[allow(unused)]
     pub extensions: Option<()>,
     /// Time point at which this entry expires.
     pub expires_at: Instant,
@@ -79,6 +80,7 @@ impl LocationTableEntry {
     }
 
     /// Updates the `is_neighbour` flag for the given station.
+    #[allow(unused)]
     pub fn update_neighbour_flag(&mut self, neighbour_flag: bool) {
         self.is_neighbour = neighbour_flag;
     }
@@ -128,6 +130,7 @@ impl LocationTable {
 
     /// Finds the LocationTable entry for the given `ll_addr` [`MacAddress`].
     /// Returns a mutable reference on the element.
+    #[allow(unused)]
     pub fn find_mut(&mut self, ll_addr: &MacAddress) -> Option<&mut LocationTableEntry> {
         self.storage.get_mut(ll_addr)
     }
@@ -135,6 +138,7 @@ impl LocationTable {
     /// Updates or insert a `LocationTableEntry` for the given station.
     /// Geonetworking address and Link Layer address are carried inside `position_vector`.
     /// Returns a reference on the inserted/updated element.
+    #[allow(unused)]
     pub fn update(
         &mut self,
         timestamp: Instant,

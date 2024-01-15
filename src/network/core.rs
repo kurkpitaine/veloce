@@ -6,9 +6,7 @@ use crate::config::GnAddrConfMethod;
 use crate::rand::Rand;
 use crate::time::{Instant, TAI2004};
 use crate::types::{degree, kilometer_per_hour, Heading, Latitude, Longitude, Speed};
-use crate::wire::{
-    EthernetAddress, GnAddress, LongPositionVectorRepr as LongPositionVector,
-};
+use crate::wire::{EthernetAddress, GnAddress, LongPositionVectorRepr as LongPositionVector};
 
 // For tests only. Duplicate Address Detection only works with Auto mode.
 #[cfg(test)]

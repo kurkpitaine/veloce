@@ -348,12 +348,24 @@ pub struct UtGnEventInd<T: AsRef<[u8]>> {
     buffer: T,
 }
 
+impl<T: AsRef<[u8]>> UtGnEventInd<T> {
+    /// Create a raw octet buffer with an UtGnEventInd packet structure.
+    pub fn new(buffer: T) -> UtGnEventInd<T> {
+        UtGnEventInd { buffer }
+    }
+
+    /// Consume the header, returning the underlying buffer.
+    pub fn into_inner(self) -> T {
+        self.buffer
+    }
+}
+
 impl<T: AsRef<[u8]> + AsMut<[u8]>> UtGnEventInd<T> {
     /// Set the payload length.
     #[inline]
-    pub fn set_payload_len(&mut self, value: u16) {
+    pub fn set_payload_len(&mut self, value: usize) {
         let data = self.buffer.as_mut();
-        NetworkEndian::write_u16(&mut data[field::GN_IND_PAYLOAD_LEN], value);
+        NetworkEndian::write_u16(&mut data[field::GN_IND_PAYLOAD_LEN], value as u16);
     }
 
     /// Return a mutable pointer to the payload.

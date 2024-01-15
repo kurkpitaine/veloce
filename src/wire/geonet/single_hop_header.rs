@@ -2,7 +2,10 @@ use crate::wire::{Error, Result};
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
-use super::{long_position_vector::{Header as LPVBuf, Repr as LongPositionVector}, Address};
+use super::{
+    long_position_vector::{Header as LPVBuf, Repr as LongPositionVector},
+    Address,
+};
 
 /// A read/write wrapper around a Geonetworking Single Hop Broadcast Header.
 #[derive(Debug, PartialEq)]

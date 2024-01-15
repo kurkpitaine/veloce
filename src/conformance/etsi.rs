@@ -1,15 +1,18 @@
+use std::net::SocketAddr;
+
 use crate::{
     iface::{Interface, SocketHandle, SocketSet},
-    network::{GnCore, Request, Transport},
+    network::{GnCore, Indication, Request, Transport, UpperProtocol},
     socket,
     time::{Instant, TAI2004},
     wire::{
-        GnAddress, UtChangePosition, UtGnTriggerGeoUnicast, UtInitialize, UtMessageType, UtPacket,
-        UtResult,UtGnTriggerGeoAnycast, UtGnTriggerGeoBroadcast, UtGnTriggerShb, UtGnTriggerTsb,
+        GnAddress, UtChangePosition, UtGnEventInd, UtGnTriggerGeoAnycast, UtGnTriggerGeoBroadcast,
+        UtGnTriggerGeoUnicast, UtGnTriggerShb, UtGnTriggerTsb, UtInitialize, UtMessageType,
+        UtPacket, UtResult,
     },
 };
 
-use log::{error, debug};
+use log::{debug, error};
 
 pub type Result = core::result::Result<(), ()>;
 
@@ -18,6 +21,8 @@ pub struct State {
     initial_address: GnAddress,
     /// Geonetworking socket handle.
     gn_socket_handle: SocketHandle,
+    /// UT server address.
+    ut_server: Option<SocketAddr>,
 }
 
 impl State {
@@ -26,17 +31,19 @@ impl State {
         State {
             initial_address: addr,
             gn_socket_handle: sock_handle,
+            ut_server: None,
         }
     }
 
     /// Dispatch an Uppertester request.
     pub fn ut_dispatcher(
-        &self,
+        &mut self,
         timestamp: Instant,
         iface: &mut Interface,
         router: &mut GnCore,
         sockets: &mut SocketSet<'_>,
         buffer: &[u8],
+        source: SocketAddr,
     ) -> Option<[u8; 2]> {
         let mut res = [0u8; 2];
         let mut res_packet = UtPacket::new(&mut res);
@@ -46,41 +53,41 @@ impl State {
         let rc = match ut_packet.message_type() {
             UtMessageType::UtInitialize => {
                 res_packet.set_message_type(UtMessageType::UtInitializeResult);
-                self.ut_initialize(timestamp, iface, router, ut_packet.payload())
+                self.ut_initialize(timestamp, iface, router, ut_packet.payload(), source)
             }
-            UtMessageType::UtChangePosition => {
+            UtMessageType::UtChangePosition if self.ut_server == Some(source) => {
                 res_packet.set_message_type(UtMessageType::UtChangePositionResult);
                 self.ut_change_position(timestamp, iface, router, ut_packet.payload())
             }
-            UtMessageType::UtChangePseudonym => {
+            UtMessageType::UtChangePseudonym if self.ut_server == Some(source) => {
                 res_packet.set_message_type(UtMessageType::UtChangePseudonymResult);
                 self.ut_change_pseudonym(timestamp, iface, router, ut_packet.payload())
             }
-            UtMessageType::UtGnTriggerGeoUnicast => {
+            UtMessageType::UtGnTriggerGeoUnicast if self.ut_server == Some(source) => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
                 self.ut_trigger_geo_unicast(timestamp, sockets, ut_packet.payload())
             }
-            UtMessageType::UtGnTriggerGeoBroadcast => {
+            UtMessageType::UtGnTriggerGeoBroadcast if self.ut_server == Some(source) => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
                 self.ut_trigger_geo_broadcast(timestamp, sockets, ut_packet.payload())
             }
-            UtMessageType::UtGnTriggerGeoAnycast => {
+            UtMessageType::UtGnTriggerGeoAnycast if self.ut_server == Some(source) => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
                 self.ut_trigger_geo_anycast(timestamp, sockets, ut_packet.payload())
             }
-            UtMessageType::UtGnTriggerShb => {
+            UtMessageType::UtGnTriggerShb if self.ut_server == Some(source) => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
                 self.ut_trigger_shb(timestamp, sockets, ut_packet.payload())
             }
-            UtMessageType::UtGnTriggerTsb => {
+            UtMessageType::UtGnTriggerTsb if self.ut_server == Some(source) => {
                 res_packet.set_message_type(UtMessageType::UtGnTriggerResult);
                 self.ut_trigger_tsb(timestamp, sockets, ut_packet.payload())
             }
-            UtMessageType::UtBtpTriggerA => {
+            UtMessageType::UtBtpTriggerA if self.ut_server == Some(source) => {
                 res_packet.set_message_type(UtMessageType::UtBtpTriggerResult);
                 Err(())
             }
-            UtMessageType::UtBtpTriggerB => {
+            UtMessageType::UtBtpTriggerB if self.ut_server == Some(source) => {
                 res_packet.set_message_type(UtMessageType::UtBtpTriggerResult);
                 Err(())
             }
@@ -98,12 +105,35 @@ impl State {
         Some(res)
     }
 
+    /// Notify to the Uppertester a received Geonetworking packet.
+    pub fn ut_gn_event(
+        &mut self,
+        meta: Indication,
+        buffer: &[u8],
+    ) -> Option<(SocketAddr, Vec<u8>)> {
+        let (ut_server, msg_type) = match (self.ut_server, meta.upper_proto) {
+            (Some(s), UpperProtocol::Any) => (s, UtMessageType::UtGnEventInd),
+            _ => return None,
+        };
+
+        let mut res_buf = vec![0u8; 3 + buffer.len()];
+        let mut res_pkt = UtPacket::new(&mut res_buf);
+        res_pkt.set_message_type(msg_type);
+
+        let mut ind_pkt = UtGnEventInd::new(res_pkt.payload_mut());
+        ind_pkt.set_payload_len(buffer.len());
+        ind_pkt.payload_mut().copy_from_slice(buffer);
+
+        Some((ut_server, res_buf))
+    }
+
     fn ut_initialize(
-        &self,
+        &mut self,
         _timestamp: Instant,
         iface: &mut Interface,
         router: &mut GnCore,
         buffer: &[u8],
+        source: SocketAddr,
     ) -> Result {
         let ut_init = UtInitialize::new(buffer);
 
@@ -128,13 +158,16 @@ impl State {
         // Reset geonetworking address
         router.set_address(self.initial_address);
 
+        // Set server address
+        self.ut_server = Some(source);
+
         Ok(())
     }
 
     fn ut_change_position(
         &self,
         timestamp: Instant,
-        iface: &mut Interface,
+        _iface: &mut Interface,
         router: &mut GnCore,
         buffer: &[u8],
     ) -> Result {

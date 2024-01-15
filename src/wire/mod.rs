@@ -9,6 +9,7 @@ pub mod etsi_its;
 pub mod geonet;
 pub mod ieee80211;
 pub mod llc;
+pub mod phy;
 pub mod pretty_print;
 pub mod uppertester;
 
@@ -227,6 +228,7 @@ impl HardwareAddress {
     }
 
     #[cfg(feature = "medium-pc5")]
+    #[allow(unused)]
     pub(crate) fn pc5_or_panic(&self) -> PC5Address {
         match self {
             HardwareAddress::PC5(addr) => *addr,

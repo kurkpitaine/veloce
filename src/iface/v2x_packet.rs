@@ -1,12 +1,11 @@
 use crate::common::geo_area::{GeoArea, GeoPosition};
 use crate::phy::DeviceCapabilities;
 use crate::wire::{
-    BasicHeaderRepr, BeaconHeaderRepr, CommonHeaderRepr, GeoAnycastRepr,
-    GeoBroadcastRepr, GeonetBeacon, GeonetGeoAnycast, GeonetGeoBroadcast,
-    GeonetLocationServiceReply, GeonetLocationServiceRequest, GeonetRepr, GeonetSingleHop,
-    GeonetTopoBroadcast, GeonetUnicast, GnAddress, LocationServiceReplyRepr,
-    LocationServiceRequestRepr, SequenceNumber, SingleHopHeaderRepr, TopoBroadcastRepr,
-    UnicastRepr,
+    BasicHeaderRepr, BeaconHeaderRepr, CommonHeaderRepr, GeoAnycastRepr, GeoBroadcastRepr,
+    GeonetBeacon, GeonetGeoAnycast, GeonetGeoBroadcast, GeonetLocationServiceReply,
+    GeonetLocationServiceRequest, GeonetRepr, GeonetSingleHop, GeonetTopoBroadcast, GeonetUnicast,
+    GnAddress, LocationServiceReplyRepr, LocationServiceRequestRepr, SequenceNumber,
+    SingleHopHeaderRepr, TopoBroadcastRepr, UnicastRepr,
 };
 
 #[allow(clippy::large_enum_variant)]
@@ -53,6 +52,7 @@ macro_rules! make_packet {
 
         #[cfg(feature = "proto-geonet")]
         impl $packet<'_> {
+            #[allow(unused)]
             pub fn geonet_variant(&self) -> $gn_variant {
                 $gn_variant::new(self.basic_header, self.common_header, self.extended_header)
             }
@@ -245,6 +245,7 @@ impl<'p> GeonetPacket<'p> {
         })
     }
 
+    #[allow(unused)]
     pub(crate) fn basic_header(&self) -> BasicHeaderRepr {
         match self {
             GeonetPacket::Beacon(b) => b.basic_header,
@@ -458,6 +459,7 @@ impl<'p> GeonetPacket<'p> {
 
 /// Extended header types.
 #[derive(Debug)]
+#[allow(unused)]
 pub(crate) enum ExtendedHeader {
     /// Extended Header for a Beacon packet.
     Beacon(BeaconHeaderRepr),
@@ -480,6 +482,7 @@ pub(crate) enum ExtendedHeader {
 impl ExtendedHeader {
     /// Return the length, in bytes, of a header that will be emitted from this high-level
     /// representation.
+    #[allow(unused)]
     pub(crate) fn buffer_len(&self) -> usize {
         match self {
             ExtendedHeader::Beacon(r) => r.buffer_len(),
@@ -497,6 +500,7 @@ impl ExtendedHeader {
 /// Geonetworking payload types.
 #[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[allow(unused)]
 pub(crate) enum GeonetPayload<'p> {
     /// Payload is Any type.
     /// Used to carry an opaque protocol to the Geonetworking layer.

@@ -33,6 +33,7 @@ pub(crate) enum PollAt {
     /// The socket needs to be polled immediately.
     Now,
     /// The socket needs to be polled at given [Instant][struct.Instant].
+    #[allow(unused)]
     Time(Instant),
     /// The socket does not need to be polled unless there are external changes.
     Ingress,

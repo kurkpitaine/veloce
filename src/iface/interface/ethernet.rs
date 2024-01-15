@@ -44,6 +44,7 @@ impl InterfaceInner {
     }
 
     #[cfg(feature = "medium-ethernet")]
+    #[allow(unused)]
     pub(super) fn dispatch_ethernet<Tx, F>(
         &mut self,
         tx_token: Tx,

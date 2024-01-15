@@ -9,9 +9,9 @@ use crate::{
     iface::ContextMeta,
     types::{tenth_of_microdegree, Heading, Latitude, Longitude, Speed},
     wire::{
-        BHNextHeader, BasicHeaderRepr, CommonHeaderRepr, EthernetRepr,
-        GeonetPacketType, GnAddress, GnProtocol, LongPositionVectorRepr, ShortPositionVectorRepr,
-        StationType, BASIC_HEADER_LEN, COMMON_HEADER_LEN, UNICAST_HEADER_LEN, UnicastRepr,
+        BHNextHeader, BasicHeaderRepr, CommonHeaderRepr, EthernetRepr, GeonetPacketType, GnAddress,
+        GnProtocol, LongPositionVectorRepr, ShortPositionVectorRepr, StationType, UnicastRepr,
+        BASIC_HEADER_LEN, COMMON_HEADER_LEN, UNICAST_HEADER_LEN,
     },
 };
 

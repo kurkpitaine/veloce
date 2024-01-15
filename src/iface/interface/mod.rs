@@ -1067,6 +1067,7 @@ impl InterfaceInner {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[allow(unused)]
 enum DispatchError {
     /// No route to dispatch this packet. Retrying won't help unless
     /// configuration is changed.

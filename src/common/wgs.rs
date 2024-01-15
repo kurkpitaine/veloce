@@ -33,6 +33,7 @@ impl Geocentric {
     /// `lon` longitude of point (degrees).
     /// `alt` height of point above the ellipsoid (meters).
     /// Returns a [`GeocentricPosition`] containing the (x,y,z) geocentric coordinates.
+    #[allow(unused)]
     pub fn forward_checked(
         &self,
         lat: Latitude,
@@ -103,6 +104,7 @@ impl Geocentric {
     }
 }
 
+#[allow(unused)]
 pub struct LocalCartesian {
     /// Projection system.
     proj: Geocentric,
@@ -120,6 +122,7 @@ pub struct LocalCartesian {
 
 impl LocalCartesian {
     /// Constructs a new [`LocalCartesian`] with `lat` and `lon` values validity check.
+    #[allow(unused)]
     pub fn new_checked(
         proj: Geocentric,
         lat: Latitude,

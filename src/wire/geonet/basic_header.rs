@@ -217,6 +217,8 @@ impl Repr {
     where
         T: AsRef<[u8]> + ?Sized,
     {
+        header.check_len()?;
+
         Ok(Repr {
             version: header.version(),
             next_header: header.next_header(),

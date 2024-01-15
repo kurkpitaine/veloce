@@ -354,7 +354,10 @@ fn rotate(point: CartesianPosition, azimuth: Angle) -> CartesianPosition {
 #[cfg(test)]
 mod test {
     use super::{Circle, GeoArea, GeoPosition, Shape};
-    use crate::{types::{Distance, Latitude, Longitude}, common::geo_area::{Rectangle, Ellipse}};
+    use crate::{
+        common::geo_area::{Ellipse, Rectangle},
+        types::{Distance, Latitude, Longitude},
+    };
     use uom::si::{angle::degree, f32::Angle, length::meter};
 
     #[test]

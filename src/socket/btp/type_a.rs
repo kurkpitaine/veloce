@@ -120,10 +120,7 @@ impl<'a> Socket<'a> {
     /// This function returns `Err(Error::Illegal)` if the socket was open
     /// (see [is_open](#method.is_open)), and `Err(Error::Unaddressable)`
     /// if the port in the given endpoint is zero.
-    pub fn bind<T: Into<ListenEndpoint>>(
-        &mut self,
-        endpoint: T,
-    ) -> Result<(), BindError> {
+    pub fn bind<T: Into<ListenEndpoint>>(&mut self, endpoint: T) -> Result<(), BindError> {
         let endpoint = endpoint.into();
         if endpoint.port == 0 {
             return Err(BindError::Unaddressable);

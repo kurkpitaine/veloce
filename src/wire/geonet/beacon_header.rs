@@ -1,7 +1,10 @@
 use crate::wire::{Error, Result};
 use core::fmt;
 
-use super::{long_position_vector::{Header as LPVBuf, Repr as LongPositionVector}, Address};
+use super::{
+    long_position_vector::{Header as LPVBuf, Repr as LongPositionVector},
+    Address,
+};
 
 /// A read/write wrapper around a Geonetworking Beacon Header.
 #[derive(Debug, PartialEq)]
@@ -131,7 +134,7 @@ mod test {
     use super::*;
     use crate::types::*;
     use crate::wire::ethernet::Address as MacAddress;
-    use crate::wire::geonet::{Address as GnAddress, StationType, PositionVectorTimestamp};
+    use crate::wire::geonet::{Address as GnAddress, PositionVectorTimestamp, StationType};
 
     static BYTES_HEADER: [u8; 24] = [
         0xbc, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x00, 0x00, 0x00, 0x78, 0x1c, 0xc6, 0x66,

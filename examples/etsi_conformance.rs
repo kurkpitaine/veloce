@@ -67,7 +67,7 @@ fn main() {
     let gn_handle: veloce::iface::SocketHandle = sockets.add(gn_socket);
 
     // Configure UpperTester
-    let ut = UpperTester::new(router_addr, gn_handle);
+    let mut ut = UpperTester::new(router_addr, gn_handle);
 
     loop {
         // Update timestamp.
@@ -84,6 +84,7 @@ fn main() {
                         &mut router,
                         &mut sockets,
                         &udp_buffer,
+                        source,
                     );
                     if let Some(res) = res_opt {
                         udp_socket.send_to(&res, source).unwrap();
@@ -97,6 +98,15 @@ fn main() {
 
         trace!("poll");
         iface.poll(&mut router, &mut device, &mut sockets);
+
+        let gn_socket = sockets.get_mut::<socket::geonet::Socket>(gn_handle);
+        if gn_socket.can_recv() {
+            let (buf, meta) = gn_socket.recv().unwrap();
+            if let Some((dst, data)) = ut.ut_gn_event(meta, buf) {
+                udp_socket.send_to(&data, dst).unwrap();
+                debug!("Sent {} bytes to {}", data.len(), dst);
+            }
+        }
 
         trace!("wait_many");
         wait_many(&fds, iface.poll_delay(timestamp, &sockets)).expect("wait error");

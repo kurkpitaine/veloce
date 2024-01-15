@@ -1,7 +1,7 @@
-use byteorder::{NetworkEndian, ByteOrder};
+use byteorder::{ByteOrder, NetworkEndian};
 use uom::si::length::centimeter;
 
-use crate::types::{Latitude, Longitude, Distance, tenth_of_microdegree};
+use crate::types::{tenth_of_microdegree, Distance, Latitude, Longitude};
 
 pub mod btp;
 pub mod geonet;

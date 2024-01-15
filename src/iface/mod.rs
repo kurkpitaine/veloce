@@ -10,6 +10,7 @@ mod interface;
 mod location_service;
 #[cfg(feature = "proto-geonet")]
 mod location_table;
+pub mod poti;
 mod socket_set;
 
 mod v2x_packet;
