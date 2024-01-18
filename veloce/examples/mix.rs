@@ -163,7 +163,7 @@ fn main() {
         if timestamp >= next_gbc_transmit {
             trace!("next_gbc_transmit");
             let lat = Latitude::new::<degree>(48.271947);
-            let lon = Latitude::new::<degree>(-3.614961);
+            let lon = Longitude::new::<degree>(-3.614961);
 
             let cam = fill_cam(
                 etsi_its::Latitude(lat.get::<tenth_of_microdegree>() as i32),

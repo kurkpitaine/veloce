@@ -2,3 +2,9 @@
 #rustflags = [
 #  "-C", "link-args=-Wl,-stack_size,0x40000"
 #]
+
+[target.arm-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"

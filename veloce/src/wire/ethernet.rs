@@ -153,7 +153,7 @@ impl<T: AsRef<[u8]>> Frame<T> {
     }
 
     /// Return the length of a frame header.
-    pub fn header_len() -> usize {
+    pub const fn header_len() -> usize {
         HEADER_LEN
     }
 

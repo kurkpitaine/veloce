@@ -1,12 +1,9 @@
-use core::result::Result;
-
 use super::check;
-use super::DispatchError;
 use super::EthernetPacket;
 use super::InterfaceInner;
 use super::InterfaceServices;
 use super::SocketSet;
-use crate::phy::{PacketMeta, TxToken};
+use crate::phy::PacketMeta;
 use crate::wire::*;
 
 impl InterfaceInner {
@@ -41,31 +38,5 @@ impl InterfaceInner {
             // Drop all other traffic.
             _ => None,
         }
-    }
-
-    #[cfg(feature = "medium-ethernet")]
-    #[allow(unused)]
-    pub(super) fn dispatch_ethernet<Tx, F>(
-        &mut self,
-        tx_token: Tx,
-        buffer_len: usize,
-        f: F,
-    ) -> Result<(), DispatchError>
-    where
-        Tx: TxToken,
-        F: FnOnce(EthernetFrame<&mut [u8]>),
-    {
-        let tx_len = EthernetFrame::<&[u8]>::buffer_len(buffer_len);
-        tx_token.consume(tx_len, |tx_buffer| {
-            debug_assert!(tx_buffer.as_ref().len() == tx_len);
-            let mut frame = EthernetFrame::new_unchecked(tx_buffer);
-
-            let src_addr = self.hardware_addr.ethernet_or_panic();
-            frame.set_src_addr(src_addr);
-
-            f(frame);
-
-            Ok(())
-        })
     }
 }

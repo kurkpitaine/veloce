@@ -500,7 +500,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     /// [set_header_len]: #method.set_header_len
     pub fn check_len(&self) -> Result<()> {
         let len = self.buffer.as_ref().len();
-        if len < field::QOS_CTRL.end {
+        if len < HEADER_LEN {
             Err(Error)
         } else {
             Ok(())
@@ -510,6 +510,11 @@ impl<T: AsRef<[u8]>> Header<T> {
     /// Consume the packet, returning the underlying buffer.
     pub fn into_inner(self) -> T {
         self.buffer
+    }
+
+    /// Return the length of a frame header.
+    pub const fn header_len() -> usize {
+        HEADER_LEN
     }
 
     /// Return the `frame control` field.
@@ -562,6 +567,15 @@ impl<T: AsRef<[u8]>> Header<T> {
     }
 }
 
+impl<'a, T: AsRef<[u8]> + ?Sized> Header<&'a T> {
+    /// Return a pointer to the payload.
+    #[inline]
+    pub fn payload(&self) -> &'a [u8] {
+        let data = self.buffer.as_ref();
+        &data[HEADER_LEN..]
+    }
+}
+
 impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     /// Set the `frame control` field.
     #[inline]
@@ -610,6 +624,13 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     pub fn set_qos_control(&mut self, value: QoSControl) {
         let data = self.buffer.as_mut();
         data[field::QOS_CTRL].copy_from_slice(value.as_bytes());
+    }
+
+    /// Return a mutable pointer to the payload.
+    #[inline]
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        let data = self.buffer.as_mut();
+        &mut data[HEADER_LEN..]
     }
 }
 

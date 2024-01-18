@@ -96,6 +96,8 @@ use crate::time::Instant;
 ))]
 mod sys;
 
+#[cfg(all(feature = "phy-nxp", unix))]
+mod nxp;
 #[cfg(all(feature = "phy-raw_socket", unix))]
 mod raw_socket;
 mod tracer;
@@ -111,6 +113,8 @@ mod tuntap_interface;
 ))]
 pub use self::sys::{wait, wait_many};
 
+#[cfg(all(feature = "phy-nxp", unix))]
+pub use self::nxp::NxpSocket;
 #[cfg(all(feature = "phy-raw_socket", unix))]
 pub use self::raw_socket::RawSocket;
 pub use self::tracer::Tracer;

@@ -85,6 +85,11 @@ impl<T: AsRef<[u8]>> Header<T> {
         self.buffer
     }
 
+    /// Return the length of a frame header.
+    pub const fn header_len() -> usize {
+        HEADER_LEN
+    }
+
     /// Return the `DSAP` field.
     #[inline]
     pub fn dsap(&self) -> u8 {
@@ -125,7 +130,7 @@ impl<T: AsRef<[u8]>> Header<T> {
 }
 
 impl<'a, T: AsRef<[u8]> + ?Sized> Header<&'a T> {
-    /// Return a pointer to the payload, without checking for 802.1Q.
+    /// Return a pointer to the payload.
     #[inline]
     pub fn payload(&self) -> &'a [u8] {
         let data = self.buffer.as_ref();
@@ -167,6 +172,13 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     pub fn set_snap_protocol(&mut self, value: EthernetProtocol) {
         let data = self.buffer.as_mut();
         NetworkEndian::write_u16(&mut data[field::PROTO], value.into());
+    }
+
+    /// Return a mutable pointer to the payload.
+    #[inline]
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        let data = self.buffer.as_mut();
+        &mut data[field::PAYLOAD]
     }
 }
 

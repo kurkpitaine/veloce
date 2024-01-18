@@ -1,4 +1,4 @@
-mod field {
+pub mod field {
     pub type Field = ::core::ops::Range<usize>;
     pub type Rest = ::core::ops::RangeFrom<usize>;
 }
@@ -9,18 +9,18 @@ pub mod etsi_its;
 pub mod geonet;
 pub mod ieee80211;
 pub mod llc;
-pub mod phy;
+pub mod nxp;
 pub mod pretty_print;
 pub mod uppertester;
 
 use core::fmt;
 
-pub use self::ethernet::{
+pub use ethernet::{
     Address as EthernetAddress, EtherType as EthernetProtocol, Frame as EthernetFrame,
     Repr as EthernetRepr, HEADER_LEN as ETHERNET_HEADER_LEN,
 };
 
-pub use self::geonet::{
+pub use geonet::{
     anycast_broadcast_header::{
         Header as GeoAnycastHeader, Header as GeoBroadcastHeader, Repr as GeoAnycastRepr,
         Repr as GeoBroadcastRepr, HEADER_LEN as GEO_ANYCAST_HEADER_LEN,
@@ -69,6 +69,14 @@ pub use self::geonet::{
     Address as GnAddress, SequenceNumber, StationType, TrafficClass as GnTrafficClass,
 };
 
+pub use ieee80211::{
+    Header as Ieee80211Frame, Repr as Ieee80211Repr, HEADER_LEN as IEEE_80211_HEADER_LEN,
+};
+
+pub use llc::{
+    Header as LlcFrame, Repr as LlcRepr, HEADER_LEN as LLC_HEADER_LEN,
+};
+
 pub use btp::{
     ports,
     type_a::{Header as BtpAHeader, Repr as BtpARepr, HEADER_LEN as BTP_A_HEADER_LEN},
@@ -82,6 +90,11 @@ pub use uppertester::{
     },
     MessageType as UtMessageType, Packet as UtPacket, Result as UtResult, UtChangePosition,
     UtInitialize,
+};
+
+pub use nxp::{
+    rx_packet::RxPacketRepr as NxpRxPacketRepr, tx_packet::TxPacketRepr as NxpTxPacketRepr,
+    Header as NxpHeader,
 };
 
 /// Parsing a packet failed.

@@ -7,6 +7,8 @@ mod btp;
 mod ethernet;
 #[cfg(feature = "proto-geonet")]
 mod geonet;
+#[cfg(feature = "medium-ieee80211p")]
+mod ieee80211p;
 
 use super::location_service::LocationService;
 use super::location_table::LocationTable;
@@ -34,9 +36,10 @@ use crate::socket::geonet::Socket as GeonetSocket;
 use crate::socket::*;
 use crate::time::{Duration, Instant};
 
+use crate::wire::ieee80211::{FrameControl, QoSControl};
 use crate::wire::{
     EthernetAddress, EthernetFrame, EthernetProtocol, GeonetRepr, GeonetUnicast, HardwareAddress,
-    SequenceNumber,
+    Ieee80211Frame, Ieee80211Repr, LlcFrame, LlcRepr, SequenceNumber,
 };
 
 macro_rules! check {
@@ -347,7 +350,19 @@ impl Interface {
                             }
                         }
                     }
-                    Medium::Ieee80211p => todo!(),
+                    #[cfg(feature = "medium-ieee80211p")]
+                    Medium::Ieee80211p => {
+                        if let Some((svcs, dst_addr, packet)) =
+                            self.inner.process_ieee80211p(srv, sockets, rx_meta, frame)
+                        {
+                            if let Err(err) =
+                                self.inner.dispatch(tx_token, svcs.core, dst_addr, packet)
+                            {
+                                net_debug!("Failed to send response: {:?}", err);
+                            }
+                        }
+                    }
+                    #[cfg(feature = "medium-pc5")]
                     Medium::PC5 => todo!(),
                 }
                 processed_any = true;
@@ -974,7 +989,7 @@ impl InterfaceInner {
         handled_by_raw_socket
     }
 
-    #[cfg(feature = "medium-ethernet")]
+    #[cfg(any(feature = "medium-ethernet", feature = "medium-80211p"))]
     fn dispatch<Tx>(
         &mut self,
         tx_token: Tx,
@@ -1028,6 +1043,51 @@ impl InterfaceInner {
             frame.set_ethertype(EthernetProtocol::Geonet);
         };
 
+        // Add the size of the Ieee 802.11 Qos with LLC header if the medium is Ieee 802.11p.
+        #[cfg(feature = "medium-ieee80211p")]
+        if matches!(self.caps.medium, Medium::Ieee80211p) {
+            total_len =
+                total_len + Ieee80211Frame::<&[u8]>::header_len() + LlcFrame::<&[u8]>::header_len();
+        }
+
+        // Emit function for the Ieee 802.11 Qos with LLC header.
+        #[cfg(feature = "medium-ieee80211p")]
+        let emit_ieee80211 = |tx_buffer: &mut [u8]| {
+            let src_addr = self.hardware_addr.ethernet_or_panic();
+
+            let mut frame_ctrl = FrameControl::from_bytes(&[0, 0]);
+            frame_ctrl.set_type(2); // Data frame
+            frame_ctrl.set_sub_type(8); // QoS subtype
+
+            let mut qos_ctrl = QoSControl::from_bytes(&[0, 0]);
+            qos_ctrl.set_tc_id(3); // Best effort
+            qos_ctrl.set_ack_policy(1); // No Ack
+
+            let ieee80211_repr = Ieee80211Repr {
+                frame_control: frame_ctrl,
+                duration_or_id: Default::default(),
+                dst_addr: dst_hardware_addr,
+                src_addr: src_addr,
+                bss_id: EthernetAddress::BROADCAST,
+                sequence_control: Default::default(),
+                qos_control: qos_ctrl,
+            };
+
+            let llc_repr = LlcRepr {
+                dsap: 0xaa,
+                ssap: 0xaa,
+                control: 0x03,
+                snap_vendor: [0; 3],
+                snap_protocol: EthernetProtocol::Geonet,
+            };
+
+            let mut ieee80211_frame = Ieee80211Frame::new_unchecked(tx_buffer);
+            ieee80211_repr.emit(&mut ieee80211_frame);
+
+            let mut llc_frame = LlcFrame::new_unchecked(ieee80211_frame.payload_mut());
+            llc_repr.emit(&mut llc_frame);
+        };
+
         // Emit function for the Geonetworking header and payload.
         let emit_gn = |repr: &GeonetRepr, mut tx_buffer: &mut [u8]| {
             gn_repr.emit(&mut tx_buffer);
@@ -1043,6 +1103,14 @@ impl InterfaceInner {
                 if matches!(self.caps.medium, Medium::Ethernet) {
                     emit_ethernet(tx_buffer);
                     tx_buffer = &mut tx_buffer[EthernetFrame::<&[u8]>::header_len()..];
+                }
+
+                #[cfg(feature = "medium-ieee80211p")]
+                if matches!(self.caps.medium, Medium::Ieee80211p) {
+                    emit_ieee80211(tx_buffer);
+                    let pl_start =
+                        Ieee80211Frame::<&[u8]>::header_len() + LlcFrame::<&[u8]>::header_len();
+                    tx_buffer = &mut tx_buffer[pl_start..];
                 }
 
                 emit_gn(&gn_repr, tx_buffer);

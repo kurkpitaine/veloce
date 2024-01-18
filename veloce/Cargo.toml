@@ -1,0 +1,123 @@
+[package]
+name = "veloce"
+version = "0.1.0"
+authors = ["Thibaud Rouillé <thibaud.rouille@gmail.com>"]
+edition = "2021"
+description = "A V2x stack for embedded devices"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+byteorder = "1.4.3"
+defmt = { version = "0.3.5", optional = true }
+env_logger = "0.10"
+heapless = { path = "../../heapless" }
+libc = { version = "0.2.149", optional = true }
+log = { version = "0.4.20", default-features = false, optional = true }
+managed = { version = "0.8", default-features = false, features = ["map"] }
+rasn = "0.12.1"
+uom = { version = "0.34.0", features = ["autoconvert", "f32"] }
+gpsd_proto = { version = "1.0.0", optional = true }
+
+[dev-dependencies]
+approx = "0.5.1"
+mac_address = "1.1.5"
+clap = { version = "4.4.11", features = ["derive"] }
+
+[features]
+std = ["managed/std", "alloc"]
+alloc = ["managed/alloc", "defmt?/alloc"]
+defmt = ["dep:defmt", "heapless/defmt", "heapless/defmt-impl"]
+gpsd = ["std", "dep:gpsd_proto"]
+
+conformance = []
+
+"medium-ethernet" = []
+"medium-ieee80211p" = []
+"medium-pc5" = []
+
+"phy-raw_socket" = ["std", "libc"]
+"phy-nxp" = ["phy-raw_socket"]
+"phy-tuntap_interface" = ["std", "libc", "medium-ethernet"]
+
+"proto-geonet" = []
+"proto-btp" = ["proto-geonet"]
+"proto-map" = ["proto-geonet", "proto-btp"]
+"proto-cam" = ["proto-geonet", "proto-btp"]
+"proto-denm" = ["proto-geonet", "proto-btp"]
+"proto-spat" = ["proto-geonet", "proto-btp"]
+"proto-ivi" = ["proto-geonet", "proto-btp"]
+
+"socket" = []
+"socket-geonet" = ["socket", "proto-geonet"]
+"socket-btp-a" = ["socket", "proto-geonet"]
+"socket-btp-b" = ["socket", "proto-geonet"]
+
+"packetmeta-id" = []
+
+"async" = []
+
+default = [
+   "std",
+   "log",
+   "medium-ethernet",
+   "medium-ieee80211p",
+   "medium-pc5",
+   "phy-raw_socket",
+   "phy-nxp",
+   "proto-geonet",
+   "proto-btp",
+   "socket",
+   "socket-geonet",
+   "socket-btp-a",
+   "socket-btp-b",
+   "packetmeta-id",
+   "async",
+   "conformance",
+   "gpsd",
+]
+
+[[example]]
+name = "mix"
+required-features = [
+   "std",
+   "log",
+   "medium-ethernet",
+   "phy-raw_socket",
+   "proto-geonet",
+   "proto-btp",
+   "socket-geonet",
+   "socket-btp-b",
+]
+
+[[example]]
+name = "nxp_device"
+required-features = [
+   "std",
+   "log",
+   "medium-ieee80211p",
+   "phy-nxp",
+   "proto-geonet",
+   "proto-btp",
+   "socket-geonet",
+   "socket-btp-b",
+]
+
+
+[[example]]
+name = "etsi_conformance"
+required-features = [
+   "std",
+   "log",
+   "medium-ethernet",
+   "phy-raw_socket",
+   "proto-geonet",
+   "proto-btp",
+   "socket-geonet",
+   "socket-btp-a",
+   "socket-btp-b",
+   "conformance",
+]
+
+[profile.release]
+debug = 2
