@@ -37,7 +37,6 @@ conformance = []
 "medium-pc5" = []
 
 "phy-raw_socket" = ["std", "libc"]
-"phy-nxp" = ["phy-raw_socket"]
 "phy-tuntap_interface" = ["std", "libc", "medium-ethernet"]
 
 "proto-geonet" = []
@@ -64,7 +63,6 @@ default = [
    "medium-ieee80211p",
    "medium-pc5",
    "phy-raw_socket",
-   "phy-nxp",
    "proto-geonet",
    "proto-btp",
    "socket",
@@ -89,20 +87,6 @@ required-features = [
    "socket-geonet",
    "socket-btp-b",
 ]
-
-[[example]]
-name = "nxp_device"
-required-features = [
-   "std",
-   "log",
-   "medium-ieee80211p",
-   "phy-nxp",
-   "proto-geonet",
-   "proto-btp",
-   "socket-geonet",
-   "socket-btp-b",
-]
-
 
 [[example]]
 name = "etsi_conformance"

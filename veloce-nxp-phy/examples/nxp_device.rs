@@ -1,11 +1,10 @@
-use log::trace;
+use log::{debug, trace};
 
 use rasn::types::SequenceOf;
 use uom::si::f32::Angle;
 use veloce::common::geo_area::{Circle, GeoArea, GeoPosition, Shape};
 use veloce::iface::{Config, Interface, SocketSet};
 use veloce::network::{GnCore, GnCoreGonfig, Transport};
-use veloce::phy::{wait as phy_wait, NxpSocket};
 use veloce::socket;
 use veloce::socket::btp::Request as BtpRequest;
 use veloce::storage::PacketBuffer;
@@ -18,13 +17,12 @@ use veloce::wire::{
     EthernetAddress, GnAddress, StationType,
 };
 
-use std::os::unix::io::AsRawFd;
+use veloce_nxp_phy::NxpDevice;
 
 use clap::Parser;
 
 #[derive(Parser, Default, Debug)]
 struct Arguments {
-    dev: String,
     log_level: String,
 }
 
@@ -32,14 +30,11 @@ fn main() {
     let args = Arguments::parse();
     utils::setup_logging(args.log_level.as_str());
 
-    let ll_addr = mac_address::mac_address_by_name(args.dev.as_str())
-        .unwrap()
-        .expect("Failed to get device mac address");
+    let ll_addr = EthernetAddress([0x04, 0xe5, 0x48, 0xfa, 0xde, 0xca]);
 
     // Configure NXP device
-    let ll_addr = EthernetAddress(ll_addr.bytes());
-    let mut device = NxpSocket::new(args.dev.as_str()).unwrap();
-    let dev_fd = device.as_raw_fd();
+    let mut device = NxpDevice::new().unwrap();
+    device.configure().expect("Cannot configure device");
 
     // Configure interface
     let mut config = Config::new(ll_addr.into());
@@ -70,7 +65,7 @@ fn main() {
         let timestamp = Instant::now();
         router.now = timestamp;
 
-        trace!("poll");
+        trace!("iface poll");
         iface.poll(&mut router, &mut device, &mut sockets);
         let socket = sockets.get_mut::<socket::btp::SocketB>(btp_b_handle);
         if !socket.is_open() {
@@ -115,8 +110,12 @@ fn main() {
             .into_iter()
             .flatten()
             .min();
-        trace!("phy_wait");
-        phy_wait(dev_fd, poll_timeout).expect("wait error");
+
+        trace!("poll_wait");
+        match device.poll_wait(poll_timeout) {
+            Ok(avail) => debug!("{} bytes available", avail),
+            Err(e) => debug!("Error while polling : {}", e),
+        }
     }
 }
 

@@ -9,7 +9,6 @@ pub mod etsi_its;
 pub mod geonet;
 pub mod ieee80211;
 pub mod llc;
-pub mod nxp;
 pub mod pretty_print;
 pub mod uppertester;
 
@@ -73,9 +72,7 @@ pub use ieee80211::{
     Header as Ieee80211Frame, Repr as Ieee80211Repr, HEADER_LEN as IEEE_80211_HEADER_LEN,
 };
 
-pub use llc::{
-    Header as LlcFrame, Repr as LlcRepr, HEADER_LEN as LLC_HEADER_LEN,
-};
+pub use llc::{Header as LlcFrame, Repr as LlcRepr, HEADER_LEN as LLC_HEADER_LEN};
 
 pub use btp::{
     ports,
@@ -90,11 +87,6 @@ pub use uppertester::{
     },
     MessageType as UtMessageType, Packet as UtPacket, Result as UtResult, UtChangePosition,
     UtInitialize,
-};
-
-pub use nxp::{
-    rx_packet::RxPacketRepr as NxpRxPacketRepr, tx_packet::TxPacketRepr as NxpTxPacketRepr,
-    Header as NxpHeader,
 };
 
 /// Parsing a packet failed.
@@ -251,6 +243,7 @@ impl HardwareAddress {
     }
 
     #[inline]
+    #[allow(unused)]
     pub(crate) fn medium(&self) -> Medium {
         match self {
             #[cfg(feature = "medium-pc5")]

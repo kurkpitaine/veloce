@@ -165,6 +165,7 @@ impl LocalCartesian {
     /// `lon` longitude of point (degrees).
     /// `alt` height of point above the ellipsoid (meters).
     /// Returns a [`GeocentricPosition`] containing the (x,y,z) local cartesian coordinates.
+    #[allow(unused)]
     pub fn forward_checked(
         &self,
         lat: Latitude,

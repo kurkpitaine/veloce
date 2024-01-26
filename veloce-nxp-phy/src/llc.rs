@@ -38,6 +38,11 @@ impl NxpSocket {
         let medium = Medium::Ieee80211p;
         let mut lower = sys::RawSocketDesc::new(name, medium)?;
         lower.bind_interface()?;
+        #[cfg(all(
+            feature = "phy-raw_socket",
+            any(target_os = "linux", target_os = "android")
+        ))]
+        lower.promiscuous_mode()?;
 
         // Don't care about resizing MTU for good.
         let mtu = lower.interface_mtu()?;

@@ -1,8 +1,9 @@
 use crate::wire::{Error, Result};
 use byteorder::{ByteOrder, LittleEndian};
 
-use self::{rx_packet::RxPacketRepr, tx_packet::TxPacketRepr};
+use self::{radio_config::RadioConfigRepr, rx_packet::RxPacketRepr, tx_packet::TxPacketRepr};
 
+pub mod radio_config;
 pub mod rx_packet;
 pub mod tx_packet;
 
@@ -1470,6 +1471,46 @@ impl From<RxPower> for i16 {
     }
 }
 
+enum_with_unknown! {
+    pub enum RadioMode(u16) {
+        /// Radio is off.
+        Off = 0,
+        /// Radio is using channel config 0 configuration only.
+        Channel0 = 1,
+        /// Radio is enabled to use channel config 1 configuration only.
+        Channel1 = 2,
+        /// Radio is enabled to channel switch between config 0 & config 1 configs.
+        Switching = 3,
+        /// Radio configuration read request.
+        ReadCfg = 0x8080,
+    }
+}
+
+enum_with_unknown! {
+    pub enum Bandwidth(u8) {
+        /// Bandwidth is 10MHz.
+        TenMHz = 10,
+        /// Bandwidth is 20MHz.
+        TwentyMHz = 20,
+    }
+}
+
+enum_with_unknown! {
+     /// Dual radio transmit control.
+     /// Values to controls transmit behaviour according to activity on the
+     /// other radio (inactive in single radio configurations).
+    pub enum DualTxControl(u8) {
+        /// Do not constrain transmissions.
+        NONE = 0x00,
+        /// Prevent transmissions when other radio is transmitting.
+        TX = 0x01,
+        /// Prevent transmissions when other radio is receiving.
+        RX = 0x02,
+        /// Prevent transmissions when other radio is transmitting or receiving.
+        TXRX = 0x03,
+    }
+}
+
 /// A read/write wrapper around an NXP LLC Header.
 #[derive(Debug, PartialEq)]
 pub struct Header<T: AsRef<[u8]>> {
@@ -1546,6 +1587,17 @@ mod field {
     pub const RX_RESERVED: Field = 40..56;
     /// Frame (802.11 Header + Body, including FCS)
     pub const RX_PAYLOAD: Rest = 56..;
+
+    // Radio config message offsets
+    /// Operation mode of the radio.
+    pub const CFG_RADIO_MODE: Field = 12..14;
+    /// System clock tick rate in MHz, a read-only field.
+    /// Only when reading config from the radio chip.
+    pub const CFG_CLOCK_FREQ: Field = 14..16;
+    /// Channel 0 configuration.
+    pub const CFG_CHAN_0: Field = 16..220;
+    /// Channel 1 configuration.
+    pub const CFG_CHAN_1: Field = 220..424;
 }
 
 impl<T: AsRef<[u8]>> Header<T> {
@@ -1699,14 +1751,19 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
         match self.msg_type() {
             Message::RxPacket => {
                 let data = self.buffer.as_mut();
-                LittleEndian::write_u16(&mut data[field::RESERVED], 0);
-                LittleEndian::write_u128(&mut data[field::RX_RESERVED], 0);
+                data[field::RESERVED].copy_from_slice(&[0, 0]);
+                data[field::RX_RESERVED].copy_from_slice(&[0u8; 16]);
             }
             Message::TxPacket => {
                 let data = self.buffer.as_mut();
-                LittleEndian::write_u16(&mut data[field::RESERVED], 0);
+                data[field::RESERVED].copy_from_slice(&[0, 0]);
                 data[field::TX_RESERVED_1] = 0;
-                LittleEndian::write_u16(&mut data[field::TX_RESERVED_2], 0);
+                data[field::TX_RESERVED_2].copy_from_slice(&[0, 0]);
+            }
+            Message::RadioACfg | Message::RadioBCfg => {
+                let data = self.buffer.as_mut();
+                data[field::RESERVED].copy_from_slice(&[0, 0]);
+                data[field::CFG_CLOCK_FREQ].copy_from_slice(&[0, 0]);
             }
             _ => {}
         }
@@ -1728,6 +1785,8 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
 pub enum Repr {
     TxPacket(TxPacketRepr),
     RxPacket(RxPacketRepr),
+    RadioACfg(RadioConfigRepr),
+    RadioBCfg(RadioConfigRepr),
 }
 
 impl Repr {
@@ -1741,6 +1800,8 @@ impl Repr {
 
         match llc.msg_type() {
             Message::RxPacket => RxPacketRepr::parse(llc).map(Repr::RxPacket),
+            Message::RadioACfg => RadioConfigRepr::parse(llc).map(Repr::RadioACfg),
+            Message::RadioBCfg => RadioConfigRepr::parse(llc).map(Repr::RadioBCfg),
             _ => Err(Error),
         }
     }

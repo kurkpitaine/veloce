@@ -75,6 +75,32 @@ impl RawSocketDesc {
         Ok(())
     }
 
+    /// Enables the promiscuous mode on the interface
+    pub fn promiscuous_mode(&mut self) -> io::Result<()> {
+        let mr = libc::packet_mreq {
+            mr_ifindex: ifreq_ioctl(self.lower, &mut self.ifreq, imp::SIOCGIFINDEX)?,
+            mr_type: libc::PACKET_MR_PROMISC as u16,
+            mr_alen: 0,
+            mr_address: [0; 8],
+        };
+
+        unsafe {
+            let res = libc::setsockopt(
+                self.lower,
+                libc::SOL_PACKET,
+                libc::PACKET_ADD_MEMBERSHIP,
+                &mr as *const libc::packet_mreq as *const libc::c_void,
+                mem::size_of::<libc::packet_mreq>() as libc::socklen_t,
+            );
+
+            if res == -1 {
+                return Err(io::Error::last_os_error());
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn recv(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         unsafe {
             let len = libc::recv(

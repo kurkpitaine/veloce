@@ -963,6 +963,7 @@ impl InterfaceInner {
     }
 
     #[cfg(feature = "medium-ethernet")]
+    #[allow(unused)]
     fn check_hardware_addr(addr: &HardwareAddress) {
         if !addr.is_unicast() {
             panic!("Hardware address {addr} is not unicast")
