@@ -8,12 +8,6 @@ use core::fmt;
 pub mod llc;
 pub mod usb;
 pub mod usb_phy;
-/* pub mod wire;
-
-pub use wire::{
-    rx_packet::RxPacketRepr as NxpRxPacketRepr, tx_packet::TxPacketRepr as NxpTxPacketRepr,
-    Header as NxpHeader,
-}; */
 
 pub use usb::NxpUsbDevice;
 pub use llc::NxpLlcDevice;

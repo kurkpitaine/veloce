@@ -9,11 +9,10 @@ use veloce::storage::PacketBuffer;
 use veloce::time::{Duration, Instant, TAI2004};
 use veloce::types::{degree, tenth_of_microdegree, Latitude, Longitude};
 use veloce::utils;
-use veloce::wire::{
-    btp,
-    etsi_its::{self, *},
-    EthernetAddress, GnAddress, StationType,
-};
+use veloce::wire::{btp, EthernetAddress, GnAddress, StationType};
+
+use veloce_asn1::c_a_m__p_d_u__descriptions as cam;
+use veloce_asn1::e_t_s_i__i_t_s__c_d_d as cdd;
 
 use veloce_nxp_phy::NxpUsbDevice;
 
@@ -79,8 +78,8 @@ fn main() {
             router.ego_position_vector.timestamp = TAI2004::from_unix_instant(timestamp).into();
 
             let cam = fill_cam(
-                etsi_its::Latitude(lat.get::<tenth_of_microdegree>() as i32),
-                etsi_its::Longitude(lon.get::<tenth_of_microdegree>() as i32),
+                cdd::Latitude(lat.get::<tenth_of_microdegree>() as i32),
+                cdd::Longitude(lon.get::<tenth_of_microdegree>() as i32),
             );
 
             let buf = rasn::uper::encode(&cam).unwrap();
@@ -109,40 +108,44 @@ fn main() {
 }
 
 /// Fills a CAM message with basic content
-fn fill_cam(lat: etsi_its::Latitude, lon: etsi_its::Longitude) -> CAM {
-    let header = ItsPduHeader::new(2, 2, StationID(123));
+fn fill_cam(lat: cdd::Latitude, lon: cdd::Longitude) -> cam::CAM {
+    use cam::*;
+    use cdd::*;
 
-    let station_type = StationType(15);
+    let header = ItsPduHeader::new(OrdinalNumber1B(2), MessageId(2), StationId(123));
 
-    let alt = etsi_its::Altitude::new(AltitudeValue(1000), AltitudeConfidence::Unavailable);
+    let station_type = TrafficParticipantType(15);
 
-    let pos_confidence = PosConfidenceEllipse::new(
+    let alt = cdd::Altitude::new(AltitudeValue(1000), AltitudeConfidence::unavailable);
+
+    let pos_confidence = PositionConfidenceEllipse::new(
         SemiAxisLength(4095),
         SemiAxisLength(4095),
-        HeadingValue(3601),
+        Wgs84AngleValue(3601),
     );
-    let ref_pos = ReferencePosition::new(lat.clone(), lon.clone(), pos_confidence, alt);
+    let ref_pos =
+        ReferencePositionWithConfidence::new(lat.clone(), lon.clone(), pos_confidence, alt);
     let basic_container = BasicContainer::new(station_type, ref_pos);
 
     let prot_zone = ProtectedCommunicationZone::new(
-        ProtectedZoneType::PermanentCenDsrcTolling,
+        ProtectedZoneType::permanentCenDsrcTolling,
         None,
         lat,
         lon,
         None,
-        Some(ProtectedZoneID(0xfe)),
+        Some(ProtectedZoneId(0xfe)),
     );
 
     let mut prot_zones = ProtectedCommunicationZonesRSU(SequenceOf::new());
     prot_zones.0.push(prot_zone);
 
-    let hf_container = HighFrequencyContainer::RsuContainerHighFrequency(
+    let hf_container = HighFrequencyContainer::rsuContainerHighFrequency(
         RSUContainerHighFrequency::new(Some(prot_zones)),
     );
 
     let cam_params = CamParameters::new(basic_container, hf_container, None, None);
     let gen_time = GenerationDeltaTime(12345);
-    let coop_awareness = CoopAwareness::new(gen_time, cam_params);
+    let coop_awareness = CamPayload::new(gen_time, cam_params);
 
-    CAM::new(header, coop_awareness)
+    cam::CAM::new(header, coop_awareness)
 }

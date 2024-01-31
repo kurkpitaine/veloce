@@ -15,7 +15,8 @@ veloce = { path = "../veloce" }
 clap = { version = "4.4.11", features = ["derive"] }
 log = { version = "0.4.20", default-features = false }
 uom = { version = "0.34.0", features = ["autoconvert", "f32"] }
-rasn = "0.12.1"
+veloce-asn1 = { path = "../veloce-asn1" }
+rasn = "0.12.4"
 
 [build-dependencies]
 bindgen = "0.69.2"

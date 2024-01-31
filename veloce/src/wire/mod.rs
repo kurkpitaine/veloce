@@ -5,7 +5,6 @@ pub mod field {
 
 pub mod btp;
 pub mod ethernet;
-pub mod etsi_its;
 pub mod geonet;
 pub mod ieee80211;
 pub mod llc;

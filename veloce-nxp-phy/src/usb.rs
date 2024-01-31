@@ -7,7 +7,11 @@ use veloce::{
 };
 
 use crate::{
-    cfg_mk5, eMKxAntenna_MKX_ANT_DEFAULT, eMKxChannel_MKX_CHANNEL_0, eMKxIFMsgType_MKXIF_ERROR, eMKxIFMsgType_MKXIF_RXPACKET, eMKxIFMsgType_MKXIF_TXPACKET, eMKxMCS_MKXMCS_DEFAULT, eMKxPower_MKX_POWER_TX_DEFAULT, eMKxRadio_MKX_RADIO_A, eMKxStatus_MKXSTATUS_RESERVED, eMKxTxCtrlFlags_MKX_REGULAR_TRANSMISSION, tMKxIFMsg, tMKxRadioConfig, tMKxRxPacket, tMKxTxPacket, usb_phy::USB, Error, IEEE80211QoSHeader, Result, SNAPHeader, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX
+    cfg_mk5, eMKxAntenna_MKX_ANT_DEFAULT, eMKxChannel_MKX_CHANNEL_0, eMKxIFMsgType_MKXIF_ERROR,
+    eMKxIFMsgType_MKXIF_RXPACKET, eMKxIFMsgType_MKXIF_TXPACKET, eMKxMCS_MKXMCS_DEFAULT,
+    eMKxPower_MKX_POWER_TX_DEFAULT, eMKxRadio_MKX_RADIO_A, eMKxStatus_MKXSTATUS_RESERVED,
+    eMKxTxCtrlFlags_MKX_REGULAR_TRANSMISSION, tMKxIFMsg, tMKxRadioConfig, tMKxRxPacket,
+    tMKxTxPacket, usb_phy::USB, Error, Result, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX,
 };
 
 /// An NXP USB SAF 5X00 device.
@@ -207,7 +211,7 @@ impl TxToken for NxpTxToken {
 
         let result = f(&mut buffer[hdr_len..]);
 
-        let ieee_hdr: &IEEE80211QoSHeader = unsafe { &mut *buffer[hdr_len..].as_mut_ptr().cast() };
+        /* let ieee_hdr: &IEEE80211QoSHeader = unsafe { &mut *buffer[hdr_len..].as_mut_ptr().cast() };
         let durationId = ieee_hdr.DurationId;
 
         println!("FrameCtrl: {}", unsafe {ieee_hdr.FrameControl.FrameCtrl});
@@ -222,7 +226,7 @@ impl TxToken for NxpTxToken {
         let ty = snap_hdr.Type;
         println!("{}", ty);
         println!("{}", unsafe {snap_hdr.__bindgen_anon_1.__bindgen_anon_1.SSAP});
-        println!("{}", unsafe {snap_hdr.__bindgen_anon_1.__bindgen_anon_1.DSAP});
+        println!("{}", unsafe {snap_hdr.__bindgen_anon_1.__bindgen_anon_1.DSAP}); */
 
         match self.lower.borrow_mut().send(&buffer[..]) {
             Ok(_) => {}
