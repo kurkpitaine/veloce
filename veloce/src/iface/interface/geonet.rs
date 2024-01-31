@@ -1137,8 +1137,6 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
-        net_trace!("dispatch_beacon()");
-
         if self.retransmit_beacon_at > svcs.core.now {
             return Ok(());
         }
@@ -1197,8 +1195,6 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
-        net_trace!("dispatch_ls_request()");
-
         for r in svcs.ls.ls_requests.iter_mut() {
             if let Some(LocationServiceRequest { state, .. }) = r {
                 match state {
@@ -1289,8 +1285,6 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
-        net_trace!("dispatch_unicast()");
-
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1426,8 +1420,6 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
-        net_trace!("dispatch_topo_scoped_broadcast()");
-
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1504,8 +1496,6 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
-        net_trace!("dispatch_single_hop_broadcast()");
-
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1581,8 +1571,6 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
-        net_trace!("dispatch_geo_broadcast()");
-
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1672,7 +1660,6 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
-        net_trace!("dispatch_geo_anycast()");
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1761,8 +1748,6 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
-        net_trace!("dispatch_ls_buffer()");
-
         svcs.ls_buffer.flush_one(|packet| {
             let expiry = packet.expires_at();
             let meta = packet.metadata();
@@ -1816,8 +1801,6 @@ impl InterfaceInner {
             ),
         ) -> Result<(), E>,
     {
-        net_trace!("dispatch_unicast_buffer()");
-
         svcs.uc_forwarding_buffer.flush_one(|packet| {
             let expiry = packet.expires_at();
             let meta = packet.metadata();
@@ -1862,8 +1845,6 @@ impl InterfaceInner {
             (EthernetAddress, GeonetRepr, &[u8]),
         ) -> Result<(), E>,
     {
-        net_trace!("dispatch_broadcast_buffer()");
-
         svcs.bc_forwarding_buffer.flush_one(|packet| {
             let expiry = packet.expires_at();
             let meta = packet.metadata();
@@ -1901,8 +1882,6 @@ impl InterfaceInner {
             (EthernetAddress, GeonetRepr, &[u8]),
         ) -> Result<(), E>,
     {
-        net_trace!("dispatch_contention_buffer()");
-
         svcs.cb_forwarding_buffer
             .dequeue_expired(svcs.core.now, |packet| {
                 let expiry = packet.expires_at();

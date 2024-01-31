@@ -2,10 +2,18 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    // TODO: improve this.
+    let target = std::env::var("TARGET").unwrap();
+    let sdk_path = if target == "armv7-unknown-linux-gnueabihf" {
+        Some("/opt/homebrew/Cellar/arm-unknown-linux-gnueabihf/11.2.0_1/toolchain/arm-unknown-linux-gnueabihf/sysroot")
+    } else {
+        None
+    };
+
     // Tell cargo to invalidate the built crate whenever the wrapper changes
     println!("cargo:rerun-if-changed=sys/wrapper.h");
 
-    let bindings = bindgen::Builder::default()
+    let mut builder = bindgen::Builder::default()
         // The input header we would like to generate
         // bindings for.
         .header("sys/wrapper.h")
@@ -16,8 +24,15 @@ fn main() {
         .layout_tests(false)
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-        // Finish the builder and generate the bindings.
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
+
+    if let Some(path) = sdk_path {
+        builder = builder.clang_args(&["-isysroot", path]);
+        builder = builder.clang_args(&["-isystem", &format!("{}{}", path, "/usr/include")]);
+    }
+
+    // Finish the builder and generate the bindings.
+    let bindings = builder
         .generate()
         // Unwrap the Result and panic on failure.
         .expect("Unable to generate bindings");

@@ -5,8 +5,9 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use core::fmt;
 
-pub mod phy;
+pub mod llc;
 pub mod usb;
+pub mod usb_phy;
 /* pub mod wire;
 
 pub use wire::{
@@ -14,7 +15,8 @@ pub use wire::{
     Header as NxpHeader,
 }; */
 
-pub use phy::NxpDevice;
+pub use usb::NxpUsbDevice;
+pub use llc::NxpLlcDevice;
 
 /// Max raw frame array size.
 pub const RAW_FRAME_LENGTH_MAX: usize = 1518;

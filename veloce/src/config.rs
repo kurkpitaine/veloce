@@ -2,6 +2,8 @@ use super::time::Duration;
 use super::wire::GnTrafficClass;
 use core::fmt;
 
+pub use cfg::*;
+
 /// Maximum number of access handlers.
 pub const VELOCE_MAX_ACCESS_HANDLER_COUNT: usize = 2;
 /// Maximum number of retransmissions used in area advanced forwarding.
@@ -29,26 +31,10 @@ pub const GN_MAX_PACKET_DATA_RATE_KILO_BYTE_PER_SEC: u8 = 100;
 pub const GN_MAX_PACKET_DATA_RATE_EMA_BETA: f32 = 0.9;
 pub const GN_MAX_SDU_SIZE: usize = 1398;
 pub const GN_MAX_GEO_NETWORKING_HEADER_SIZE: usize = 88;
-pub const GN_LOCATION_SERVICE_PACKET_BUFFER_SIZE: usize = 1024;
-pub const GN_LOCATION_SERVICE_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
 /// Location service retransmission period.
 pub const GN_LOCATION_SERVICE_RETRANSMIT_TIMER: Duration = Duration::from_millis(1000);
 /// Location service maximum number of retransmissions.
 pub const GN_LOCATION_SERVICE_MAX_RETRANS: u8 = 10;
-/// Location service maximum concurrent requests.
-pub const GN_LOCATION_SERVICE_MAX_REQS: usize = 5;
-/// Maximum size of the unicast buffer.
-pub const GN_UC_FORWARDING_PACKET_BUFFER_SIZE: usize = 256 * 1000;
-/// Maximum number of elements in the unicast buffer.
-pub const GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
-/// Maximum size of the broadcast buffer.
-pub const GN_BC_FORWARDING_PACKET_BUFFER_SIZE: usize = 1024 * 1000;
-/// Maximum number of elements in the broadcast buffer.
-pub const GN_BC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
-/// Maximum size of the contention routing buffer.
-pub const GN_CBF_PACKET_BUFFER_SIZE: usize = 256 * 1000;
-/// Maximum number of elements in the broadcast buffer.
-pub const GN_CBF_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
 /// Non area forwarding algorithm executed by the access handlers.
 pub const GN_NON_AREA_FORWARDING_ALGORITHM: GnNonAreaForwardingAlgorithm =
     GnNonAreaForwardingAlgorithm::Greedy;
@@ -64,6 +50,50 @@ pub const GN_DEFAULT_MAX_COMMUNICATION_RANGE: f32 = 1000.0;
 pub const GN_BROADCAST_CBF_DEF_SECTOR_ANGLE: f32 = 30.0;
 /// Maximum Geographical area size in square kilometers.
 pub const GN_MAX_GEO_AREA_SIZE: f32 = 10.0;
+
+#[cfg(not(test))]
+mod cfg {
+    /// Location service maximum concurrent requests.
+    pub const GN_LOCATION_SERVICE_MAX_REQS: usize = 5;
+    /// Maximum size of the Location Service buffer.
+    pub const GN_LOCATION_SERVICE_PACKET_BUFFER_SIZE: usize = 1024;
+    /// Maximum number of elements in the Location Service buffer.
+    pub const GN_LOCATION_SERVICE_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
+    /// Maximum size of the unicast buffer.
+    pub const GN_UC_FORWARDING_PACKET_BUFFER_SIZE: usize = 256 * 1000;
+    /// Maximum number of elements in the unicast buffer.
+    pub const GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
+    /// Maximum size of the broadcast buffer.
+    pub const GN_BC_FORWARDING_PACKET_BUFFER_SIZE: usize = 1024 * 1000;
+    /// Maximum number of elements in the broadcast buffer.
+    pub const GN_BC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
+    /// Maximum size of the contention routing buffer.
+    pub const GN_CBF_PACKET_BUFFER_SIZE: usize = 256 * 1000;
+    /// Maximum number of elements in the broadcast buffer.
+    pub const GN_CBF_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
+}
+
+#[cfg(test)]
+mod cfg {
+    /// For tests - Location service maximum concurrent requests.
+    pub const GN_LOCATION_SERVICE_MAX_REQS: usize = 5;
+    /// For tests - Maximum size of the Location Service buffer.
+    pub const GN_LOCATION_SERVICE_PACKET_BUFFER_SIZE: usize = 1024;
+    /// For tests - Maximum number of elements in the Location Service buffer.
+    pub const GN_LOCATION_SERVICE_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
+    /// For tests - Maximum size of the unicast buffer.
+    pub const GN_UC_FORWARDING_PACKET_BUFFER_SIZE: usize = 2048;
+    /// For tests - Maximum number of elements in the unicast buffer.
+    pub const GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
+    /// For tests - Maximum size of the broadcast buffer.
+    pub const GN_BC_FORWARDING_PACKET_BUFFER_SIZE: usize = 4096;
+    /// For tests - Maximum number of elements in the broadcast buffer.
+    pub const GN_BC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
+    /// For tests - Maximum size of the contention routing buffer.
+    pub const GN_CBF_PACKET_BUFFER_SIZE: usize = 2048;
+    /// For tests - Maximum number of elements in the broadcast buffer.
+    pub const GN_CBF_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
+}
 
 /// The GeoNetworking protocol Address configuration method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

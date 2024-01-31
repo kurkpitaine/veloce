@@ -11,7 +11,7 @@ description = "A V2x stack for embedded devices"
 byteorder = "1.4.3"
 defmt = { version = "0.3.5", optional = true }
 env_logger = "0.10"
-heapless = { path = "../../heapless" }
+heapless = { git = "https://github.com/kurkpitaine/heapless.git", branch = "linked_list" }
 libc = { version = "0.2.149", optional = true }
 log = { version = "0.4.20", default-features = false, optional = true }
 managed = { version = "0.8", default-features = false, features = ["map"] }
@@ -27,7 +27,7 @@ clap = { version = "4.4.11", features = ["derive"] }
 [features]
 std = ["managed/std", "alloc"]
 alloc = ["managed/alloc", "defmt?/alloc"]
-defmt = ["dep:defmt", "heapless/defmt", "heapless/defmt-impl"]
+defmt = ["dep:defmt", "heapless/defmt-03"]
 gpsd = ["std", "dep:gpsd_proto"]
 
 conformance = []

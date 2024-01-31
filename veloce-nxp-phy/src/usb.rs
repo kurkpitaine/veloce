@@ -1,180 +1,236 @@
-use veloce::time::Duration;
+use core::mem::{size_of, transmute};
+use std::{cell::RefCell, rc::Rc};
 
-use rusb::{Context, Device, DeviceDescriptor, DeviceHandle, Direction, TransferType, UsbContext};
+use veloce::{
+    phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken},
+    time::{Duration, Instant},
+};
 
-use crate::{Error, Result, LLC_BUFFER_LEN};
+use crate::{
+    cfg_mk5, eMKxAntenna_MKX_ANT_DEFAULT, eMKxChannel_MKX_CHANNEL_0, eMKxIFMsgType_MKXIF_ERROR, eMKxIFMsgType_MKXIF_RXPACKET, eMKxIFMsgType_MKXIF_TXPACKET, eMKxMCS_MKXMCS_DEFAULT, eMKxPower_MKX_POWER_TX_DEFAULT, eMKxRadio_MKX_RADIO_A, eMKxStatus_MKXSTATUS_RESERVED, eMKxTxCtrlFlags_MKX_REGULAR_TRANSMISSION, tMKxIFMsg, tMKxRadioConfig, tMKxRxPacket, tMKxTxPacket, usb_phy::USB, Error, IEEE80211QoSHeader, Result, SNAPHeader, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX
+};
 
-/// NXP SAF 5100 USB Vendor ID.
-pub const VID: u16 = 0x1fc9;
-/// NXP SAF 5100 USB Product ID when in DFU mode.
-pub const PID_DFU: u16 = 0x0102;
-/// NXP SAF 5100 USB Product ID when in SDR mode.
-pub const PID_SDR: u16 = 0x0103;
-
-/// The USB device.
+/// An NXP USB SAF 5X00 device.
 #[derive(Debug)]
-pub struct USB {
-    /// `rusb` context.
-    _ctx: Context,
-    /// Handle on the USB device.
-    handle: DeviceHandle<Context>,
-    /// Read address.
-    read_addr: u8,
-    /// Write address.
-    write_addr: u8,
-    /// Rx buffer
-    rx_buffer: Vec<u8>,
-    /// Number of readable bytes in `rx_buffer`.
-    rx_len: usize,
+pub struct NxpUsbDevice {
+    lower: Rc<RefCell<USB>>,
+    /// Reference number for sent packets that receives confirmation.
+    ref_num: Rc<RefCell<u16>>,
+    /// Sequence number of messages being received.
+    tx_seq_num: Rc<RefCell<u16>>,
+    /// Sequence number of messages being sent.
+    rx_seq_num: u16,
 }
 
-impl USB {
-    pub fn new() -> Result<USB> {
-        let mut ctx = Context::new().map_err(|_| Error::USB)?;
+impl NxpUsbDevice {
+    /// Constructs a new NxpDevice.
+    pub fn new() -> Result<NxpUsbDevice> {
+        let lower = USB::new().map_err(|_| Error::USB)?;
 
-        let (mut dev, desc, mut handle) = Self::open_device(&mut ctx, VID, PID_SDR)?;
-        let (iface, read_addr, write_addr) =
-            Self::find_interface_readable_and_writeable_endpoint(&mut dev, &desc)?;
-        Self::configure_endpoint(&mut handle, iface)?;
-
-        let rx_buffer = vec![0; LLC_BUFFER_LEN];
-
-        Ok(USB {
-            _ctx: ctx,
-            handle,
-            read_addr,
-            write_addr,
-            rx_buffer,
-            rx_len: 0,
+        Ok(NxpUsbDevice {
+            lower: Rc::new(RefCell::new(lower)),
+            ref_num: Rc::new(RefCell::new(0)),
+            tx_seq_num: Rc::new(RefCell::new(0)),
+            rx_seq_num: 0,
         })
     }
 
-    /// Wait until the USB device has rx data, but no longer than given timeout.
+    /// Apply the default configuration on the NXP device.
+    #[must_use = "Default configuration should be applied to enable communication."]
+    pub fn configure(&self) -> Result<()> {
+        let cfg = cfg_mk5();
+        let w_buf: [u8; size_of::<tMKxRadioConfig>()] = unsafe { transmute(cfg) };
+
+        self.lower.borrow_mut().send(&w_buf).map(|_| ())
+    }
+
+    /// Wait until the device has rx data, but no longer than given timeout.
     /// Any timeout value under 1 millisecond will be set to 1 millisecond.
     /// If timeout is None, this function call will block.
-    /// Returns the number of bytes available to read, if any.
-    pub fn poll_wait(&mut self, timeout: Option<Duration>) -> Result<usize> {
-        let timeout = match timeout {
-            Some(t) if t < Duration::from_millis(1) => core::time::Duration::from_millis(1),
-            Some(t) => core::time::Duration::from_micros(t.micros()),
-            None => core::time::Duration::from_millis(0),
-        };
+    /// Returns the number of bytes available to read, if any, or an Error
+    /// on timeout or other.
+    pub fn poll_wait(&self, timeout: Option<Duration>) -> Result<usize> {
+        self.lower.borrow_mut().poll_wait(timeout)
+    }
+}
 
-        self.handle
-            .read_bulk(self.read_addr, &mut self.rx_buffer, timeout)
-            .and_then(|s| {
-                self.rx_len = s;
-                Ok(s)
-            })
-            .map_err(|e| {
-                println!("{:?}", e);
-                match e {
-                    rusb::Error::Timeout => Error::Timeout,
-                    _ => Error::USB,
+impl Device for NxpUsbDevice {
+    type RxToken<'a> = NxpRxToken
+    where
+        Self: 'a;
+
+    type TxToken<'a> = NxpTxToken
+    where
+        Self: 'a;
+
+    fn capabilities(&self) -> DeviceCapabilities {
+        let mut caps = DeviceCapabilities::default();
+        caps.max_transmission_unit = RAW_FRAME_LENGTH_MAX;
+        caps.medium = Medium::Ieee80211p;
+        caps
+    }
+
+    fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        let mut lower = self.lower.borrow_mut();
+        let mut buffer = vec![0; LLC_BUFFER_LEN];
+
+        // Fail early if we have nothing to receive.
+        if !lower.can_recv() {
+            return None;
+        }
+
+        match lower.recv(&mut buffer) {
+            Ok(size) => {
+                buffer.resize(size, 0);
+
+                // Sanity check 1.
+                if size < size_of::<tMKxIFMsg>() {
+                    return None;
                 }
-            })
-    }
 
-    /// Return wether the USB device has received something.
-    pub fn can_recv(&self) -> bool {
-        self.rx_len > 0
-    }
+                // Unpack Nxp header.
+                let hdr: &tMKxIFMsg = unsafe { &*buffer.as_ptr().cast() };
 
-    pub fn recv(&mut self, buffer: &mut [u8]) -> Result<usize> {
-        if self.rx_len == 0 {
-            return Err(Error::NoRxPacket);
-        }
-
-        let size = self.rx_len;
-        buffer[..size].copy_from_slice(&self.rx_buffer[..size]);
-
-        // Reset internal buffer for further rx.
-        self.rx_len = 0;
-
-        Ok(size)
-    }
-
-    pub fn send(&mut self, buffer: &[u8]) -> Result<usize> {
-        let timeout = core::time::Duration::from_millis(1);
-        self.handle
-            .write_bulk(self.write_addr, buffer, timeout)
-            .map_err(|e| match e {
-                rusb::Error::Timeout => Error::Timeout,
-                _ => Error::USB,
-            })
-    }
-
-    /// Finds and open the USB device.
-    fn open_device<T: UsbContext>(
-        context: &mut T,
-        vid: u16,
-        pid: u16,
-    ) -> Result<(Device<T>, DeviceDescriptor, DeviceHandle<T>)> {
-        let devices = context.devices().map_err(|_| Error::USB)?;
-
-        for device in devices.iter() {
-            let Ok(descriptor) = device.device_descriptor() else {
-                continue;
-            };
-
-            if descriptor.vendor_id() == vid && descriptor.product_id() == pid {
-                let handle = device.open().map_err(|_| Error::USB)?;
-
-                return Ok((device, descriptor, handle));
-            }
-        }
-
-        Err(Error::USB)
-    }
-
-    /// Finds the readable and the writeable endpoint of the USB device.
-    fn find_interface_readable_and_writeable_endpoint<T: UsbContext>(
-        device: &mut Device<T>,
-        device_desc: &DeviceDescriptor,
-    ) -> Result<(u8, u8, u8)> {
-        let mut iface = None;
-        let mut readable = None;
-        let mut writeable = None;
-        for n in 0..device_desc.num_configurations() {
-            let Ok(config_desc) = device.config_descriptor(n) else {
-                continue;
-            };
-
-            'outer: for interface in config_desc.interfaces() {
-                for interface_desc in interface.descriptors() {
-                    for endpoint_desc in interface_desc.endpoint_descriptors() {
-                        if endpoint_desc.direction() == Direction::In
-                            && endpoint_desc.transfer_type() == TransferType::Bulk
-                            && readable.is_none()
-                        {
-                            readable = Some(endpoint_desc.address());
-                        }
-
-                        if endpoint_desc.direction() == Direction::Out
-                            && endpoint_desc.transfer_type() == TransferType::Bulk
-                            && writeable.is_none()
-                        {
-                            writeable = Some(endpoint_desc.address());
-                        }
-
-                        // This is the good endpoint iface.
-                        if readable.is_some() && writeable.is_some() {
-                            iface = Some(interface_desc.interface_number());
-                            break 'outer;
-                        }
-                    }
+                // Sanity check 2.
+                if hdr.Len < size as u16 {
+                    return None;
                 }
-            }
-        }
 
-        match (iface, readable, writeable) {
-            (Some(i), Some(r), Some(w)) => Ok((i, r, w)),
-            _ => Err(Error::USB),
+                if hdr.Seq == 0 && hdr.Type == eMKxIFMsgType_MKXIF_ERROR as u16 {
+                    // Do not trigger a warning and do not increment the expected seq number.
+                    return None;
+                } else if hdr.Seq != self.rx_seq_num {
+                    // Mismatched Seq number (Radio to Host).
+                    // sync up to the received message.
+                    self.rx_seq_num = hdr.Seq.wrapping_add(1);
+                } else {
+                    // Seq number was as expected, increment the expected Seq number.
+                    self.rx_seq_num = self.rx_seq_num.wrapping_add(1);
+                }
+
+                // Silently ignore non RXPACKET types.
+                if hdr.Type != eMKxIFMsgType_MKXIF_RXPACKET as u16 {
+                    return None;
+                }
+
+                // Sanity check 3.
+                let len = hdr.Len as usize - size_of::<tMKxIFMsg>();
+                if len < size_of::<tMKxRxPacket>() {
+                    return None;
+                };
+
+                // Unpack NxpRxPacketData header.
+                let rx_pkt: &tMKxRxPacket = unsafe { &*buffer.as_ptr().cast() };
+
+                // Sanity check 4.
+                let frame_len = rx_pkt.RxPacketData.RxFrameLength;
+                if frame_len < (hdr.Len as usize - size_of::<tMKxRxPacket>()) as u16 {
+                    return None;
+                }
+
+                // Strip packet header.
+                buffer.drain(..size_of::<tMKxRxPacket>());
+
+                let rx = NxpRxToken { buffer };
+                let tx = NxpTxToken {
+                    lower: self.lower.clone(),
+                    ref_num: self.ref_num.clone(),
+                    tx_seq_num: self.tx_seq_num.clone(),
+                };
+                Some((rx, tx))
+            }
+            Err(Error::Timeout) => None,
+            Err(e) => panic!("{}", e),
         }
     }
 
-    /// Claim the endpoint interface.
-    fn configure_endpoint<T: UsbContext>(handle: &mut DeviceHandle<T>, iface: u8) -> Result<()> {
-        handle.claim_interface(iface).map_err(|_| Error::USB)
+    fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
+        Some(NxpTxToken {
+            lower: self.lower.clone(),
+            ref_num: self.ref_num.clone(),
+            tx_seq_num: self.tx_seq_num.clone(),
+        })
+    }
+}
+
+#[doc(hidden)]
+pub struct NxpRxToken {
+    buffer: Vec<u8>,
+}
+
+impl RxToken for NxpRxToken {
+    fn consume<R, F>(mut self, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        f(&mut self.buffer[..])
+    }
+}
+
+#[doc(hidden)]
+pub struct NxpTxToken {
+    lower: Rc<RefCell<USB>>,
+    ref_num: Rc<RefCell<u16>>,
+    tx_seq_num: Rc<RefCell<u16>>,
+}
+
+impl TxToken for NxpTxToken {
+    fn consume<R, F>(self, len: usize, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        let mut ref_num = self.ref_num.borrow_mut();
+        *ref_num = ref_num.wrapping_add(1);
+
+        let mut tx_seq = self.tx_seq_num.borrow_mut();
+        *tx_seq = tx_seq.wrapping_add(1);
+
+        let hdr_len = size_of::<tMKxTxPacket>();
+        let mut buffer = vec![0; len + hdr_len];
+
+        // Insert tMkxTxPacket prefix.
+        let tx_pkt: &mut tMKxTxPacket = unsafe { &mut *buffer.as_mut_ptr().cast() };
+        tx_pkt.Hdr.Type = eMKxIFMsgType_MKXIF_TXPACKET as u16;
+        tx_pkt.Hdr.Len = (len + hdr_len) as u16;
+        tx_pkt.Hdr.Seq = *tx_seq;
+        tx_pkt.Hdr.Ref = *ref_num;
+        tx_pkt.Hdr.Ret = eMKxStatus_MKXSTATUS_RESERVED as i16;
+
+        tx_pkt.TxPacketData.RadioID = eMKxRadio_MKX_RADIO_A as u8;
+        tx_pkt.TxPacketData.ChannelID = eMKxChannel_MKX_CHANNEL_0 as u8;
+        tx_pkt.TxPacketData.TxAntenna = eMKxAntenna_MKX_ANT_DEFAULT as u8;
+        tx_pkt.TxPacketData.MCS = eMKxMCS_MKXMCS_DEFAULT as u8;
+        tx_pkt.TxPacketData.TxPower = eMKxPower_MKX_POWER_TX_DEFAULT as i16;
+        tx_pkt.TxPacketData.TxCtrlFlags = eMKxTxCtrlFlags_MKX_REGULAR_TRANSMISSION as u8;
+        tx_pkt.TxPacketData.Expiry = 0;
+        tx_pkt.TxPacketData.TxFrameLength = len as u16;
+
+        let result = f(&mut buffer[hdr_len..]);
+
+        let ieee_hdr: &IEEE80211QoSHeader = unsafe { &mut *buffer[hdr_len..].as_mut_ptr().cast() };
+        let durationId = ieee_hdr.DurationId;
+
+        println!("FrameCtrl: {}", unsafe {ieee_hdr.FrameControl.FrameCtrl});
+        println!("durationId: {}", durationId);
+        println!("Address1: {:?}", ieee_hdr.Address1);
+        println!("Address2: {:?}", ieee_hdr.Address2);
+        println!("Address3: {:?}", ieee_hdr.Address3);
+        println!("SeqCtrl: {}", unsafe {ieee_hdr.SeqControl.SeqCtrl});
+        println!("QoSCtrl {}", unsafe {ieee_hdr.QoSControl.QoSCtrl});
+
+        let snap_hdr: &SNAPHeader = unsafe { &mut *buffer[hdr_len + size_of::<IEEE80211QoSHeader>()..].as_mut_ptr().cast() };
+        let ty = snap_hdr.Type;
+        println!("{}", ty);
+        println!("{}", unsafe {snap_hdr.__bindgen_anon_1.__bindgen_anon_1.SSAP});
+        println!("{}", unsafe {snap_hdr.__bindgen_anon_1.__bindgen_anon_1.DSAP});
+
+        match self.lower.borrow_mut().send(&buffer[..]) {
+            Ok(_) => {}
+            Err(Error::Timeout) => {
+                println!("Timeout while TX");
+            }
+            Err(e) => panic!("{}", e),
+        }
+        result
     }
 }

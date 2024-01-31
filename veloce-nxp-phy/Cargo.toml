@@ -21,4 +21,7 @@ rasn = "0.12.1"
 bindgen = "0.69.2"
 
 [[example]]
-name = "nxp_device"
+name = "usb_device"
+
+[[example]]
+name = "llc_device"

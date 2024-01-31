@@ -1,15 +1,13 @@
 use log::{debug, trace};
 
 use rasn::types::SequenceOf;
-use uom::si::f32::Angle;
-use veloce::common::geo_area::{Circle, GeoArea, GeoPosition, Shape};
 use veloce::iface::{Config, Interface, SocketSet};
 use veloce::network::{GnCore, GnCoreGonfig, Transport};
 use veloce::socket;
 use veloce::socket::btp::Request as BtpRequest;
 use veloce::storage::PacketBuffer;
 use veloce::time::{Duration, Instant, TAI2004};
-use veloce::types::{degree, meter, tenth_of_microdegree, Distance, Latitude, Longitude};
+use veloce::types::{degree, tenth_of_microdegree, Latitude, Longitude};
 use veloce::utils;
 use veloce::wire::{
     btp,
@@ -17,7 +15,7 @@ use veloce::wire::{
     EthernetAddress, GnAddress, StationType,
 };
 
-use veloce_nxp_phy::NxpDevice;
+use veloce_nxp_phy::NxpUsbDevice;
 
 use clap::Parser;
 
@@ -33,7 +31,7 @@ fn main() {
     let ll_addr = EthernetAddress([0x04, 0xe5, 0x48, 0xfa, 0xde, 0xca]);
 
     // Configure NXP device
-    let mut device = NxpDevice::new().unwrap();
+    let mut device = NxpUsbDevice::new().unwrap();
     device.configure().expect("Cannot configure device");
 
     // Configure interface
@@ -88,20 +86,11 @@ fn main() {
             let buf = rasn::uper::encode(&cam).unwrap();
 
             let req_meta = BtpRequest {
-                transport: Transport::Broadcast(GeoArea {
-                    shape: Shape::Circle(Circle {
-                        radius: Distance::new::<meter>(500.0),
-                    }),
-                    position: GeoPosition {
-                        latitude: lat,
-                        longitude: lon,
-                    },
-                    angle: Angle::new::<degree>(0.0),
-                }),
+                transport: Transport::SingleHopBroadcast,
                 ..Default::default()
             };
             socket.send_slice(&buf, req_meta).unwrap();
-            next_cam_tx = timestamp + Duration::from_secs(1);
+            next_cam_tx = timestamp + Duration::from_millis(100);
         }
 
         let iface_timeout = iface.poll_delay(timestamp, &sockets);
