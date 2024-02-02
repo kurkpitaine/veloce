@@ -7,7 +7,6 @@ pub mod macros;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 
-pub mod apps;
 pub mod common;
 pub mod config;
 pub mod iface;

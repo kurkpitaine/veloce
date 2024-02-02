@@ -80,5 +80,16 @@ impl InterfaceInner {
                 return;
             }
         }
+
+        #[cfg(feature = "socket-cam")]
+        for cam_socket in sockets
+            .items_mut()
+            .filter_map(|i| cam::Socket::downcast_mut(&mut i.socket))
+        {
+            if cam_socket.accepts(self, &btp_b_repr) {
+                cam_socket.process(self, btp_ind, payload);
+                return;
+            }
+        }
     }
 }

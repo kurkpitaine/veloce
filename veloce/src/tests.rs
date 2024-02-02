@@ -1,4 +1,5 @@
 use crate::iface::*;
+use crate::types::Pseudonym;
 use crate::wire::*;
 
 pub(crate) fn setup<'a>(medium: Medium) -> (GnCore, Interface, SocketSet<'a>, TestingDevice) {
@@ -22,7 +23,7 @@ pub(crate) fn setup<'a>(medium: Medium) -> (GnCore, Interface, SocketSet<'a>, Te
         StationType::RoadSideUnit,
         EthernetAddress(raw_ll_addr),
     );
-    let router_config = GnCoreGonfig::new(router_addr);
+    let router_config = GnCoreGonfig::new(router_addr, Pseudonym(0xabcd));
     let core = GnCore::new(router_config, Instant::ZERO);
 
     (core, iface, SocketSet::new(vec![]), device)

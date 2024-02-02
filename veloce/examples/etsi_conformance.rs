@@ -10,6 +10,7 @@ use veloce::phy::{wait_many, Medium, RawSocket};
 use veloce::socket;
 use veloce::storage::PacketBuffer;
 use veloce::time::Instant;
+use veloce::types::Pseudonym;
 use veloce::utils;
 use veloce::wire::{EthernetAddress, GnAddress, StationType};
 
@@ -52,7 +53,7 @@ fn main() {
 
     // Build GnCore
     let router_addr = GnAddress::new(true, StationType::RoadSideUnit, ll_addr);
-    let router_config = GnCoreGonfig::new(router_addr);
+    let router_config = GnCoreGonfig::new(router_addr, Pseudonym(0xabcd));
     let mut router = GnCore::new(router_config, Instant::now());
 
     // Create gn socket

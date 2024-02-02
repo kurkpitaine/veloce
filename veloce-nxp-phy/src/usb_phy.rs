@@ -67,7 +67,6 @@ impl USB {
                 Ok(s)
             })
             .map_err(|e| {
-                println!("{:?}", e);
                 match e {
                     rusb::Error::Timeout => Error::Timeout,
                     _ => Error::USB,

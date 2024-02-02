@@ -20,6 +20,9 @@ pub mod geonet;
 #[cfg(any(feature = "socket-btp-a", feature = "socket-btp-b"))]
 pub mod btp;
 
+#[cfg(feature = "socket-cam")]
+pub mod cam;
+
 #[cfg(feature = "async")]
 mod waker;
 
@@ -57,6 +60,8 @@ pub enum Socket<'a> {
     BtpA(btp::SocketA<'a>),
     #[cfg(feature = "socket-btp-b")]
     BtpB(btp::SocketB<'a>),
+    #[cfg(feature = "socket-cam")]
+    Cam(cam::Socket<'a>),
 }
 
 impl<'a> Socket<'a> {
@@ -68,6 +73,8 @@ impl<'a> Socket<'a> {
             Socket::BtpA(s) => s.poll_at(cx),
             #[cfg(feature = "socket-btp-b")]
             Socket::BtpB(s) => s.poll_at(cx),
+            #[cfg(feature = "socket-cam")]
+            Socket::Cam(s) => s.poll_at(cx),
         }
     }
 }
@@ -115,6 +122,8 @@ from_socket!(geonet::Socket<'a>, Geonet);
 from_socket!(btp::SocketA<'a>, BtpA);
 #[cfg(feature = "socket-btp-b")]
 from_socket!(btp::SocketB<'a>, BtpB);
+#[cfg(feature = "socket-cam")]
+from_socket!(cam::Socket<'a>, Cam);
 
 /// Error returned by [`Socket::send`]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

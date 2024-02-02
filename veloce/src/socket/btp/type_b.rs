@@ -275,9 +275,6 @@ impl<'a> Socket<'a> {
     /// Dequeue a packet, and return a pointer to the payload.
     ///
     /// This function returns `Err(Error::Exhausted)` if the receive buffer is empty.
-    ///
-    /// **Note:** The IP header is parsed and re-serialized, and may not match
-    /// the header actually received bit for bit.
     pub fn recv(&mut self) -> Result<(&[u8], Indication), RecvError> {
         let (indication, packet_buf) =
             self.rx_buffer.dequeue().map_err(|_| RecvError::Exhausted)?;

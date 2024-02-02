@@ -5,8 +5,10 @@ use crate::common::geo_area::GeoPosition;
 use crate::config::GnAddrConfMethod;
 use crate::rand::Rand;
 use crate::time::{Instant, TAI2004};
-use crate::types::{degree, kilometer_per_hour, Heading, Latitude, Longitude, Speed};
-use crate::wire::{EthernetAddress, GnAddress, LongPositionVectorRepr as LongPositionVector};
+use crate::types::{degree, kilometer_per_hour, Heading, Latitude, Longitude, Pseudonym, Speed};
+use crate::wire::{
+    EthernetAddress, GnAddress, LongPositionVectorRepr as LongPositionVector, StationType,
+};
 
 // For tests only. Duplicate Address Detection only works with Auto mode.
 #[cfg(test)]
@@ -31,11 +33,13 @@ pub struct Config {
     pub speed: Speed,
     /// Heading of the Geonetworking router.
     pub heading: Heading,
+    /// Pseudonym aka. StationId of the Geonetworking router.
+    pub pseudonym: Pseudonym,
 }
 
 impl Config {
     /// Constructs a new [Config] with default values.
-    pub fn new(geonet_addr: GnAddress) -> Self {
+    pub fn new(geonet_addr: GnAddress, pseudonym: Pseudonym) -> Self {
         Config {
             random_seed: 0,
             geonet_addr: geonet_addr,
@@ -44,6 +48,7 @@ impl Config {
             position_accurate: false,
             speed: Speed::new::<kilometer_per_hour>(0.0),
             heading: Heading::new::<degree>(0.0),
+            pseudonym,
         }
     }
 }
@@ -57,6 +62,8 @@ pub struct Core {
     pub rand: Rand,
     /// Ego Position Vector which includes the local Geonetworking address.
     pub ego_position_vector: LongPositionVector,
+    /// Pseudonym aka. StationId of the Geonetworking router.
+    pub pseudonym: Pseudonym,
 }
 
 impl Core {
@@ -76,6 +83,7 @@ impl Core {
             now,
             rand,
             ego_position_vector,
+            pseudonym: config.pseudonym,
         }
     }
 
@@ -119,6 +127,28 @@ impl Core {
             }
         }
     }
+
+    /// Returns the type of the local ITS Station.
+    pub fn station_type(&self) -> StationType {
+        self.ego_position_vector.address.station_type()
+    }
+
+    /// Set the type of the local ITS Station.
+    pub fn set_station_type(&mut self, station_type: StationType) {
+        self.ego_position_vector
+            .address
+            .set_station_type(station_type);
+    }
+
+    /// Returns the pseudonym of the local ITS Station.
+    pub fn pseudonym(&self) -> Pseudonym {
+        self.pseudonym
+    }
+
+    /// Set the pseudonym of the local ITS Station.
+    pub fn set_pseudonym(&mut self, pseudo: Pseudonym) {
+        self.pseudonym = pseudo
+    }
 }
 
 #[cfg(test)]
@@ -145,6 +175,7 @@ mod test {
             },
             now: Instant::from_secs(10),
             rand: Rand::new(0xfadecafe),
+            pseudonym: Pseudonym(123456789),
         };
 
         let eth_addr = EthernetAddress::new(0, 1, 2, 3, 4, 5);
@@ -167,6 +198,7 @@ mod test {
             },
             now: Instant::from_secs(10),
             rand: Rand::new(0xcafefade),
+            pseudonym: Pseudonym(123456789),
         };
 
         core.duplicate_address_detection(

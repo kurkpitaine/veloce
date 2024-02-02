@@ -18,9 +18,9 @@ managed = { version = "0.8", default-features = false, features = ["map"] }
 rasn = "0.12.1"
 uom = { version = "0.34.0", features = ["autoconvert", "f32"] }
 gpsd_proto = { version = "1.0.0", optional = true }
+veloce-asn1 = { path = "../veloce-asn1", optional = true }
 
 [dev-dependencies]
-veloce-asn1 = { path = "../veloce-asn1" }
 approx = "0.5.1"
 mac_address = "1.1.5"
 clap = { version = "4.4.11", features = ["derive"] }
@@ -30,7 +30,7 @@ std = ["managed/std", "alloc"]
 alloc = ["managed/alloc", "defmt?/alloc"]
 defmt = ["dep:defmt", "heapless/defmt-03"]
 gpsd = ["std", "dep:gpsd_proto"]
-
+asn1 = ["dep:veloce-asn1"]
 conformance = []
 
 "medium-ethernet" = []
@@ -53,6 +53,8 @@ conformance = []
 "socket-btp-a" = ["socket", "proto-geonet"]
 "socket-btp-b" = ["socket", "proto-geonet"]
 
+"socket-cam" = ["alloc", "socket", "proto-cam", "asn1"]
+
 "packetmeta-id" = []
 
 "async" = []
@@ -60,6 +62,7 @@ conformance = []
 default = [
    "std",
    "log",
+   "asn1",
    "medium-ethernet",
    "medium-ieee80211p",
    "medium-pc5",
@@ -70,6 +73,7 @@ default = [
    "socket-geonet",
    "socket-btp-a",
    "socket-btp-b",
+   "socket-cam",
    "packetmeta-id",
    "async",
    "conformance",

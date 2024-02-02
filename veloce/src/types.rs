@@ -89,3 +89,7 @@ impl AngleTrait for Angle {
         raw_angle.is_sign_positive() && raw_angle < 360.0
     }
 }
+
+/// Pseudonym of the station.
+#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Pseudonym(pub u32);

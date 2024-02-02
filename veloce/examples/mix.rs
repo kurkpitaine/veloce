@@ -1,4 +1,5 @@
 use log::trace;
+use veloce::types::Pseudonym;
 use veloce_asn1::c_a_m__p_d_u__descriptions as cam;
 use veloce_asn1::e_t_s_i__i_t_s__c_d_d as cdd;
 
@@ -36,7 +37,7 @@ fn main() {
 
     // Build GnCore
     let router_addr = GnAddress::new(true, StationType::RoadSideUnit, ll_addr);
-    let router_config = GnCoreGonfig::new(router_addr);
+    let router_config = GnCoreGonfig::new(router_addr, Pseudonym(0xabcd));
     let mut router = GnCore::new(router_config, Instant::now());
 
     // Create gn socket
@@ -212,8 +213,8 @@ fn main() {
 
 /// Fills a CAM message with basic content
 fn fill_cam(lat: cdd::Latitude, lon: cdd::Longitude) -> cam::CAM {
-    use cdd::*;
     use cam::*;
+    use cdd::*;
 
     let header = ItsPduHeader::new(OrdinalNumber1B(2), MessageId(2), StationId(123));
 

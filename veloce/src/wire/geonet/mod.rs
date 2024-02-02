@@ -105,19 +105,22 @@ impl cmp::PartialOrd for SequenceNumber {
 enum_with_unknown! {
    /// Geonetworking station type.
    pub enum StationType(u16) {
-      // Unknown = 0,
-      Pedestrian = 1,
-      Cyclist = 2,
-      Moped = 3,
-      Motorcycle = 4,
-      PassengerCar = 5,
-      Bus = 6,
-      LightTruck = 7,
-      HeavyTruck = 8,
-      Trailer = 9,
-      SpecialVehicle = 10,
-      Tram = 11,
-      RoadSideUnit = 15,
+        // Unknown = 0,
+        Pedestrian = 1,
+        Cyclist = 2,
+        Moped = 3,
+        Motorcycle = 4,
+        PassengerCar = 5,
+        Bus = 6,
+        LightTruck = 7,
+        HeavyTruck = 8,
+        Trailer = 9,
+        SpecialVehicle = 10,
+        Tram = 11,
+        LightVruVehicle = 12,
+        Animal = 13,
+        Agricultural = 14,
+        RoadSideUnit = 15,
    }
 }
 
@@ -135,8 +138,39 @@ impl fmt::Display for StationType {
             StationType::Trailer => write!(f, "Trailer"),
             StationType::SpecialVehicle => write!(f, "SpecialVehicle"),
             StationType::Tram => write!(f, "Tram"),
+            StationType::LightVruVehicle => write!(f, "LightVruVehicle"),
+            StationType::Animal => write!(f, "Animal"),
+            StationType::Agricultural => write!(f, "Agricultural"),
             StationType::RoadSideUnit => write!(f, "RoadSideUnit"),
             StationType::Unknown(id) => write!(f, "0x{:02x}", id),
+        }
+    }
+}
+
+#[cfg(feature = "asn1")]
+use veloce_asn1::e_t_s_i__i_t_s__c_d_d::TrafficParticipantType;
+
+#[cfg(feature = "asn1")]
+impl From<TrafficParticipantType> for StationType {
+    fn from(value: TrafficParticipantType) -> Self {
+        match value.0 {
+            0 => StationType::Unknown(0),
+            1 => StationType::Pedestrian,
+            2 => StationType::Cyclist,
+            3 => StationType::Moped,
+            4 => StationType::Motorcycle,
+            5 => StationType::PassengerCar,
+            6 => StationType::Bus,
+            7 => StationType::LightTruck,
+            8 => StationType::HeavyTruck,
+            9 => StationType::Trailer,
+            10 => StationType::SpecialVehicle,
+            11 => StationType::Tram,
+            12 => StationType::LightVruVehicle,
+            13 => StationType::Animal,
+            14 => StationType::Agricultural,
+            15 => StationType::RoadSideUnit,
+            _ => StationType::Unknown(value.0.into())
         }
     }
 }
@@ -193,6 +227,13 @@ impl Address {
     pub fn station_type(&self) -> StationType {
         let raw = NetworkEndian::read_u16(&self.0[field::M_ST_RES]);
         StationType::from((raw & 0x7c00) >> 10)
+    }
+
+    /// Sets the station type field.
+    pub fn set_station_type(&mut self, station_type: StationType) {
+        let raw = NetworkEndian::read_u16(&self.0[field::M_ST_RES]) & !0x7c00;
+        let raw = raw | (u16::from(station_type) << 10);
+        NetworkEndian::write_u16(&mut self.0[field::M_ST_RES], raw);
     }
 
     /// Return the reserved field.
@@ -324,5 +365,25 @@ mod test {
         let tc = TrafficClass::from_byte(&byte);
         assert_eq!(tc.store_carry_forward(), true);
         assert_eq!(tc.id(), 37);
+    }
+
+    #[test]
+    fn test_change_station_type() {
+        let mut addr = Address::new(
+            true,
+            StationType::RoadSideUnit,
+            MacAddress([0xab, 0xcd, 0xef, 0x01, 0x23, 0x45]),
+        );
+
+        assert_eq!(addr.station_type(), StationType::RoadSideUnit);
+
+        addr.set_station_type(StationType::PassengerCar);
+
+        assert_eq!(addr.is_manual(), true);
+        assert_eq!(addr.station_type(), StationType::PassengerCar);
+        assert_eq!(
+            addr.mac_addr(),
+            MacAddress([0xab, 0xcd, 0xef, 0x01, 0x23, 0x45])
+        );
     }
 }

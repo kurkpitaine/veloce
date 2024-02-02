@@ -12,7 +12,7 @@ use veloce::socket;
 use veloce::socket::btp::Request as BtpRequest;
 use veloce::storage::PacketBuffer;
 use veloce::time::{Duration, Instant, TAI2004};
-use veloce::types::{degree, meter, tenth_of_microdegree, Distance, Latitude, Longitude};
+use veloce::types::{degree, meter, tenth_of_microdegree, Distance, Latitude, Longitude, Pseudonym};
 use veloce::utils;
 use veloce::wire::{
     btp,
@@ -49,7 +49,7 @@ fn main() {
 
     // Build GnCore
     let router_addr = GnAddress::new(true, StationType::RoadSideUnit, ll_addr);
-    let router_config = GnCoreGonfig::new(router_addr);
+    let router_config = GnCoreGonfig::new(router_addr, Pseudonym(0xabcd));
     let mut router = GnCore::new(router_config, Instant::now());
 
     // Create BTP-B socket
