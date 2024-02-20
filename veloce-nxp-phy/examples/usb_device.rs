@@ -1,3 +1,4 @@
+use clap::Parser;
 use log::{debug, error, info, trace};
 
 use veloce::iface::{Config, Interface, SocketSet};
@@ -9,8 +10,6 @@ use veloce::utils;
 use veloce::wire::{EthernetAddress, GnAddress, StationType};
 
 use veloce_nxp_phy::NxpUsbDevice;
-
-use clap::Parser;
 
 #[derive(Parser, Default, Debug)]
 struct Arguments {
@@ -64,9 +63,9 @@ fn main() {
 
         let iface_timeout = iface.poll_delay(timestamp, &sockets);
 
-        trace!("poll_wait");
+        trace!("wait");
         match device.poll_wait(iface_timeout) {
-            Ok(avail) => debug!("{} bytes available", avail),
+            Ok(_) => debug!("Rx available"),
             Err(e) => debug!("Error while polling : {}", e),
         }
     }

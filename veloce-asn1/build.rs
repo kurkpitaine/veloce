@@ -13,6 +13,7 @@ fn main() {
             vec![
                 PathBuf::from("asn/ETSI-ITS-CDD.asn"),
                 PathBuf::from("asn/CAM-PDU-Descriptions.asn"),
+                //PathBuf::from("asn/DENM-PDU-Descriptions.asn"),
             ]
             .iter(),
         )

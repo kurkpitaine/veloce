@@ -7,10 +7,12 @@ use core::fmt;
 
 pub mod llc;
 pub mod usb;
+//pub mod usb2;
 pub mod usb_phy;
+//pub mod usb_phy3;
 
-pub use usb::NxpUsbDevice;
 pub use llc::NxpLlcDevice;
+pub use usb::NxpUsbDevice;
 
 /// Max raw frame array size.
 pub const RAW_FRAME_LENGTH_MAX: usize = 1518;
@@ -24,18 +26,17 @@ pub enum Error {
     /// No Rx packet in buffer.
     NoRxPacket,
     /// An error occured during USB operation.
-    USB,
+    USB, /* (UsbError) */
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let str = match *self {
-            Error::Timeout => "timeout",
-            Error::NoRxPacket => "no rx packet in buffer",
-            Error::USB => "USB related error",
-        };
-
-        f.write_str(str)
+        match *self {
+            Error::Timeout => f.write_str("timeout"),
+            Error::NoRxPacket => f.write_str("no rx packet in buffer"),
+            Error::USB => f.write_str("USB error"),
+            //Error::USB(e) => write!(f, "USB: {}", e),
+        }
     }
 }
 

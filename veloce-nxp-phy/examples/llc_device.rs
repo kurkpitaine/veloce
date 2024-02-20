@@ -1,26 +1,16 @@
 use std::os::fd::AsRawFd;
 
-use log::trace;
+use log::{error, info, trace};
+use thread_priority::*;
 
-use rasn::types::SequenceOf;
-use uom::si::f32::Angle;
-use veloce::common::geo_area::{Circle, GeoArea, GeoPosition, Shape};
 use veloce::iface::{Config, Interface, SocketSet};
-use veloce::network::{GnCore, GnCoreGonfig, Transport};
+use veloce::network::{GnCore, GnCoreGonfig};
 use veloce::phy::wait as phy_wait;
 use veloce::socket;
-use veloce::socket::btp::Request as BtpRequest;
-use veloce::storage::PacketBuffer;
-use veloce::time::{Duration, Instant, TAI2004};
-use veloce::types::{degree, meter, tenth_of_microdegree, Distance, Latitude, Longitude, Pseudonym};
+use veloce::time::Instant;
+use veloce::types::Pseudonym;
 use veloce::utils;
-use veloce::wire::{
-    btp,
-    EthernetAddress, GnAddress, StationType,
-};
-
-use veloce_asn1::c_a_m__p_d_u__descriptions as cam;
-use veloce_asn1::e_t_s_i__i_t_s__c_d_d as cdd;
+use veloce::wire::{EthernetAddress, GnAddress, StationType};
 
 use veloce_nxp_phy::NxpLlcDevice;
 
@@ -35,6 +25,7 @@ struct Arguments {
 fn main() {
     let args = Arguments::parse();
     utils::setup_logging(args.log_level.as_str());
+    assert!(set_current_thread_priority(ThreadPriority::Max).is_ok());
 
     let ll_addr = EthernetAddress([0x04, 0xe5, 0x48, 0xfa, 0xde, 0xca]);
 
@@ -52,19 +43,12 @@ fn main() {
     let router_config = GnCoreGonfig::new(router_addr, Pseudonym(0xabcd));
     let mut router = GnCore::new(router_config, Instant::now());
 
-    // Create BTP-B socket
-    let btp_b_rx_buffer =
-        PacketBuffer::new(vec![socket::btp::b::RxPacketMetadata::EMPTY], vec![0; 4096]);
-
-    let btp_b_tx_buffer =
-        PacketBuffer::new(vec![socket::btp::b::TxPacketMetadata::EMPTY], vec![0; 4096]);
-    let btp_b_socket = socket::btp::SocketB::new(btp_b_rx_buffer, btp_b_tx_buffer);
+    // Create CAM socket
+    let cam_socket = socket::cam::Socket::new();
 
     // Add it to a SocketSet
     let mut sockets = SocketSet::new(vec![]);
-    let btp_b_handle: veloce::iface::SocketHandle = sockets.add(btp_b_socket);
-
-    let mut next_cam_tx = Instant::now() + Duration::from_secs(1);
+    let cam_handle: veloce::iface::SocketHandle = sockets.add(cam_socket);
 
     loop {
         // Update timestamp.
@@ -73,95 +57,21 @@ fn main() {
 
         trace!("iface poll");
         iface.poll(&mut router, &mut device, &mut sockets);
-        let socket = sockets.get_mut::<socket::btp::SocketB>(btp_b_handle);
-        if !socket.is_open() {
-            socket.bind(btp::ports::CAM).unwrap()
-        }
+        let socket = sockets.get_mut::<socket::cam::Socket>(cam_handle);
 
-        if timestamp >= next_cam_tx {
-            trace!("next_cam_tx");
-            let lat = Latitude::new::<degree>(48.271947);
-            let lon = Longitude::new::<degree>(-3.614961);
-            router.ego_position_vector.latitude = lat;
-            router.ego_position_vector.longitude = lon;
-            router.ego_position_vector.timestamp = TAI2004::from_unix_instant(timestamp).into();
-
-            let cam = fill_cam(
-                cdd::Latitude(lat.get::<tenth_of_microdegree>() as i32),
-                cdd::Longitude(lon.get::<tenth_of_microdegree>() as i32),
-            );
-
-            let buf = rasn::uper::encode(&cam).unwrap();
-
-            let req_meta = BtpRequest {
-                transport: Transport::Broadcast(GeoArea {
-                    shape: Shape::Circle(Circle {
-                        radius: Distance::new::<meter>(500.0),
-                    }),
-                    position: GeoPosition {
-                        latitude: lat,
-                        longitude: lon,
-                    },
-                    angle: Angle::new::<degree>(0.0),
-                }),
-                ..Default::default()
-            };
-            socket.send_slice(&buf, req_meta).unwrap();
-            next_cam_tx = timestamp + Duration::from_secs(1);
+        if socket.can_recv() {
+            match socket.recv() {
+                Ok(msg) => {
+                    info!("Received CAM msg: {:?}", msg);
+                }
+                Err(e) => error!("Error cam.recv() : {}", e),
+            }
         }
 
         let iface_timeout = iface.poll_delay(timestamp, &sockets);
-
-        let poll_timeout = [Some(timestamp - next_cam_tx), iface_timeout]
-            .into_iter()
-            .flatten()
-            .min();
+        println!("iface_timeout: {:?}", iface_timeout);
 
         trace!("phy_wait");
-        phy_wait(dev_fd, poll_timeout).expect("wait error");
+        phy_wait(dev_fd, iface_timeout).expect("wait error");
     }
-}
-
-/// Fills a CAM message with basic content
-/// Fills a CAM message with basic content
-fn fill_cam(lat: cdd::Latitude, lon: cdd::Longitude) -> cam::CAM {
-    use cam::*;
-    use cdd::*;
-
-    let header = ItsPduHeader::new(OrdinalNumber1B(2), MessageId(2), StationId(123));
-
-    let station_type = TrafficParticipantType(15);
-
-    let alt = cdd::Altitude::new(AltitudeValue(1000), AltitudeConfidence::unavailable);
-
-    let pos_confidence = PositionConfidenceEllipse::new(
-        SemiAxisLength(4095),
-        SemiAxisLength(4095),
-        Wgs84AngleValue(3601),
-    );
-    let ref_pos =
-        ReferencePositionWithConfidence::new(lat.clone(), lon.clone(), pos_confidence, alt);
-    let basic_container = BasicContainer::new(station_type, ref_pos);
-
-    let prot_zone = ProtectedCommunicationZone::new(
-        ProtectedZoneType::permanentCenDsrcTolling,
-        None,
-        lat,
-        lon,
-        None,
-        Some(ProtectedZoneId(0xfe)),
-    );
-
-    let mut prot_zones = ProtectedCommunicationZonesRSU(SequenceOf::new());
-    prot_zones.0.push(prot_zone);
-
-    let hf_container = HighFrequencyContainer::rsuContainerHighFrequency(
-        RSUContainerHighFrequency::new(Some(prot_zones)),
-    );
-
-    let cam_params = CamParameters::new(basic_container, hf_container, None, None);
-    let gen_time = GenerationDeltaTime(12345);
-    let coop_awareness = CamPayload::new(gen_time, cam_params);
-
-    cam::CAM::new(header, coop_awareness)
 }

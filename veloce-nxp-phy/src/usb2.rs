@@ -11,11 +11,10 @@ use crate::{
     eMKxIFMsgType_MKXIF_RXPACKET, eMKxIFMsgType_MKXIF_TXPACKET, eMKxMCS_MKXMCS_DEFAULT,
     eMKxPower_MKX_POWER_TX_DEFAULT, eMKxRadio_MKX_RADIO_A, eMKxStatus_MKXSTATUS_RESERVED,
     eMKxTxCtrlFlags_MKX_REGULAR_TRANSMISSION, tMKxIFMsg, tMKxRadioConfig, tMKxRxPacket,
-    tMKxTxPacket, usb_phy::USB, Error, Result, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX,
+    tMKxTxPacket, usb_phy3::USB, Error, Result, RAW_FRAME_LENGTH_MAX,
 };
 
 /// An NXP USB SAF 5X00 device.
-#[derive(Debug)]
 pub struct NxpUsbDevice {
     lower: Rc<RefCell<USB>>,
     /// Reference number for sent packets that receives confirmation.
@@ -45,19 +44,23 @@ impl NxpUsbDevice {
         let cfg = cfg_mk5();
         let w_buf: [u8; size_of::<tMKxRadioConfig>()] = unsafe { transmute(cfg) };
 
-        self.lower.borrow_mut().send(&w_buf).map(|_| ())
+        self.lower
+            .borrow_mut()
+            .send(w_buf.to_vec())
+            .map_err(|_| Error::USB)
     }
 
     /// Wait until the device has rx data, but no longer than given timeout.
-    /// Any timeout value under 1 millisecond will be set to 1 millisecond.
     /// If timeout is None, this function call will block.
-    /// Returns the number of bytes available to read, if any, or an Error
-    /// on timeout or other.
-    pub fn poll_wait(&self, timeout: Option<Duration>) -> Result<usize> {
+    pub fn wait(&self, timeout: Option<Duration>) -> Result<()> {
         let before = SystemTime::now();
-        let rc = self.lower.borrow_mut().poll_wait(timeout);
+        let rc = self
+            .lower
+            .borrow()
+            .wait(timeout)
+            .map_err(|_| Error::Timeout);
         println!(
-            "Recv elapsed: {:?}, timeout: {:?}",
+            "Wait elapsed: {:?}, timeout: {:?}",
             SystemTime::elapsed(&before).unwrap(),
             timeout
         );
@@ -83,77 +86,67 @@ impl Device for NxpUsbDevice {
     }
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        let mut lower = self.lower.borrow_mut();
-        let mut buffer = vec![0; LLC_BUFFER_LEN];
-
+        let lower = self.lower.borrow();
         // Fail early if we have nothing to receive.
-        if !lower.can_recv() {
+        let Ok(mut buffer) = lower.try_recv() else {
+            return None;
+        };
+
+        // Sanity check 1.
+        if buffer.len() < size_of::<tMKxIFMsg>() {
             return None;
         }
 
-        match lower.recv(&mut buffer) {
-            Ok(size) => {
-                buffer.resize(size, 0);
+        // Unpack Nxp header.
+        let hdr: &tMKxIFMsg = unsafe { &*buffer.as_ptr().cast() };
 
-                // Sanity check 1.
-                if size < size_of::<tMKxIFMsg>() {
-                    return None;
-                }
-
-                // Unpack Nxp header.
-                let hdr: &tMKxIFMsg = unsafe { &*buffer.as_ptr().cast() };
-
-                // Sanity check 2.
-                if hdr.Len < size as u16 {
-                    return None;
-                }
-
-                if hdr.Seq == 0 && hdr.Type == eMKxIFMsgType_MKXIF_ERROR as u16 {
-                    // Do not trigger a warning and do not increment the expected seq number.
-                    return None;
-                } else if hdr.Seq != self.rx_seq_num {
-                    // Mismatched Seq number (Radio to Host).
-                    // sync up to the received message.
-                    self.rx_seq_num = hdr.Seq.wrapping_add(1);
-                } else {
-                    // Seq number was as expected, increment the expected Seq number.
-                    self.rx_seq_num = self.rx_seq_num.wrapping_add(1);
-                }
-
-                // Silently ignore non RXPACKET types.
-                if hdr.Type != eMKxIFMsgType_MKXIF_RXPACKET as u16 {
-                    return None;
-                }
-
-                // Sanity check 3.
-                let len = hdr.Len as usize - size_of::<tMKxIFMsg>();
-                if len < size_of::<tMKxRxPacket>() {
-                    return None;
-                };
-
-                // Unpack NxpRxPacketData header.
-                let rx_pkt: &tMKxRxPacket = unsafe { &*buffer.as_ptr().cast() };
-
-                // Sanity check 4.
-                let frame_len = rx_pkt.RxPacketData.RxFrameLength;
-                if frame_len < (hdr.Len as usize - size_of::<tMKxRxPacket>()) as u16 {
-                    return None;
-                }
-
-                // Strip packet header.
-                buffer.drain(..size_of::<tMKxRxPacket>());
-
-                let rx = NxpRxToken { buffer };
-                let tx = NxpTxToken {
-                    lower: self.lower.clone(),
-                    ref_num: self.ref_num.clone(),
-                    tx_seq_num: self.tx_seq_num.clone(),
-                };
-                Some((rx, tx))
-            }
-            Err(Error::Timeout) => None,
-            Err(e) => panic!("{}", e),
+        // Sanity check 2.
+        if hdr.Len < buffer.len() as u16 {
+            return None;
         }
+
+        if hdr.Seq == 0 && hdr.Type == eMKxIFMsgType_MKXIF_ERROR as u16 {
+            // Do not trigger a warning and do not increment the expected seq number.
+            return None;
+        } else if hdr.Seq != self.rx_seq_num {
+            // Mismatched Seq number (Radio to Host).
+            // sync up to the received message.
+            self.rx_seq_num = hdr.Seq.wrapping_add(1);
+        } else {
+            // Seq number was as expected, increment the expected Seq number.
+            self.rx_seq_num = self.rx_seq_num.wrapping_add(1);
+        }
+
+        // Silently ignore non RXPACKET types.
+        if hdr.Type != eMKxIFMsgType_MKXIF_RXPACKET as u16 {
+            return None;
+        }
+
+        // Sanity check 3.
+        let len = hdr.Len as usize - size_of::<tMKxIFMsg>();
+        if len < size_of::<tMKxRxPacket>() {
+            return None;
+        };
+
+        // Unpack NxpRxPacketData header.
+        let rx_pkt: &tMKxRxPacket = unsafe { &*buffer.as_ptr().cast() };
+
+        // Sanity check 4.
+        let frame_len = rx_pkt.RxPacketData.RxFrameLength;
+        if frame_len < (hdr.Len as usize - size_of::<tMKxRxPacket>()) as u16 {
+            return None;
+        }
+
+        // Strip packet header.
+        buffer.drain(..size_of::<tMKxRxPacket>());
+
+        let rx = NxpRxToken { buffer };
+        let tx = NxpTxToken {
+            lower: self.lower.clone(),
+            ref_num: self.ref_num.clone(),
+            tx_seq_num: self.tx_seq_num.clone(),
+        };
+        Some((rx, tx))
     }
 
     fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
@@ -237,11 +230,8 @@ impl TxToken for NxpTxToken {
         println!("{}", unsafe {snap_hdr.__bindgen_anon_1.__bindgen_anon_1.DSAP}); */
 
         let start = SystemTime::now();
-        match self.lower.borrow_mut().send(&buffer[..]) {
+        match self.lower.borrow_mut().send(buffer) {
             Ok(_) => {}
-            Err(Error::Timeout) => {
-                println!("Timeout while TX");
-            }
             Err(e) => panic!("{}", e),
         }
         println!("Send elapsed: {:?}", SystemTime::elapsed(&start).unwrap());

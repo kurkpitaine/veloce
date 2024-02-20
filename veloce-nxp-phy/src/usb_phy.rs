@@ -66,11 +66,9 @@ impl USB {
                 self.rx_len = s;
                 Ok(s)
             })
-            .map_err(|e| {
-                match e {
-                    rusb::Error::Timeout => Error::Timeout,
-                    _ => Error::USB,
-                }
+            .map_err(|e| match e {
+                rusb::Error::Timeout => Error::Timeout,
+                _ => Error::USB,
             })
     }
 

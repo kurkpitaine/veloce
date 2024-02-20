@@ -1,18 +1,12 @@
 //! This module contains the implementation of the Poti module as defined in ETSI EN 302 890-2 V2.1.1.
 //! Only the positioning part is implemented, timing is considered out of scope in Veloce Poti implementation.
 
-use uom::si::angle::degree;
 use uom::si::f32::Length;
-use uom::si::length::meter;
-use uom::si::velocity::meter_per_second;
 
 use crate::{
     time::TAI2004,
     types::{Heading, Latitude, Longitude, Speed},
 };
-
-#[cfg(feature = "gpsd")]
-use gpsd_proto::{Mode, Tpv, UnifiedResponse};
 
 /// Position and Timing aka `Poti`.
 pub struct Poti {
@@ -20,9 +14,25 @@ pub struct Poti {
     pub fix: Fix,
 }
 
-/// A GNSS fix.
+impl Poti {
+    /// Create a Poti instance with default values.
+    pub fn new() -> Self {
+        Poti {
+            fix: Default::default(),
+        }
+    }
+
+    /// Push a new [Fix] to the [Poti] module.
+    pub fn push_fix(&mut self, fix: Fix) {
+        self.fix = fix;
+    }
+}
+
+/// A Poti GNSS fix.
 #[derive(Default, Debug, Clone, Copy)]
 pub struct Fix {
+    /// Fix mode.
+    pub mode: Mode,
     /// Timestamp at which the `position`, `motion` and `confidence` values where received.
     pub timestamp: TAI2004,
     /// Position value.
@@ -31,6 +41,19 @@ pub struct Fix {
     pub motion: Motion,
     /// Confidence of `position` and `motion` values.
     pub confidence: Confidence,
+}
+
+/// Type of GPS fix.
+#[derive(Default, Debug, Clone, Copy)]
+#[non_exhaustive]
+pub enum Mode {
+    /// No fix at all.
+    #[default]
+    NoFix,
+    /// Two dimensional fix, 2D.
+    Fix2d,
+    /// Three dimensional fix, 3D (i.e. with altitude).
+    Fix3d,
 }
 
 /// Position category dimensions.
@@ -80,64 +103,4 @@ pub struct PositionConfidence {
     pub semi_minor: Option<Length>,
     /// Semi major orientation confidence.
     pub semi_major_orientation: Option<Heading>,
-}
-
-impl Poti {
-    /// Create a Poti instance with default values.
-    pub fn new() -> Self {
-        Poti {
-            fix: Default::default(),
-        }
-    }
-
-    /// Dispatches `data` received from GPSD.
-    /// Note: only processes TPV messages containing a 2D or 3D fix.
-    #[cfg(feature = "gpsd")]
-    pub fn gpsd_dispatch(&mut self, data: UnifiedResponse, timestamp: TAI2004) {
-        match data {
-            UnifiedResponse::Tpv(fix) if !matches!(fix.mode, Mode::NoFix) => {
-                self.fix = Fix::from_gpsd_tpv(fix, timestamp);
-            }
-            _ => return,
-        }
-    }
-}
-
-impl Fix {
-    #[cfg(feature = "gpsd")]
-    pub(super) fn from_gpsd_tpv(fix: Tpv, timestamp: TAI2004) -> Self {
-        Fix {
-            timestamp,
-            position: Position {
-                // Safety: Mode::Fix2d and Mode::Fix3d ensures we have lat parameter.
-                latitude: Latitude::new::<degree>(fix.lat.unwrap() as f32),
-                // Safety: Mode::Fix2d and Mode::Fix3d ensures we have lon parameter.
-                longitude: Longitude::new::<degree>(fix.lon.unwrap() as f32),
-                altitude: fix.alt.and_then(|alt| Some(Length::new::<meter>(alt))),
-            },
-            motion: Motion {
-                speed: fix
-                    .speed
-                    .and_then(|spd| Some(Speed::new::<meter_per_second>(spd))),
-                vertical_speed: fix
-                    .climb
-                    .and_then(|clb| Some(Speed::new::<meter_per_second>(clb))),
-                heading: fix.track.and_then(|trk| Some(Heading::new::<degree>(trk))),
-            },
-            confidence: Confidence {
-                position: PositionConfidence {
-                    semi_major: fix.epx.and_then(|epx| Some(Length::new::<meter>(epx))),
-                    semi_minor: fix.epx.and_then(|epy| Some(Length::new::<meter>(epy))),
-                    semi_major_orientation: fix
-                        .track
-                        .and_then(|trk| Some(Heading::new::<degree>(trk))),
-                },
-                altitude: fix.epv.and_then(|epv| Some(Length::new::<meter>(epv))),
-                speed: fix
-                    .eps
-                    .and_then(|eps| Some(Speed::new::<meter_per_second>(eps))),
-                heading: fix.epd.and_then(|epd| Some(Heading::new::<degree>(epd))),
-            },
-        }
-    }
 }

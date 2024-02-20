@@ -8,6 +8,9 @@ description = "Veloce NXP SAF5x00 PHY"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+crossbeam = { version = "0.8.4" }
+futures-lite = "2.2.0"
+nusb = "0.1.6"
 rusb = "0.9.3"
 veloce = { path = "../veloce" }
 
@@ -15,8 +18,7 @@ veloce = { path = "../veloce" }
 clap = { version = "4.4.11", features = ["derive"] }
 log = { version = "0.4.20", default-features = false }
 uom = { version = "0.34.0", features = ["autoconvert", "f32"] }
-veloce-asn1 = { path = "../veloce-asn1" }
-rasn = "0.12.4"
+thread-priority = "0.15.1"
 
 [build-dependencies]
 bindgen = "0.69.2"

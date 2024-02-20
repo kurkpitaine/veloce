@@ -170,7 +170,7 @@ impl From<TrafficParticipantType> for StationType {
             13 => StationType::Animal,
             14 => StationType::Agricultural,
             15 => StationType::RoadSideUnit,
-            _ => StationType::Unknown(value.0.into())
+            _ => StationType::Unknown(value.0.into()),
         }
     }
 }

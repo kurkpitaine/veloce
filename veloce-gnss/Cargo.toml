@@ -1,0 +1,32 @@
+[package]
+name = "veloce-gnss"
+version = "0.1.0"
+authors = ["Thibaud Rouillé <thibaud.rouille@gmail.com>"]
+edition = "2021"
+description = "Veloce GNSS position provider"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+veloce = { path = "../veloce" }
+uom = { version = "0.35", default-features = false, features = [
+   "autoconvert",
+   "f32",
+   "si"
+] }
+gpsd_proto = { git = "https://github.com/c-to-the-l/gpsd_proto.git", branch = "support_gpsd_325", optional = true }
+nmea = { version = "0.6", default-features = false, optional = true }
+ublox = { version = "0.4", default-features = false, optional = true }
+chrono = { version = "0.4.34", optional = true }
+log = { version = "0.4.20", optional = true }
+
+[features]
+std = ["uom/std", "nmea?/std", "ublox?/std"]
+gpsd = ["std", "dep:gpsd_proto", "dep:chrono", "dep:log"]
+nmea = ["dep:nmea"]
+ubx = ["dep:ublox"]
+
+default = ["std", "gpsd"]
+
+[[example]]
+name = "gpsd"
