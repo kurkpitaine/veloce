@@ -62,7 +62,7 @@ impl GpsInfo {
         }) {
             // GST frame does not contain the relevant data.
             let (Some(epx), Some(epy)) = (self.fix.epx, self.fix.epy) else {
-                error!("No GST and no fix 'epx' or 'epy' - confidence unavailable");
+                error!("no GST and no fix 'epx' or 'epy' - confidence unavailable");
                 return;
             };
 
@@ -82,7 +82,7 @@ impl GpsInfo {
                 semi_major_orientation,
             });
         } else {
-            error!("No GST and fix too old - confidence unavailable");
+            error!("no GST and fix too old - confidence unavailable");
         }
     }
 }
@@ -132,11 +132,11 @@ impl TryInto<PotiFix> for GpsInfo {
                 });
             }
             Some(_) => {
-                error!("Latitude or longitude out of bounds");
+                error!("latitude or longitude out of bounds");
                 return Err(());
             }
             None => {
-                error!("No time or position in GpsInfo");
+                error!("no time or position in GpsInfo");
                 return Err(());
             }
         }

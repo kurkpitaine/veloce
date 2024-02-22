@@ -12,17 +12,27 @@ veloce = { path = "../veloce" }
 uom = { version = "0.35", default-features = false, features = [
    "autoconvert",
    "f32",
-   "si"
+   "si",
 ] }
+mio = { version = "0.8", features = ["os-poll", "net"], optional = true }
 gpsd_proto = { git = "https://github.com/c-to-the-l/gpsd_proto.git", branch = "support_gpsd_325", optional = true }
+serde_json = { version = "1.0", optional = true }
 nmea = { version = "0.6", default-features = false, optional = true }
 ublox = { version = "0.4", default-features = false, optional = true }
 chrono = { version = "0.4.34", optional = true }
 log = { version = "0.4.20", optional = true }
+libc = { version = "0.2", optional = true }
 
 [features]
-std = ["uom/std", "nmea?/std", "ublox?/std"]
-gpsd = ["std", "dep:gpsd_proto", "dep:chrono", "dep:log"]
+std = ["dep:mio", "uom/std", "nmea?/std", "ublox?/std"]
+gpsd = [
+   "std",
+   "dep:gpsd_proto",
+   "dep:libc",
+   "dep:serde_json",
+   "dep:chrono",
+   "dep:log",
+]
 nmea = ["dep:nmea"]
 ubx = ["dep:ublox"]
 
