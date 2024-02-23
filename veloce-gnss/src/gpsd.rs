@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use gpsd_proto::{Mode as GpsdMode, UnifiedResponse as GpsdResponse};
+use libc::timeval;
 use log::{debug, error, info, trace};
 use mio::event::Event;
 use mio::net::TcpStream;
@@ -83,7 +84,9 @@ impl Gpsd {
         self.position
     }
 
-    pub fn poll(&mut self, timestamp: Instant) -> Result<()> {
+    pub fn poll(&mut self) -> Result<()> {
+        let timestamp = Instant::now();
+
         // Move state into a local variable to be able to change it.
         let client_state = mem::replace(&mut self.state, ClientState::Idle);
 
@@ -123,11 +126,13 @@ impl Gpsd {
         Ok(())
     }
 
-    pub fn ready(&mut self, event: &Event, timestamp: Instant) {
+    pub fn ready(&mut self, event: &Event) {
         if event.token() != self.token {
             error!("event token does not match");
             return;
         }
+
+        let timestamp = Instant::now();
 
         if event.is_readable() {
             // Move state into a local variable to be able to change it.
@@ -176,7 +181,10 @@ impl Gpsd {
                     self.state = ClientState::Reading(stream);
                     res
                 }
-                _ => None,
+                state => {
+                    self.state = state;
+                    None
+                }
             };
 
             let Some(resp) = maybe_resp else {

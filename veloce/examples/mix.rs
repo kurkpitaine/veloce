@@ -1,4 +1,5 @@
 use log::trace;
+use veloce::common::PotiFix;
 use veloce::types::Pseudonym;
 use veloce_asn1::c_a_m__p_d_u__descriptions as cam;
 use veloce_asn1::e_t_s_i__i_t_s__c_d_d as cdd;
@@ -92,7 +93,8 @@ fn main() {
 
     loop {
         let timestamp = Instant::now();
-        router.now = timestamp;
+        router.set_timestamp(timestamp);
+
         trace!("poll");
         iface.poll(&mut router, &mut device, &mut sockets);
         let socket = sockets.get_mut::<socket::geonet::Socket>(gn_handle);
@@ -190,8 +192,10 @@ fn main() {
             next_gbc_transmit = timestamp + Duration::from_secs(7);
         }
 
-        router.ego_position_vector.latitude = Latitude::new::<degree>(48.276434);
-        router.ego_position_vector.longitude = Longitude::new::<degree>(-3.5519532);
+        let mut fix = PotiFix::default();
+        fix.position.latitude = Some(Latitude::new::<degree>(48.276434));
+        fix.position.longitude = Some(Longitude::new::<degree>(-3.5519532));
+        router.set_position(fix);
 
         let main_timeout = [
             next_shb_transmit,

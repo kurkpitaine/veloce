@@ -50,6 +50,8 @@ pub const GN_DEFAULT_MAX_COMMUNICATION_RANGE: f32 = 1000.0;
 pub const GN_BROADCAST_CBF_DEF_SECTOR_ANGLE: f32 = 30.0;
 /// Maximum Geographical area size in square kilometers.
 pub const GN_MAX_GEO_AREA_SIZE: f32 = 10.0;
+/// Distance related to the confidence interval for latitude and longitude [m].
+pub const GN_PAI_INTERVAL: f32 = 80.0;
 
 #[cfg(not(test))]
 mod cfg {

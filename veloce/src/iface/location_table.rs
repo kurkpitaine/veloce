@@ -44,7 +44,7 @@ pub(super) struct LocationTableEntry {
 
 impl LocationTableEntry {
     /// Returns the position for the given station.
-    pub fn position(&self) -> GeoPosition {
+    pub fn geo_position(&self) -> GeoPosition {
         GeoPosition {
             latitude: self.position_vector.latitude,
             longitude: self.position_vector.longitude,

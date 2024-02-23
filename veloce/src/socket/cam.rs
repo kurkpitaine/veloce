@@ -1,18 +1,20 @@
 #[cfg(feature = "async")]
 use core::task::Waker;
 
+use crate::common::PotiFix;
 use crate::iface::{Context, ContextMeta};
 use crate::network::{GnCore, Transport};
 
 use crate::socket::{self, btp::SocketB as BtpBSocket, PollAt};
-use crate::time::{Duration, Instant};
-use crate::types::{tenth_of_microdegree, Pseudonym};
+use crate::time::{Duration, Instant, TAI2004};
+use crate::types::Pseudonym;
 use crate::wire::{self, ports, GnTrafficClass};
 
 use crate::storage::PacketBuffer;
 use crate::wire::{EthernetAddress, GeonetRepr, StationType};
 
 use rasn::error::DecodeError;
+use rasn::types::SequenceOf;
 use veloce_asn1::c_a_m__p_d_u__descriptions as cam;
 use veloce_asn1::e_t_s_i__i_t_s__c_d_d as cdd;
 
@@ -66,6 +68,9 @@ pub struct Socket<'a> {
     retransmit_at: Instant,
     /// Delay of retransmission.
     retransmit_delay: Duration,
+    /// Last instant at which a CAM with a low dynamic container
+    /// was successfully transmitted to the lower layer.
+    prev_low_dynamic_at: Instant,
 }
 
 impl<'a> Socket<'a> {
@@ -85,6 +90,7 @@ impl<'a> Socket<'a> {
             inner,
             retransmit_at: Instant::ZERO,
             retransmit_delay: Duration::ZERO,
+            prev_low_dynamic_at: Instant::ZERO,
         }
     }
 
@@ -160,7 +166,8 @@ impl<'a> Socket<'a> {
     where
         F: FnOnce(&mut Context, &mut GnCore, (EthernetAddress, GeonetRepr, &[u8])) -> Result<(), E>,
     {
-        if self.retransmit_at > srv.core.now {
+        let now = srv.core.now;
+        if self.retransmit_at > now {
             return Ok(());
         }
 
@@ -177,11 +184,10 @@ impl<'a> Socket<'a> {
         let ego_station_type = srv.core.station_type();
 
         // Fill CAM.
-        let lat = srv.core.ego_position_vector.latitude;
-        let lon = srv.core.ego_position_vector.longitude;
         let cam = self.fill_cam(
-            cdd::Latitude(lat.get::<tenth_of_microdegree>() as i32),
-            cdd::Longitude(lon.get::<tenth_of_microdegree>() as i32),
+            now,
+            srv.core.station_type(),
+            srv.core.position(),
             srv.core.pseudonym(),
         );
 
@@ -211,7 +217,12 @@ impl<'a> Socket<'a> {
             return Ok(());
         };
 
-        self.inner.dispatch(cx, srv, emit)
+        self.inner.dispatch(cx, srv, emit).map(|res| {
+            if self.has_low_dynamic_container(&cam) {
+                self.prev_low_dynamic_at = now;
+            }
+            res
+        })
     }
 
     pub(crate) fn poll_at(&self, cx: &mut Context) -> PollAt {
@@ -219,46 +230,125 @@ impl<'a> Socket<'a> {
     }
 
     /// Fills a CAM message with basic content
-    fn fill_cam(&self, lat: cdd::Latitude, lon: cdd::Longitude, pseudo: Pseudonym) -> cam::CAM {
+    fn fill_cam(
+        &self,
+        timestamp: Instant,
+        station_type: StationType,
+        fix: PotiFix,
+        pseudo: Pseudonym,
+    ) -> cam::CAM {
         use cam::*;
         use cdd::*;
-        use rasn::types::SequenceOf;
+        use rasn::types::BitString;
+        use wire::geonet::StationType as VeloceStationType;
 
         let header = ItsPduHeader::new(OrdinalNumber1B(2), MessageId(2), StationId(pseudo.0));
 
-        let station_type = TrafficParticipantType(15);
-
-        let alt = cdd::Altitude::new(AltitudeValue(1000), AltitudeConfidence::unavailable);
+        let alt = cdd::Altitude::new(
+            fix.position.altitude_value(),
+            fix.confidence.altitude_confidence(),
+        );
 
         let pos_confidence = PositionConfidenceEllipse::new(
-            SemiAxisLength(4095),
-            SemiAxisLength(4095),
-            Wgs84AngleValue(3601),
+            fix.confidence.position.semi_major_axis_length(),
+            fix.confidence.position.semi_minor_axis_length(),
+            fix.confidence.position.semi_minor_orientation_angle(),
         );
-        let ref_pos =
-            ReferencePositionWithConfidence::new(lat.clone(), lon.clone(), pos_confidence, alt);
-        let basic_container = BasicContainer::new(station_type, ref_pos);
-
-        let prot_zone = ProtectedCommunicationZone::new(
-            ProtectedZoneType::permanentCenDsrcTolling,
-            None,
-            lat,
-            lon,
-            None,
-            Some(ProtectedZoneId(0xfe)),
+        let ref_pos = ReferencePositionWithConfidence::new(
+            fix.position.latitude_value(),
+            fix.position.longitude_value(),
+            pos_confidence,
+            alt,
         );
+        let basic_container = BasicContainer::new(station_type.into(), ref_pos);
 
-        let mut prot_zones = ProtectedCommunicationZonesRSU(SequenceOf::new());
-        prot_zones.0.push(prot_zone);
+        // High frequency container.
+        let hf_container = match station_type {
+            VeloceStationType::RoadSideUnit => HighFrequencyContainer::rsuContainerHighFrequency(
+                RSUContainerHighFrequency::new(None),
+            ),
+            _ => {
+                let vehicle_hf = BasicVehicleContainerHighFrequency {
+                    heading: Heading {
+                        heading_value: fix.motion.heading_value(),
+                        heading_confidence: fix.confidence.heading_confidence(),
+                    },
+                    speed: Speed {
+                        speed_value: fix.motion.speed_value(),
+                        speed_confidence: fix.confidence.speed_confidence(),
+                    },
+                    drive_direction: DriveDirection::unavailable,
+                    vehicle_length: VehicleLength {
+                        vehicle_length_value: VehicleLengthValue(1023),
+                        vehicle_length_confidence_indication:
+                            VehicleLengthConfidenceIndication::unavailable,
+                    },
+                    vehicle_width: VehicleWidth(62),
+                    longitudinal_acceleration: AccelerationComponent {
+                        value: AccelerationValue(161),
+                        confidence: AccelerationConfidence(102),
+                    },
+                    curvature: Curvature {
+                        curvature_value: CurvatureValue(1023),
+                        curvature_confidence: CurvatureConfidence::unavailable,
+                    },
+                    curvature_calculation_mode: CurvatureCalculationMode::unavailable,
+                    yaw_rate: YawRate {
+                        yaw_rate_value: YawRateValue(32767),
+                        yaw_rate_confidence: YawRateConfidence::unavailable,
+                    },
+                    acceleration_control: None,
+                    lane_position: None,
+                    steering_wheel_angle: None,
+                    lateral_acceleration: None,
+                    vertical_acceleration: None,
+                    performance_class: None,
+                    cen_dsrc_tolling_zone: None,
+                };
 
-        let hf_container = HighFrequencyContainer::rsuContainerHighFrequency(
-            RSUContainerHighFrequency::new(Some(prot_zones)),
+                HighFrequencyContainer::basicVehicleContainerHighFrequency(vehicle_hf)
+            }
+        };
+
+        // Low frequency container
+        let lf_container = match station_type {
+            VeloceStationType::RoadSideUnit => None,
+            _ if self.prev_low_dynamic_at - timestamp >= Duration::from_millis(500) => {
+                let ext_lights = BitString::from_slice(&[0u8]);
+                let mut path_history = SequenceOf::new();
+                path_history.push(PathPoint {
+                    path_position: DeltaReferencePosition {
+                        delta_latitude: DeltaLatitude(0),
+                        delta_longitude: DeltaLongitude(0),
+                        delta_altitude: DeltaAltitude(0),
+                    },
+                    path_delta_time: None,
+                });
+
+                let vehicle_lf = BasicVehicleContainerLowFrequency {
+                    vehicle_role: VehicleRole::default,
+                    exterior_lights: ExteriorLights(ext_lights),
+                    path_history: Path(path_history),
+                };
+
+                Some(LowFrequencyContainer::basicVehicleContainerLowFrequency(
+                    vehicle_lf,
+                ))
+            }
+            _ => None,
+        };
+
+        let cam_params = CamParameters::new(basic_container, hf_container, lf_container, None);
+        let gen_time = GenerationDeltaTime(
+            (TAI2004::from_unix_instant(timestamp).total_millis() & 0xffff) as u16,
         );
-
-        let cam_params = CamParameters::new(basic_container, hf_container, None, None);
-        let gen_time = GenerationDeltaTime(12345);
         let coop_awareness = CamPayload::new(gen_time, cam_params);
 
         cam::CAM::new(header, coop_awareness)
+    }
+
+    fn has_low_dynamic_container(&self, cam: &cam::CAM) -> bool {
+        cam.cam.cam_parameters.low_frequency_container.is_some()
+            || cam.cam.cam_parameters.special_vehicle_container.is_some()
     }
 }

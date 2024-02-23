@@ -892,7 +892,7 @@ impl InterfaceInner {
 
         /* Step 3: determine function F(x,y) */
         let dst_area = GeoArea::from_gbc(&ch_repr.header_type, &gbc_repr);
-        let inside = dst_area.inside_or_at_border(svcs.core.position());
+        let inside = dst_area.inside_or_at_border(svcs.core.geo_position());
 
         /* Step 3a-3b: duplicate packet detection */
         let dup_opt = self
@@ -1049,7 +1049,7 @@ impl InterfaceInner {
 
         /* Step 7: determine function F(x,y) */
         let dst_area = GeoArea::from_gac(&ch_repr.header_type, &gac_repr);
-        let inside = dst_area.inside_or_at_border(svcs.core.position());
+        let inside = dst_area.inside_or_at_border(svcs.core.geo_position());
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming GBC packet. */
@@ -1921,7 +1921,7 @@ impl InterfaceInner {
         link_layer: Option<EthernetRepr>,
     ) -> Option<EthernetAddress> {
         let area = packet.geo_area();
-        let f_ego = area.inside_or_at_border(svcs.core.position());
+        let f_ego = area.inside_or_at_border(svcs.core.geo_position());
 
         let ret = if f_ego {
             match GN_AREA_FORWARDING_ALGORITHM {
@@ -1939,7 +1939,7 @@ impl InterfaceInner {
             let inside = link_layer
                 .and_then(|ll| self.location_table.find(&ll.src_addr))
                 .is_some_and(|neigh| {
-                    neigh.position_vector.is_accurate && area.inside_or_at_border(neigh.position())
+                    neigh.position_vector.is_accurate && area.inside_or_at_border(neigh.geo_position())
                 });
 
             match (inside, GN_NON_AREA_FORWARDING_ALGORITHM) {
@@ -1970,12 +1970,12 @@ impl InterfaceInner {
         packet: &GeonetPacket,
     ) -> Option<EthernetAddress> {
         let dest = packet.geo_destination();
-        let dist_ego_dest = svcs.core.position().distance_to(&dest);
+        let dist_ego_dest = svcs.core.geo_position().distance_to(&dest);
         let mut mfr = dist_ego_dest;
 
         let mut next_hop = None;
         for neighbor in self.location_table.neighbour_list().into_iter() {
-            let dist = packet.geo_destination().distance_to(&neighbor.position());
+            let dist = packet.geo_destination().distance_to(&neighbor.geo_position());
             if mfr < dist {
                 next_hop = Some(neighbor.position_vector.address.mac_addr().into());
                 mfr = dist;
@@ -2038,8 +2038,8 @@ impl InterfaceInner {
         match (entry_opt, pai_ego) {
             (Some(entry), true) if entry.position_vector.is_accurate => {
                 let destination = packet.geo_destination();
-                let dist_p_se = destination.distance_to(&entry.position());
-                let dist_p_ego = destination.distance_to(&svcs.core.position());
+                let dist_p_se = destination.distance_to(&entry.geo_position());
+                let dist_p_ego = destination.distance_to(&svcs.core.geo_position());
                 let progress = dist_p_se - dist_p_ego;
 
                 if progress > Length::new::<meter>(0.0) {
@@ -2103,7 +2103,7 @@ impl InterfaceInner {
 
         let cbf_timer = match (entry_opt, pai_ego) {
             (Some(entry), true) if entry.position_vector.is_accurate => {
-                let dist_se_ego = entry.position().distance_to(&svcs.core.position());
+                let dist_se_ego = entry.geo_position().distance_to(&svcs.core.geo_position());
                 Self::cbf_timeout_equation(dist_se_ego)
             }
             _ => GN_CBF_MAX_TIME,
@@ -2149,9 +2149,15 @@ impl InterfaceInner {
                 let entry_fwdr_opt = self.location_table.find(&src_addr);
                 let inside = match (entry_sndr_opt, entry_fwdr_opt) {
                     (Some(entry_sndr), Some(entry_fwdr)) => {
-                        let dist_r = entry_sndr.position().distance_to(&svcs.core.position());
-                        let dist_f = entry_fwdr.position().distance_to(&svcs.core.position());
-                        let dist_rf = entry_sndr.position().distance_to(&entry_fwdr.position());
+                        let dist_r = entry_sndr
+                            .geo_position()
+                            .distance_to(&svcs.core.geo_position());
+                        let dist_f = entry_fwdr
+                            .geo_position()
+                            .distance_to(&svcs.core.geo_position());
+                        let dist_rf = entry_sndr
+                            .geo_position()
+                            .distance_to(&entry_fwdr.geo_position());
                         let mut angle_fsr = Angle::new::<radian>(0.0);
                         if dist_r > Length::new::<meter>(0.0) && dist_f > Length::new::<meter>(0.0)
                         {
@@ -2173,7 +2179,8 @@ impl InterfaceInner {
 
                     let cbf_timer = match (entry_fwdr_opt, pai_ego) {
                         (Some(entry), true) if entry.position_vector.is_accurate => {
-                            let dist_se_ego = entry.position().distance_to(&svcs.core.position());
+                            let dist_se_ego =
+                                entry.geo_position().distance_to(&svcs.core.geo_position());
                             Self::cbf_timeout_equation(dist_se_ego)
                         }
                         _ => GN_CBF_MAX_TIME,
@@ -2213,7 +2220,8 @@ impl InterfaceInner {
 
                 let cbf_timer = match (entry_opt, pai_ego) {
                     (Some(entry), true) if entry.position_vector.is_accurate => {
-                        let dist_se_ego = entry.position().distance_to(&svcs.core.position());
+                        let dist_se_ego =
+                            entry.geo_position().distance_to(&svcs.core.geo_position());
                         Self::cbf_timeout_equation(dist_se_ego)
                     }
                     _ => GN_CBF_MAX_TIME,

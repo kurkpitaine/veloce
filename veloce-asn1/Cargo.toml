@@ -1,7 +1,7 @@
 [package]
 name = "veloce-asn1"
 version = "0.1.0"
-authors = ["Thibaud Rouillé <thibaud.rouille@gmail.com>"]
+authors = ["Thibaud Rouillé <veloce@ferroxyde.com>"]
 edition = "2021"
 description = "Veloce ASN1 formats"
 

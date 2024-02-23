@@ -53,7 +53,7 @@ fn main() {
     loop {
         // Update timestamp.
         let timestamp = Instant::now();
-        router.now = timestamp;
+        router.set_timestamp(timestamp);
 
         trace!("iface poll");
         iface.poll(&mut router, &mut device, &mut sockets);

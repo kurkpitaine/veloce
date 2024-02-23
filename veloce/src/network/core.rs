@@ -1,8 +1,12 @@
+use uom::si::length::meter;
+use uom::si::velocity::meter_per_second;
+
 /// This module implements the GN Core functions, ie:
 /// - Geonetworking Address
 /// - Maintenance of the Ego Position Vector
 use crate::common::geo_area::GeoPosition;
-use crate::config::GnAddrConfMethod;
+use crate::common::{Poti, PotiFix};
+use crate::config::{self, GnAddrConfMethod};
 use crate::rand::Rand;
 use crate::time::{Instant, TAI2004};
 use crate::types::{degree, kilometer_per_hour, Heading, Latitude, Longitude, Pseudonym, Speed};
@@ -57,13 +61,15 @@ impl Config {
 #[derive(Debug)]
 pub struct Core {
     /// Now timestamp.
-    pub now: Instant,
+    pub(crate) now: Instant,
     /// Random number generator.
-    pub rand: Rand,
+    pub(crate) rand: Rand,
     /// Ego Position Vector which includes the local Geonetworking address.
-    pub ego_position_vector: LongPositionVector,
+    pub(crate) ego_position_vector: LongPositionVector,
     /// Pseudonym aka. StationId of the Geonetworking router.
-    pub pseudonym: Pseudonym,
+    pub(crate) pseudonym: Pseudonym,
+    /// Poti for position and timing.
+    pub(crate) poti: Poti,
 }
 
 impl Core {
@@ -84,6 +90,7 @@ impl Core {
             rand,
             ego_position_vector,
             pseudonym: config.pseudonym,
+            poti: Poti::new(),
         }
     }
 
@@ -94,7 +101,7 @@ impl Core {
 
     /// Returns the position carried inside the Ego Position Vector
     /// as a [`GeoPosition`].
-    pub fn position(&self) -> GeoPosition {
+    pub fn geo_position(&self) -> GeoPosition {
         GeoPosition {
             latitude: self.ego_position_vector.latitude,
             longitude: self.ego_position_vector.longitude,
@@ -149,6 +156,54 @@ impl Core {
     pub fn set_pseudonym(&mut self, pseudo: Pseudonym) {
         self.pseudonym = pseudo
     }
+
+    /// Returns the timestamp of the local ITS Station.
+    pub fn timestamp(&self) -> Instant {
+        self.now
+    }
+
+    /// Set the timestamp of the local ITS Station.
+    pub fn set_timestamp(&mut self, now: Instant) {
+        self.now = now;
+    }
+
+    /// Returns the position of the local ITS Station.
+    pub fn position(&self) -> PotiFix {
+        self.poti.fix
+    }
+
+    /// Set the position of the local ITS Station.
+    pub fn set_position(&mut self, fix: PotiFix) {
+        self.poti.fix = fix;
+        self.ego_position_vector.timestamp = TAI2004::now().into();
+        self.ego_position_vector.latitude = fix
+            .position
+            .latitude
+            .map_or(Latitude::new::<degree>(0.0), |lat| lat);
+        self.ego_position_vector.longitude = fix
+            .position
+            .longitude
+            .map_or(Longitude::new::<degree>(0.0), |lon| lon);
+        self.ego_position_vector.heading = fix
+            .motion
+            .heading
+            .map_or(Heading::new::<degree>(0.0), |hdg| hdg);
+
+        self.ego_position_vector.speed = fix
+            .motion
+            .speed
+            .map_or(Speed::new::<meter_per_second>(0.0), |spd| spd);
+
+        if let Some(major_confidence) = fix.confidence.position.semi_major {
+            if major_confidence.get::<meter>() < (config::GN_PAI_INTERVAL / 2.0) {
+                self.ego_position_vector.is_accurate = true;
+            } else {
+                self.ego_position_vector.is_accurate = false;
+            }
+        } else {
+            self.ego_position_vector.is_accurate = false;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -176,6 +231,7 @@ mod test {
             now: Instant::from_secs(10),
             rand: Rand::new(0xfadecafe),
             pseudonym: Pseudonym(123456789),
+            poti: Poti::new(),
         };
 
         let eth_addr = EthernetAddress::new(0, 1, 2, 3, 4, 5);
@@ -199,6 +255,7 @@ mod test {
             now: Instant::from_secs(10),
             rand: Rand::new(0xcafefade),
             pseudonym: Pseudonym(123456789),
+            poti: Poti::new(),
         };
 
         core.duplicate_address_detection(

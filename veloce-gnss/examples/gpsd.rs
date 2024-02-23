@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use mio::{Events, Poll, Token};
 use veloce::utils;
@@ -23,15 +23,14 @@ pub fn main() {
 
     // Start an event loop.
     loop {
-        let timestamp = Instant::now();
         // Poll Gpsd to make it processing some work.
-        gpsd.poll(timestamp).unwrap();
+        gpsd.poll().unwrap();
 
         // Process each event.
         for event in events.iter() {
             match event.token() {
                 CLIENT => {
-                    gpsd.ready(event, timestamp);
+                    gpsd.ready(event);
                 }
                 // We don't expect any events with tokens other than those we provided.
                 _ => unreachable!(),

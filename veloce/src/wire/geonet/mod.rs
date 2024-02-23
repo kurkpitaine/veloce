@@ -175,6 +175,30 @@ impl From<TrafficParticipantType> for StationType {
     }
 }
 
+#[cfg(feature = "asn1")]
+impl Into<TrafficParticipantType> for StationType {
+    fn into(self) -> TrafficParticipantType {
+        match self {
+            StationType::Pedestrian => TrafficParticipantType(1),
+            StationType::Cyclist => TrafficParticipantType(2),
+            StationType::Moped => TrafficParticipantType(3),
+            StationType::Motorcycle => TrafficParticipantType(4),
+            StationType::PassengerCar => TrafficParticipantType(5),
+            StationType::Bus => TrafficParticipantType(6),
+            StationType::LightTruck => TrafficParticipantType(7),
+            StationType::HeavyTruck => TrafficParticipantType(8),
+            StationType::Trailer => TrafficParticipantType(9),
+            StationType::SpecialVehicle => TrafficParticipantType(10),
+            StationType::Tram => TrafficParticipantType(11),
+            StationType::LightVruVehicle => TrafficParticipantType(12),
+            StationType::Animal => TrafficParticipantType(13),
+            StationType::Agricultural => TrafficParticipantType(14),
+            StationType::RoadSideUnit => TrafficParticipantType(15),
+            StationType::Unknown(u) => TrafficParticipantType(u as u8),
+        }
+    }
+}
+
 /// An eight-octet Geonetworking address.
 #[derive(Default, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct Address(pub [u8; 8]);

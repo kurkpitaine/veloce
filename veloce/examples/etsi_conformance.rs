@@ -73,7 +73,7 @@ fn main() {
     loop {
         // Update timestamp.
         let timestamp = Instant::now();
-        router.now = timestamp;
+        router.set_timestamp(timestamp);
 
         match udp_socket.recv_from(&mut udp_buffer) {
             Ok((size, source)) => {

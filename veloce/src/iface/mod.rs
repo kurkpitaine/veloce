@@ -10,7 +10,6 @@ mod interface;
 mod location_service;
 #[cfg(feature = "proto-geonet")]
 mod location_table;
-mod poti;
 mod socket_set;
 
 mod v2x_packet;
@@ -18,9 +17,6 @@ mod v2x_packet;
 pub use self::interface::{
     Config, Interface, InterfaceInner as Context, InterfaceServices as ContextMeta,
 };
-pub use self::poti::{
-    Confidence as PotiConfidence, Fix as PotiFix, Mode as PotiMode, Motion as PotiMotion,
-    Position as PotiPosition, PositionConfidence as PotiPositionConfidence, Poti,
-};
+
 pub use self::socket_set::{SocketHandle, SocketSet, SocketStorage};
 pub(crate) use self::v2x_packet::{GeonetPacket, GeonetPayload};

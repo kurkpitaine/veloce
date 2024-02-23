@@ -1,0 +1,15 @@
+[package]
+name = "veloce-obu-demo"
+version = "0.1.0"
+authors = ["Thibaud Rouillé <veloce@ferroxyde.com>"]
+edition = "2021"
+description = "Veloce OBU demo"
+
+[dependencies]
+veloce = { path = "../../veloce" }
+veloce-gnss = { path = "../../veloce-gnss" }
+mio = { version = "0.8", features = ["os-ext", "os-poll", "net"] }
+clap = { version = "4.5", features = ["derive"] }
+log = "0.4"
+
+[workspace]

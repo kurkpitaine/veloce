@@ -9,7 +9,7 @@ use uom::si::{
 };
 
 use veloce::{
-    iface::{PotiConfidence, PotiFix, PotiMode, PotiMotion, PotiPosition, PotiPositionConfidence},
+    common::{PotiConfidence, PotiFix, PotiMode, PotiMotion, PotiPosition, PotiPositionConfidence},
     time::{Instant, TAI2004},
     types::{LatitudeTrait, LongitudeTrait},
 };
@@ -114,8 +114,8 @@ impl TryInto<PotiFix> for GpsInfo {
                         time.timestamp_micros(),
                     )),
                     position: PotiPosition {
-                        latitude: lat,
-                        longitude: lon,
+                        latitude: Some(lat),
+                        longitude: Some(lon),
                         altitude: self.fix.altitude,
                     },
                     motion: PotiMotion {

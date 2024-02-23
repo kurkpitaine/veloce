@@ -75,7 +75,7 @@ impl TAI2004 {
     /// Create a new `TAI2004` from an unix `Instant`
     pub fn from_unix_instant(unix: Instant) -> TAI2004 {
         let adjusted = unix - Self::DIFF_1970_2004 + Self::leap_seconds_since_2004();
-        Self::from_micros(adjusted.micros())
+        Self::from_micros(adjusted.total_micros())
     }
 
     /// Create a new `TAI2004` from the current [std::time::SystemTime].
