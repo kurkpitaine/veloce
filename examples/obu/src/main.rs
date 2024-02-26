@@ -77,7 +77,6 @@ fn main() {
 
         // Process each event.
         for event in events.iter() {
-            trace!("event: {:?}", event);
             match event.token() {
                 GPSD_TOKEN => {
                     gpsd.ready(event);

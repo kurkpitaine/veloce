@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use gpsd_proto::{Mode as GpsdMode, UnifiedResponse as GpsdResponse};
-use libc::timeval;
 use log::{debug, error, info, trace};
 use mio::event::Event;
 use mio::net::TcpStream;

@@ -182,15 +182,30 @@ impl<'a> Socket<'a> {
         }
 
         let ego_station_type = srv.core.station_type();
+        let ego_position = srv.core.position();
+        let now_tai2004 = TAI2004::from_unix_instant(srv.core.now);
+        let diff_now_pos = now_tai2004 - ego_position.timestamp;
+
+        if diff_now_pos >= Duration::from_millis(32767) {
+            net_debug!(
+                "CAM cannot be sent: now={} - fix time={} = {} >= 32767ms",
+                now_tai2004.total_millis(),
+                ego_position.timestamp.total_millis(),
+                diff_now_pos.total_millis()
+            );
+            return Ok(());
+        }
 
         // Fill CAM.
         let cam = self.fill_cam(
-            now,
-            srv.core.station_type(),
-            srv.core.position(),
+            now_tai2004,
+            ego_station_type,
+            ego_position,
             srv.core.pseudonym(),
         );
 
+        // TODO: Make retransmit delay dynamic for non-rsu station types.
+        // ie: check position, speed and heading vs values in prev cam.
         if ego_station_type == StationType::RoadSideUnit {
             self.retransmit_delay = CAM_RSU_RETRANSMIT_DELAY;
         } else {
@@ -232,7 +247,7 @@ impl<'a> Socket<'a> {
     /// Fills a CAM message with basic content
     fn fill_cam(
         &self,
-        timestamp: Instant,
+        timestamp: TAI2004,
         station_type: StationType,
         fix: PotiFix,
         pseudo: Pseudonym,
@@ -313,7 +328,9 @@ impl<'a> Socket<'a> {
         // Low frequency container
         let lf_container = match station_type {
             VeloceStationType::RoadSideUnit => None,
-            _ if self.prev_low_dynamic_at - timestamp >= Duration::from_millis(500) => {
+            _ if TAI2004::from_unix_instant(self.prev_low_dynamic_at) - timestamp
+                >= Duration::from_millis(500) =>
+            {
                 let ext_lights = BitString::from_slice(&[0u8]);
                 let mut path_history = SequenceOf::new();
                 path_history.push(PathPoint {
@@ -339,9 +356,13 @@ impl<'a> Socket<'a> {
         };
 
         let cam_params = CamParameters::new(basic_container, hf_container, lf_container, None);
-        let gen_time = GenerationDeltaTime(
-            (TAI2004::from_unix_instant(timestamp).total_millis() & 0xffff) as u16,
-        );
+
+        let gen_time = if let VeloceStationType::RoadSideUnit = station_type {
+            GenerationDeltaTime((timestamp.total_millis() & 0xffff) as u16)
+        } else {
+            GenerationDeltaTime((fix.timestamp.total_millis() & 0xffff) as u16)
+        };
+
         let coop_awareness = CamPayload::new(gen_time, cam_params);
 
         cam::CAM::new(header, coop_awareness)
