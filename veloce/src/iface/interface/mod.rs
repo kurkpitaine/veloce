@@ -10,9 +10,10 @@ mod geonet;
 #[cfg(feature = "medium-ieee80211p")]
 mod ieee80211p;
 
+use super::dcc::LimericTrc;
 use super::location_service::LocationService;
 use super::location_table::LocationTable;
-use super::v2x_packet::*;
+use super::{v2x_packet::*, Dcc};
 
 use super::socket_set::SocketSet;
 
@@ -27,6 +28,7 @@ use crate::config::{
     GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT as UC_BUF_ENTRY_NUM,
     GN_UC_FORWARDING_PACKET_BUFFER_SIZE as UC_BUF_SIZE,
 };
+use crate::iface::dcc::DccSuccess;
 use crate::network::GnCore;
 use crate::network::Indication;
 use crate::phy::PacketMeta;
@@ -123,6 +125,9 @@ pub struct InterfaceInner {
     /// Sequence Number of the Access Handler.
     #[cfg(feature = "proto-geonet")]
     sequence_number: SequenceNumber,
+    /// Transmit rate control (aka DCC)
+    #[cfg(feature = "proto-dcc")]
+    trc: Option<Dcc<LimericTrc>>,
 }
 
 /// Configuration structure used for creating a network interface.
@@ -203,6 +208,7 @@ impl Interface {
                 retransmit_beacon_at: Instant::from_millis(0),
                 location_table: LocationTable::new(),
                 sequence_number: SequenceNumber(0),
+                trc: Some(Dcc::new(LimericTrc::new(Default::default()))),
             },
         }
     }
@@ -1031,9 +1037,25 @@ impl InterfaceInner {
         mut tx_token: Tx,
         core: &mut GnCore,
         meta: PacketMeta,
-        dst_hardware_addr: EthernetAddress,
+        dst_hw_addr: EthernetAddress,
         packet: GeonetPacket,
     ) -> Result<(), DispatchError> {
+        #[cfg(feature = "proto-dcc")]
+        {
+            if let Some(trc) = &mut self.trc {
+                match trc.dispatch(&packet, dst_hw_addr, core.timestamp()) {
+                    Ok(DccSuccess::ImmediateTx) => {}
+                    Ok(DccSuccess::Enqueued) => {
+                        return Ok(());
+                    }
+                    Err(_) => {
+                        net_trace!("Error in DCC transmit rate control");
+                        return Err(DispatchError::RateControl);
+                    }
+                }
+            }
+        }
+
         let gn_repr = packet.geonet_repr();
 
         let caps = self.caps.clone();
@@ -1054,7 +1076,7 @@ impl InterfaceInner {
 
             let src_addr = self.hardware_addr.ethernet_or_panic();
             frame.set_src_addr(src_addr);
-            frame.set_dst_addr(dst_hardware_addr);
+            frame.set_dst_addr(dst_hw_addr);
             frame.set_ethertype(EthernetProtocol::Geonet);
         };
 
@@ -1081,7 +1103,7 @@ impl InterfaceInner {
             let ieee80211_repr = Ieee80211Repr {
                 frame_control: frame_ctrl,
                 duration_or_id: Default::default(),
-                dst_addr: dst_hardware_addr,
+                dst_addr: dst_hw_addr,
                 src_addr: src_addr,
                 bss_id: EthernetAddress::BROADCAST,
                 sequence_control: Default::default(),
@@ -1152,11 +1174,7 @@ impl InterfaceInner {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[allow(unused)]
 enum DispatchError {
-    /// No route to dispatch this packet. Retrying won't help unless
-    /// configuration is changed.
-    NoRoute,
-    /// We do have a route to dispatch this packet, but we haven't discovered
-    /// the neighbor for it yet. Discovery has been initiated, dispatch
-    /// should be retried later.
-    NeighborPending,
+    /// Rate control returned an error on dispatch.
+    #[cfg(feature = "proto-dcc")]
+    RateControl,
 }

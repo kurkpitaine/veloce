@@ -19,7 +19,7 @@ mod field {
 
     // 24-octet Source Position Vector of the Geonetworking Single Hop Broadcast Header.
     pub const SO_PV: Field = 0..24;
-    // 2-octet Reserved field of the Geonetworking Single Hop Broadcast Header.
+    // 4-octet Reserved field of the Geonetworking Single Hop Broadcast Header.
     pub const RESERVED: Field = 24..28;
 }
 
@@ -67,6 +67,13 @@ impl<T: AsRef<[u8]>> Header<T> {
         let spv_buf = LPVBuf::new_unchecked(&data[field::SO_PV]);
         LongPositionVector::parse(&spv_buf)
     }
+
+    /// Return the reserved field as [`DccMco`].
+    #[inline]
+    pub fn dcc_mco(&self) -> DccMco {
+        let data = self.buffer.as_ref();
+        DccMco::from_bytes(&data[field::RESERVED])
+    }
 }
 
 impl<'a, T: AsRef<[u8]> + ?Sized> Header<&'a T> {
@@ -92,6 +99,13 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     pub fn clear_reserved(&mut self) {
         let data = self.buffer.as_mut();
         NetworkEndian::write_u32(&mut data[field::RESERVED], 0);
+    }
+
+    /// Set the reserved field as [`DccMco`].
+    #[inline]
+    pub fn set_dcc_mco(&mut self, value: DccMco) {
+        let data = self.buffer.as_mut();
+        data.copy_from_slice(value.as_bytes());
     }
 }
 
@@ -147,6 +161,82 @@ impl fmt::Display for Repr {
             f,
             "Single Hop Broadcast Header so_pv={}",
             self.source_position_vector
+        )
+    }
+}
+
+/// An four-octet DCC-MCO extension field.
+#[derive(Default, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub struct DccMco(pub [u8; 4]);
+
+impl DccMco {
+    /// Constructs a DCC MCO field.
+    pub fn new(cbr_l0_hop: f32, cbr_l1_hop: f32, tx_power: u8) -> DccMco {
+        let cbr_l0_hop = (cbr_l0_hop * 255.0).floor() as u8;
+        let cbr_l1_hop = (cbr_l1_hop * 255.0).floor() as u8;
+        let tx_power = tx_power.clamp(0, 31) & 0x1f;
+
+        DccMco([cbr_l0_hop, cbr_l1_hop, tx_power, 0])
+    }
+
+    /// Constructs a DCC MCO field from a sequence of octets, in big-endian.
+    ///
+    /// # Panics
+    /// The function panics if `data` is not 4 octets long.
+    pub fn from_bytes(data: &[u8]) -> DccMco {
+        let mut bytes = [0; 4];
+        bytes.copy_from_slice(data);
+        DccMco(bytes)
+    }
+
+    /// Return a DCC MCO field as a sequence of octets, in big-endian.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Returns the `cbr_l0_hop` field.
+    pub fn cbr_l0_hop(&self) -> f32 {
+        f32::from(self.0[0]) / 255.0
+    }
+
+    /// Returns the `cbr_l1_hop` field.
+    pub fn cbr_l1_hop(&self) -> f32 {
+        f32::from(self.0[1]) / 255.0
+    }
+
+    /// Returns the `tx_power` field, in dBm units.
+    pub fn tx_power(&self) -> u8 {
+        self.0[2]
+    }
+
+    /// Sets the `cbr_l0_hop` field.
+    pub fn set_cbr_l0_hop(&mut self, value: f32) {
+        let value = (value * 255.0).floor() as u8;
+        self.0[0] = value;
+    }
+
+    /// Sets the `cbr_l1_hop` field.
+    pub fn set_cbr_l1_hop(&mut self, value: f32) {
+        let value = (value * 255.0).floor() as u8;
+        self.0[1] = value;
+    }
+
+    /// Sets the `tx_power` field, in dBm units.
+    pub fn set_tx_power(&mut self, value: u8) {
+        let value = value.clamp(0, 31);
+        let raw = self.0[2] & !0x1f;
+        self.0[2] = raw | (value & 0x1f);
+    }
+}
+
+impl fmt::Display for DccMco {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "DccMco  cbr_l0_hop={:.2} cbr_l1_hop={:.2} tx_power={} dBm EIRP",
+            self.cbr_l0_hop(),
+            self.cbr_l1_hop(),
+            self.tx_power()
         )
     }
 }

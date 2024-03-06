@@ -330,6 +330,16 @@ impl fmt::Display for SequenceControl {
     }
 }
 
+enum_with_unknown! {
+    /// Traffic class access category types.
+    pub enum AccessCategory(u8) {
+        Background = 1,
+        BestEffort = 3,
+        Video = 5,
+        Voice = 7,
+    }
+}
+
 /// A two-octet Ieee 802.11 QoS Control.
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default)]
 pub struct QoSControl(pub [u8; 2]);
@@ -383,6 +393,21 @@ impl QoSControl {
     pub fn set_tc_id(&mut self, tc_id: u8) {
         let raw = self.0[0] & !0x0f;
         let raw = raw | (tc_id & 0x0f);
+        self.0[0] = raw;
+    }
+
+    /// Return the QoS access category, aka
+    /// `traffic class ID` field.
+    pub fn access_category(&self) -> AccessCategory {
+        let raw = self.0[0] & 0x07;
+        AccessCategory::from(raw)
+    }
+
+    /// Return the QoS access category, aka
+    /// `traffic class ID` field.
+    pub fn set_access_category(&mut self, value: AccessCategory) {
+        let raw = self.0[0] & !0x07;
+        let raw = raw | (u8::from(value) & 0x07);
         self.0[0] = raw;
     }
 

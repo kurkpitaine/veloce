@@ -318,3 +318,17 @@ pub fn compare_position_vector_freshness(
     (tst_left > tst_right) && ((tst_left - tst_right) <= half_tst_max)
         || ((tst_right > tst_left) && ((tst_right - tst_left) > half_tst_max))
 }
+
+/// Decentralized Congestion Control for G5 (802.11p) Medium.
+pub struct DccG5Extension {
+    /// Local timestamp of the last update of the corresponding
+    /// location table entry.
+    pub local_update_tst: Instant,
+    /// Station source position vector timestamp of last received
+    /// SHB packet.
+    pub station_update_tst: Instant,
+    /// Local CBR.
+    pub local_cbr: u8,
+    /// Maximum CBR measurement from 1-hop reachable neighbors.
+    pub one_hop_cbr: u8,
+}

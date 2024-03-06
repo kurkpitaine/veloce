@@ -445,8 +445,10 @@ impl<'p> GeonetPacket<'p> {
             GeonetPayload::Any(pl) => {
                 payload.copy_from_slice(pl);
             }
-            #[cfg(feature = "socket-btp-b")]
-            GeonetPayload::BtpA(_) => {}
+            #[cfg(feature = "socket-btp-a")]
+            GeonetPayload::BtpA(pl) => {
+                payload.copy_from_slice(pl);
+            }
             #[cfg(feature = "socket-btp-b")]
             GeonetPayload::BtpB(pl) => {
                 payload.copy_from_slice(pl);

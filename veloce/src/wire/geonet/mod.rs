@@ -325,6 +325,18 @@ impl TrafficClass {
     pub const fn id(&self) -> u8 {
         self.0 & 0x3F
     }
+
+    /// Return the access category of this traffic class.
+    /// In other words, it returns the _traffic class id_
+    /// as the corresponding _access category_.
+    pub const fn access_category(&self) -> AccessCategory {
+        match self.id() {
+            0 => AccessCategory::Voice,
+            1 => AccessCategory::Video,
+            2 => AccessCategory::BestEffort,
+            _ => AccessCategory::Background,
+        }
+    }
 }
 
 impl fmt::Display for TrafficClass {
@@ -335,6 +347,23 @@ impl fmt::Display for TrafficClass {
             self.store_carry_forward(),
             self.id()
         )
+    }
+}
+
+#[cfg(feature = "proto-dcc")]
+use crate::iface::DccProfile;
+
+use super::ieee80211::AccessCategory;
+
+#[cfg(feature = "proto-dcc")]
+impl Into<DccProfile> for TrafficClass {
+    fn into(self) -> DccProfile {
+        match self.id() {
+            0 => DccProfile::DP0,
+            1 => DccProfile::DP1,
+            2 => DccProfile::DP2,
+            _ => DccProfile::DP3,
+        }
     }
 }
 

@@ -76,6 +76,11 @@ where
         }
     }
 
+    /// Self explaining.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0 && self.storage.is_empty()
+    }
+
     /// Returns the maximum number of bytes the buffer can hold.
     pub const fn capacity(&self) -> usize {
         self.capacity
