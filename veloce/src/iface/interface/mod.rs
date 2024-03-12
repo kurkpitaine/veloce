@@ -3,6 +3,8 @@ mod tests;
 
 #[cfg(feature = "proto-btp")]
 mod btp;
+#[cfg(feature = "proto-geonet")]
+mod dcc;
 #[cfg(feature = "medium-ethernet")]
 mod ethernet;
 #[cfg(feature = "proto-geonet")]
@@ -10,7 +12,8 @@ mod geonet;
 #[cfg(feature = "medium-ieee80211p")]
 mod ieee80211p;
 
-use super::dcc::LimericTrc;
+use super::dcc::DccSuccess;
+
 use super::location_service::LocationService;
 use super::location_table::LocationTable;
 use super::{v2x_packet::*, Dcc};
@@ -28,7 +31,6 @@ use crate::config::{
     GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT as UC_BUF_ENTRY_NUM,
     GN_UC_FORWARDING_PACKET_BUFFER_SIZE as UC_BUF_SIZE,
 };
-use crate::iface::dcc::DccSuccess;
 use crate::network::GnCore;
 use crate::network::Indication;
 use crate::phy::PacketMeta;
@@ -101,6 +103,9 @@ pub struct Interface {
     /// Contention Based forwarding packet buffer.
     #[cfg(feature = "proto-geonet")]
     pub(crate) cb_forwarding_buffer: CbfBuffer,
+    /// Transmit rate control (aka DCC)
+    #[cfg(feature = "proto-geonet")]
+    trc: Option<Dcc>,
 }
 
 /// The device independent part of an access interface.
@@ -125,18 +130,12 @@ pub struct InterfaceInner {
     /// Sequence Number of the Access Handler.
     #[cfg(feature = "proto-geonet")]
     sequence_number: SequenceNumber,
-    /// Transmit rate control (aka DCC)
-    #[cfg(feature = "proto-dcc")]
-    trc: Option<Dcc<LimericTrc>>,
 }
 
 /// Configuration structure used for creating a network interface.
 #[non_exhaustive]
 pub struct Config {
     /// Random seed.
-    ///
-    /// It is strongly recommended that the random seed is different on each boot,
-    /// to avoid problems with TCP port/sequence collisions.
     ///
     /// The seed doesn't have to be cryptographically secure.
     pub random_seed: u64,
@@ -146,13 +145,17 @@ pub struct Config {
     /// # Panics
     /// Creating the interface panics if the address is not unicast.
     pub hardware_addr: HardwareAddress,
+
+    /// Transmit rate control.
+    pub trc: Option<Dcc>,
 }
 
 impl Config {
-    pub fn new(hardware_addr: HardwareAddress) -> Self {
+    pub fn new(hardware_addr: HardwareAddress, trc: Option<Dcc>) -> Self {
         Config {
             random_seed: 0,
             hardware_addr,
+            trc,
         }
     }
 }
@@ -202,13 +205,13 @@ impl Interface {
             uc_forwarding_buffer: PacketBuffer::new(),
             bc_forwarding_buffer: PacketBuffer::new(),
             cb_forwarding_buffer: ContentionBuffer::new(),
+            trc: config.trc,
             inner: InterfaceInner {
                 caps,
                 hardware_addr: config.hardware_addr,
                 retransmit_beacon_at: Instant::from_millis(0),
                 location_table: LocationTable::new(),
                 sequence_number: SequenceNumber(0),
-                trc: Some(Dcc::new(LimericTrc::new(Default::default()))),
             },
         }
     }
@@ -235,6 +238,13 @@ impl Interface {
     where
         D: Device + ?Sized,
     {
+        #[cfg(feature = "proto-geonet")]
+        {
+            if self.trc_egress(core, device) {
+                return true;
+            }
+        }
+
         let mut readiness_may_have_changed = false;
 
         loop {
@@ -284,6 +294,9 @@ impl Interface {
     pub fn poll_at(&mut self, sockets: &SocketSet<'_>) -> Option<Instant> {
         let inner = &mut self.inner;
 
+        #[cfg(feature = "proto-dcc")]
+        let trc_timeout = self.trc.as_ref().map(|trc| trc.poll_at());
+
         let beacon_timeout = Some(inner.retransmit_beacon_at);
         let ls_timeout = self.location_service.poll_at();
         let cbf_timeout = self.cb_forwarding_buffer.poll_at();
@@ -300,7 +313,18 @@ impl Interface {
             })
             .min();
 
+        #[cfg(feature = "proto-dcc")]
+        let values = [
+            trc_timeout,
+            beacon_timeout,
+            ls_timeout,
+            cbf_timeout,
+            sockets_timeout,
+        ];
+
+        #[cfg(not(feature = "proto-dcc"))]
         let values = [beacon_timeout, ls_timeout, cbf_timeout, sockets_timeout];
+
         values.into_iter().flatten().min()
     }
 
@@ -349,9 +373,13 @@ impl Interface {
                         if let Some((svcs, dst_addr, packet)) =
                             self.inner.process_ethernet(srv, sockets, rx_meta, frame)
                         {
-                            if let Err(err) =
-                                self.inner.dispatch(tx_token, svcs.core, dst_addr, packet)
-                            {
+                            if let Err(err) = self.inner.dispatch(
+                                tx_token,
+                                svcs.core,
+                                dst_addr,
+                                packet,
+                                &mut self.trc,
+                            ) {
                                 net_debug!("Failed to send response: {:?}", err);
                             }
                         }
@@ -361,9 +389,13 @@ impl Interface {
                         if let Some((svcs, dst_addr, packet)) =
                             self.inner.process_ieee80211p(srv, sockets, rx_meta, frame)
                         {
-                            if let Err(err) =
-                                self.inner.dispatch(tx_token, svcs.core, dst_addr, packet)
-                            {
+                            if let Err(err) = self.inner.dispatch(
+                                tx_token,
+                                svcs.core,
+                                dst_addr,
+                                packet,
+                                &mut self.trc,
+                            ) {
                                 net_debug!("Failed to send response: {:?}", err);
                             }
                         }
@@ -407,7 +439,7 @@ impl Interface {
                 })?;
 
                 inner
-                    .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                    .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
                     .map_err(EgressError::Dispatch)?;
 
                 emitted_any = true;
@@ -517,7 +549,7 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -581,7 +613,7 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -645,7 +677,7 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -724,7 +756,7 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -803,7 +835,7 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -900,7 +932,7 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(t, core, meta, dst_ll_addr, response)
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -1017,6 +1049,7 @@ impl InterfaceInner {
         core: &mut GnCore,
         dst_hardware_addr: EthernetAddress,
         packet: EthernetPacket,
+        trc: &mut Option<Dcc>,
     ) -> Result<(), DispatchError>
     where
         Tx: TxToken,
@@ -1028,6 +1061,7 @@ impl InterfaceInner {
                 PacketMeta::default(),
                 dst_hardware_addr,
                 packet,
+                trc,
             ),
         }
     }
@@ -1039,25 +1073,22 @@ impl InterfaceInner {
         meta: PacketMeta,
         dst_hw_addr: EthernetAddress,
         packet: GeonetPacket,
+        mut trc: &mut Option<Dcc>,
     ) -> Result<(), DispatchError> {
-        #[cfg(feature = "proto-dcc")]
-        {
-            if let Some(trc) = &mut self.trc {
-                match trc.dispatch(&packet, dst_hw_addr, core.timestamp()) {
-                    Ok(DccSuccess::ImmediateTx) => {}
-                    Ok(DccSuccess::Enqueued) => {
-                        return Ok(());
-                    }
-                    Err(_) => {
-                        net_trace!("Error in DCC transmit rate control");
-                        return Err(DispatchError::RateControl);
-                    }
+        if let Some(trc) = &mut trc {
+            match trc.dispatch(&packet, dst_hw_addr, core.timestamp()) {
+                Ok(DccSuccess::ImmediateTx) => {}
+                Ok(DccSuccess::Enqueued) => {
+                    return Ok(());
+                }
+                Err(_) => {
+                    net_trace!("Error in DCC transmit rate control");
+                    return Err(DispatchError::RateControl);
                 }
             }
         }
 
         let gn_repr = packet.geonet_repr();
-
         let caps = self.caps.clone();
 
         // First we calculate the total length that we will have to emit.
@@ -1097,7 +1128,8 @@ impl InterfaceInner {
             frame_ctrl.set_sub_type(8); // QoS subtype
 
             let mut qos_ctrl = QoSControl::from_bytes(&[0, 0]);
-            qos_ctrl.set_tc_id(3); // Best effort
+            let cat = gn_repr.traffic_class().access_category();
+            qos_ctrl.set_access_category(cat);
             qos_ctrl.set_ack_policy(1); // No Ack
 
             let ieee80211_repr = Ieee80211Repr {
@@ -1175,6 +1207,6 @@ impl InterfaceInner {
 #[allow(unused)]
 enum DispatchError {
     /// Rate control returned an error on dispatch.
-    #[cfg(feature = "proto-dcc")]
+    #[cfg(feature = "proto-geonet")]
     RateControl,
 }

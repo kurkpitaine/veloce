@@ -2,7 +2,9 @@ use crate::iface::*;
 use crate::types::Pseudonym;
 use crate::wire::*;
 
-pub(crate) fn setup<'a>(medium: Medium) -> (GnCore, Interface, SocketSet<'a>, TestingDevice) {
+pub(crate) fn setup<'a>(
+    medium: Medium,
+) -> (GnCore, Interface, SocketSet<'a>, TestingDevice) {
     let mut device = TestingDevice::new(medium);
 
     let raw_ll_addr = [0x02, 0x02, 0x02, 0x02, 0x02, 0x02];
@@ -14,7 +16,7 @@ pub(crate) fn setup<'a>(medium: Medium) -> (GnCore, Interface, SocketSet<'a>, Te
         Medium::Ieee80211p => HardwareAddress::Ethernet(EthernetAddress::from_bytes(&raw_ll_addr)),
         #[cfg(feature = "medium-pc5")]
         Medium::PC5 => HardwareAddress::PC5(PC5Address::from_bytes(&raw_ll_addr[3..])),
-    });
+    }, None);
 
     let iface = Interface::new(config, &mut device);
 

@@ -45,7 +45,7 @@ fn main() {
         .unwrap();
 
     // Configure interface
-    let mut config = Config::new(ll_addr.into());
+    let mut config = Config::new(ll_addr.into(), None);
     config.random_seed = 0xfadecafedeadbeef;
     let mut iface = Interface::new(config, device.inner_mut());
 

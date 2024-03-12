@@ -4,10 +4,8 @@ The `iface` module deals with the *network interfaces*. It filters incoming fram
 provides lookup and caching of hardware addresses, and handles management packets.
 */
 
-#[cfg(feature = "proto-dcc")]
+#[cfg(feature = "proto-geonet")]
 mod dcc;
-#[cfg(feature = "proto-dcc")]
-pub use dcc::{Dcc, DccProfile};
 
 mod interface;
 #[cfg(feature = "proto-geonet")]
@@ -17,6 +15,9 @@ mod location_table;
 mod socket_set;
 
 mod v2x_packet;
+
+#[cfg(feature = "proto-geonet")]
+pub(crate) use dcc::Dcc;
 
 pub use self::interface::{
     Config, Interface, InterfaceInner as Context, InterfaceServices as ContextMeta,

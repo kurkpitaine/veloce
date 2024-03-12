@@ -2,7 +2,9 @@ use heapless::HistoryBuffer;
 
 use crate::time::Duration;
 use crate::time::Instant;
+use crate::wire::ieee80211::AccessCategory;
 
+use super::RateControl;
 use super::RateFeedback;
 use super::RateThrottle;
 
@@ -67,7 +69,7 @@ pub struct Limeric {
     /// Last transmission over-the-air duration.
     last_tx_duration: Duration,
     /// Interval between transmissions.
-    interval: Duration,
+    tx_interval: Duration,
     /// Limerick algorithm duty cycle.
     duty_cycle: f32,
     /// Current channel load.
@@ -79,7 +81,9 @@ pub struct Limeric {
     /// Optional parameters for Dual Alpha improvement.
     dual_alpha_params: Option<DualAlphaParameters>,
     /// Instant at which reschedule the Limerick algorithm execution.
-    reschedule_at: Instant,
+    next_run_at: Instant,
+    /// Instant at which the next packet release from the queues should be.
+    next_release_at: Instant,
 }
 
 impl Limeric {
@@ -88,13 +92,14 @@ impl Limeric {
         Limeric {
             last_tx_at: Instant::ZERO,
             last_tx_duration: Duration::ZERO,
-            interval: MIN_INTERVAL,
+            tx_interval: MIN_INTERVAL,
             duty_cycle: 0.5 * (params.delta_min + params.delta_max),
             channel_load: 0.0,
             cbr_hist: HistoryBuffer::new(),
             params,
             dual_alpha_params: None,
-            reschedule_at: Instant::ZERO,
+            next_run_at: Instant::ZERO,
+            next_release_at: Instant::ZERO,
         }
     }
 
@@ -113,15 +118,8 @@ impl Limeric {
         }
     }
 
-    pub fn poll(&mut self, timestamp: Instant) {
-        self.channel_load = self.cbr_hist_average();
-        self.duty_cycle = self.calculate_duty_cycle();
-        self.reschedule_at = self.schedule_next(timestamp);
-        self.update_interval(timestamp);
-    }
-
     /// Schedule for next work.
-    pub fn schedule_next(&self, timestamp: Instant) -> Instant {
+    fn schedule_next(&self, timestamp: Instant) -> Instant {
         let interval = self.params.cbr_interval * 2;
         let next = timestamp + interval;
         let bias = Duration::from_micros(next.total_micros() as u64 % interval.total_micros());
@@ -134,25 +132,25 @@ impl Limeric {
     }
 
     /// Recalculate current transmission interval.
-    pub fn update_interval(&mut self, timestamp: Instant) {
-        let delay = self.last_tx_at + self.interval - timestamp;
+    fn update_interval(&mut self, timestamp: Instant) {
+        let delay = self.next_release_at - timestamp;
         if self.duty_cycle > 0.0 {
             if delay > Duration::from_micros(0) {
                 // Apply equation B.2 of TS 102 687 v1.2.1 if gate is closed at the moment
                 let interval = (self.last_tx_at.total_micros() as f32 / self.duty_cycle)
-                    * ((delay.total_micros() / self.interval.total_micros()) as f32);
+                    * ((delay.total_micros() / self.tx_interval.total_micros()) as f32);
                 let interval = timestamp - self.last_tx_at + Duration::from_micros(interval as u64);
-                self.interval = interval.min(MIN_INTERVAL).max(MAX_INTERVAL);
+                self.tx_interval = interval.min(MIN_INTERVAL).max(MAX_INTERVAL);
             } else {
                 // use equation B.1 otherwise
                 let interval = self.last_tx_at.total_micros() as f32 / self.duty_cycle;
-                self.interval = Duration::from_micros(interval as u64)
+                self.tx_interval = Duration::from_micros(interval as u64)
                     .min(MIN_INTERVAL)
                     .max(MAX_INTERVAL);
             }
         } else {
             // bail out with maximum interval if duty cycle is not positive
-            self.interval = MAX_INTERVAL;
+            self.tx_interval = MAX_INTERVAL;
         }
     }
 
@@ -201,25 +199,48 @@ impl Limeric {
     }
 }
 
+impl RateControl for Limeric {
+    /// Run the Limerick algorithm once. Algorithm will be run
+    /// only if the timestamp is equal or superior to the instant
+    /// it should be run at.
+    fn run(&mut self, timestamp: Instant) {
+        if timestamp < self.next_run_at {
+            return;
+        }
+
+        self.channel_load = self.cbr_hist_average();
+        self.duty_cycle = self.calculate_duty_cycle();
+        self.next_run_at = self.schedule_next(timestamp);
+        self.update_interval(timestamp);
+    }
+
+    /// Return the instant the Limerick algorithm should be run at.
+    fn run_at(&self) -> Instant {
+        self.next_run_at
+    }
+}
+
 impl RateFeedback for Limeric {
     fn notify(&mut self, tx_at: Instant, duration: Duration) {
         let interval = duration.total_micros() as f32 / self.duty_cycle;
         let interval = Duration::from_micros(interval as u64);
-        self.interval = interval.min(MIN_INTERVAL).max(MAX_INTERVAL);
+        self.tx_interval = interval.min(MIN_INTERVAL).max(MAX_INTERVAL);
         self.last_tx_at = tx_at;
         self.last_tx_duration = duration;
+        self.next_release_at = self.last_tx_at + self.tx_interval;
     }
 }
+
 impl RateThrottle for Limeric {
-    fn delay(&self, timestamp: Instant) -> Duration {
-        if timestamp > self.last_tx_at + self.interval {
-            Duration::ZERO
-        } else {
-            self.last_tx_at + self.interval - timestamp
-        }
+    fn can_tx(&self, timestamp: Instant) -> bool {
+        self.next_release_at <= timestamp
     }
 
-    fn interval(&self) -> Duration {
-        self.interval
+    fn tx_at(&self, _: Option<AccessCategory>) -> Instant {
+        self.next_release_at
+    }
+
+    fn tx_interval(&self) -> Duration {
+        self.tx_interval
     }
 }

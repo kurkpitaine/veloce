@@ -17,33 +17,23 @@ pub use limeric::{
 
 pub(crate) use self::{Error as DccError, Success as DccSuccess};
 
-/// DCC dissemination profile.
-/// Matched to Geonetworking TrafficClass.
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub enum DccProfile {
-    DP0,
-    DP1,
-    DP2,
-    DP3,
-}
-
-impl Into<AccessCategory> for DccProfile {
-    fn into(self) -> AccessCategory {
-        match self {
-            DccProfile::DP0 => AccessCategory::Voice,
-            DccProfile::DP1 => AccessCategory::Video,
-            DccProfile::DP2 => AccessCategory::BestEffort,
-            DccProfile::DP3 => AccessCategory::Background,
-        }
-    }
+pub trait RateControl {
+    /// Run the Rate Control algorithm once.
+    fn run(&mut self, timestamp: Instant);
+    /// Return the instant the Rate Control algorithm should be run at.
+    fn run_at(&self) -> Instant;
 }
 
 pub trait RateThrottle {
-    /// Get delay until next transmission is allowed.
-    fn delay(&self, timestamp: Instant) -> Duration;
+    /// Return wether Rate Control algorithm allows for transmission.
+    fn can_tx(&self, timestamp: Instant) -> bool;
+    /// Get next instant where transmission is allowed,
+    /// for corresponding priority queue. If `prio` is none, it
+    /// returns the minimal waiting time between all the queues.
+    fn tx_at(&self, prio: Option<AccessCategory>) -> Instant;
 
     /// Get current interval between transmissions.
-    fn interval(&self) -> Duration;
+    fn tx_interval(&self) -> Duration;
 }
 
 pub trait RateFeedback {
@@ -57,9 +47,9 @@ pub trait RateFeedback {
 #[derive(Debug)]
 pub struct QueuedPacket {
     /// Destination hardware address.
-    dst_hw_addr: EthernetAddress,
+    pub dst_hw_addr: EthernetAddress,
     /// Geonet packet data.
-    packet: GeonetRepr,
+    pub packet: GeonetRepr,
 }
 
 impl PacketBufferMeta for QueuedPacket {
@@ -76,16 +66,16 @@ type DccQueue = PacketBuffer<QueuedPacket, DCC_QUEUE_ENTRY_COUNT, DCC_QUEUE_SIZE
 
 /// _Decentralized Congestion Control_ controller.
 #[derive(Debug)]
-pub struct Dcc<TRC: RateThrottle + RateFeedback> {
+pub struct Dcc {
     /// Rate control algorithm.
-    rate_controller: TRC,
+    pub rate_controller: Controller,
     /// DCC queues. One queue for each priority category.
-    queues: FnvIndexMap<AccessCategory, DccQueue, 4>,
+    pub queues: FnvIndexMap<AccessCategory, DccQueue, 4>,
 }
 
-impl<TRC: RateThrottle + RateFeedback> Dcc<TRC> {
+impl Dcc {
     /// Constructs a _Decentralized Congestion Control_ controller.
-    pub fn new(rate_controller: TRC) -> Self {
+    pub fn new(rate_controller: Controller) -> Self {
         let mut queues = FnvIndexMap::new();
         queues
             .insert(AccessCategory::Background, DccQueue::new())
@@ -124,7 +114,7 @@ impl<TRC: RateThrottle + RateFeedback> Dcc<TRC> {
             > 0;
 
         // Check for immediate transmission
-        if !has_pkt && self.rate_controller.delay(timestamp) == Duration::ZERO {
+        if !has_pkt && self.rate_controller.tx_at(Some(cat)) <= timestamp {
             return Ok(Success::ImmediateTx);
         }
 
@@ -150,6 +140,12 @@ impl<TRC: RateThrottle + RateFeedback> Dcc<TRC> {
 
         Ok(Success::Enqueued)
     }
+
+    /// Return the minimum time the DCC service should be polled at.
+    pub(crate) fn poll_at(&self) -> Instant {
+        let tx_at = self.rate_controller.tx_at(None);
+        self.rate_controller.run_at().min(tx_at)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,9 +160,60 @@ pub(crate) enum Success {
 
 /// DCC error type.
 pub(crate) enum Error {
+    /// The hardware device transmit buffer is full. Try again later.
+    Exhausted,
     /// No existing queue for the requested traffic class.
     NoMatchingQueue,
     /// Generic buffer error, ie: the packet
     /// is too big to fit in the buffer.
     BufferError,
+}
+
+/// Transmit Rate Control controller algorithm.
+#[derive(Debug)]
+pub enum Controller {
+    /// Limeric algorithm.
+    Limeric(LimericTrc),
+}
+
+impl RateControl for Controller {
+    fn run(&mut self, timestamp: Instant) {
+        match self {
+            Controller::Limeric(l) => l.run(timestamp),
+        }
+    }
+
+    fn run_at(&self) -> Instant {
+        match self {
+            Controller::Limeric(l) => l.run_at(),
+        }
+    }
+}
+
+impl RateFeedback for Controller {
+    fn notify(&mut self, tx_at: Instant, duration: Duration) {
+        match self {
+            Controller::Limeric(l) => l.notify(tx_at, duration),
+        }
+    }
+}
+
+impl RateThrottle for Controller {
+    fn can_tx(&self, timestamp: Instant) -> bool {
+        match self {
+            Controller::Limeric(l) => l.can_tx(timestamp),
+        }
+    }
+
+    fn tx_at(&self, prio: Option<AccessCategory>) -> Instant {
+        match self {
+            Controller::Limeric(l) => l.tx_at(prio),
+        }
+    }
+
+    fn tx_interval(&self) -> Duration {
+        match self {
+            Controller::Limeric(l) => l.tx_interval(),
+        }
+    }
 }

@@ -214,7 +214,24 @@ where
         };
 
         let rc = f(fm.deref_mut());
+        self.len -= fm.size;
         fm.pop();
+
+        Some(rc)
+    }
+
+    /// Dequeue one packet from the buffer.
+    pub fn dequeue_one<F, E>(&mut self, f: F) -> Option<Result<(), E>>
+    where
+        F: FnOnce(&mut Node<T>) -> Result<(), E>,
+    {
+        let Ok(mut node) = self.storage.pop_front() else {
+            return None;
+        };
+
+        let rc = f(&mut node);
+
+        self.len -= node.size;
 
         Some(rc)
     }

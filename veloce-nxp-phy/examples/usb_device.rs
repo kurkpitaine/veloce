@@ -27,7 +27,7 @@ fn main() {
     device.configure().expect("Cannot configure device");
 
     // Configure interface
-    let mut config = Config::new(ll_addr.into());
+    let mut config = Config::new(ll_addr.into(), None);
     config.random_seed = 0xfadecafedeadbeef;
     let mut iface = Interface::new(config, &mut device);
 

@@ -53,10 +53,8 @@ pub const GN_MAX_GEO_AREA_SIZE: f32 = 10.0;
 /// Distance related to the confidence interval for latitude and longitude [m].
 pub const GN_PAI_INTERVAL: f32 = 80.0;
 
-#[cfg(feature = "proto-dcc")]
 /// Maximum size of one DCC queue.
 pub const DCC_QUEUE_SIZE: usize = 10 * 1000;
-#[cfg(feature = "proto-dcc")]
 /// Maximum number of elements in one DCC queue.
 pub const DCC_QUEUE_ENTRY_COUNT: usize = 10;
 

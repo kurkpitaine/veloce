@@ -350,22 +350,7 @@ impl fmt::Display for TrafficClass {
     }
 }
 
-#[cfg(feature = "proto-dcc")]
-use crate::iface::DccProfile;
-
 use super::ieee80211::AccessCategory;
-
-#[cfg(feature = "proto-dcc")]
-impl Into<DccProfile> for TrafficClass {
-    fn into(self) -> DccProfile {
-        match self.id() {
-            0 => DccProfile::DP0,
-            1 => DccProfile::DP1,
-            2 => DccProfile::DP2,
-            _ => DccProfile::DP3,
-        }
-    }
-}
 
 #[cfg(test)]
 mod test {
