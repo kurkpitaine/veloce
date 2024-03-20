@@ -7,11 +7,11 @@ use veloce::{
 };
 
 use crate::{
-    cfg_mk5, eMKxAntenna_MKX_ANT_DEFAULT, eMKxChannel_MKX_CHANNEL_0, eMKxIFMsgType_MKXIF_ERROR,
+    eMKxAntenna_MKX_ANT_DEFAULT, eMKxChannel_MKX_CHANNEL_0, eMKxIFMsgType_MKXIF_ERROR,
     eMKxIFMsgType_MKXIF_RXPACKET, eMKxIFMsgType_MKXIF_TXPACKET, eMKxMCS_MKXMCS_DEFAULT,
     eMKxPower_MKX_POWER_TX_DEFAULT, eMKxRadio_MKX_RADIO_A, eMKxStatus_MKXSTATUS_RESERVED,
     eMKxTxCtrlFlags_MKX_REGULAR_TRANSMISSION, tMKxIFMsg, tMKxRadioConfig, tMKxRxPacket,
-    tMKxTxPacket, usb_phy::USB, Error, Result, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX,
+    tMKxTxPacket, usb_phy::USB, Config, Error, Result, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX,
 };
 
 /// An NXP USB SAF 5X00 device.
@@ -24,11 +24,13 @@ pub struct NxpUsbDevice {
     tx_seq_num: Rc<RefCell<u16>>,
     /// Sequence number of messages being sent.
     rx_seq_num: u16,
+    /// Device configuration
+    config: Config,
 }
 
 impl NxpUsbDevice {
-    /// Constructs a new NxpDevice.
-    pub fn new() -> Result<NxpUsbDevice> {
+    /// Constructs a new NxpDevice using `config`.
+    pub fn new(config: Config) -> Result<NxpUsbDevice> {
         let lower = USB::new().map_err(|_| Error::USB)?;
 
         Ok(NxpUsbDevice {
@@ -36,14 +38,16 @@ impl NxpUsbDevice {
             ref_num: Rc::new(RefCell::new(0)),
             tx_seq_num: Rc::new(RefCell::new(0)),
             rx_seq_num: 0,
+            config,
         })
     }
 
-    /// Apply the default configuration on the NXP device.
-    #[must_use = "Default configuration should be applied to enable communication."]
-    pub fn configure(&self) -> Result<()> {
-        let cfg = cfg_mk5();
-        let w_buf: [u8; size_of::<tMKxRadioConfig>()] = unsafe { transmute(cfg) };
+    /// Apply the configuration on the NXP device.
+    #[must_use = "Configuration should be applied to enable communication."]
+    pub fn commit_config(&self) -> Result<()> {
+        let mut radio_cfg = tMKxRadioConfig::default();
+        self.config.emit(&mut radio_cfg);
+        let w_buf: [u8; size_of::<tMKxRadioConfig>()] = unsafe { transmute(radio_cfg) };
 
         self.lower.borrow_mut().send(&w_buf).map(|_| ())
     }

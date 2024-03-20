@@ -1,6 +1,8 @@
 use log::trace;
 use veloce::common::PotiFix;
+use veloce::network::GnAddrConfigMode;
 use veloce::types::Pseudonym;
+use veloce::wire::GnAddress;
 use veloce_asn1::c_a_m__p_d_u__descriptions as cam;
 use veloce_asn1::e_t_s_i__i_t_s__c_d_d as cdd;
 
@@ -16,7 +18,7 @@ use veloce::storage::PacketBuffer;
 use veloce::time::{Duration, Instant};
 use veloce::types::{degree, meter, Distance, Latitude, Longitude};
 use veloce::utils;
-use veloce::wire::{EthernetAddress, GnAddress, StationType};
+use veloce::wire::{EthernetAddress, StationType};
 
 use std::os::unix::io::AsRawFd;
 
@@ -32,13 +34,13 @@ fn main() {
     let fd = device.as_raw_fd();
 
     // Configure interface
-    let mut config = Config::new(ll_addr.into(), None);
-    config.random_seed = 0xfadecafedeadbeef;
+    let config = Config::new(ll_addr.into(), None);
     let mut iface = Interface::new(config, &mut device);
 
     // Build GnCore
-    let router_addr = GnAddress::new(true, StationType::RoadSideUnit, ll_addr);
-    let router_config = GnCoreGonfig::new(router_addr, Pseudonym(0xabcd));
+    let mut router_config = GnCoreGonfig::new(StationType::RoadSideUnit, Pseudonym(0xabcd));
+    router_config.random_seed = 0xfadecafedeadbeef;
+    router_config.addr_config_mode = GnAddrConfigMode::Managed(ll_addr);
     let mut router = GnCore::new(router_config, Instant::now());
 
     // Create gn socket

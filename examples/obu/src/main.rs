@@ -8,13 +8,13 @@ use mio::event::Source;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
 use veloce::iface::{Config, Interface, SocketSet};
-use veloce::network::{GnCore, GnCoreGonfig};
+use veloce::network::{GnAddrConfigMode, GnCore, GnCoreGonfig};
 use veloce::phy::{Medium, RawSocket as VeloceRawSocket};
 use veloce::socket;
 use veloce::time::Instant;
 use veloce::types::Pseudonym;
 use veloce::utils;
-use veloce::wire::{EthernetAddress, GnAddress, StationType};
+use veloce::wire::{EthernetAddress, StationType};
 use veloce_gnss::Gpsd;
 
 #[derive(Parser, Default, Debug)]
@@ -44,15 +44,15 @@ fn main() {
         .register(&mut device, DEV_TOKEN, Interest::READABLE)
         .unwrap();
 
+    // Build GnCore
+    let mut router_config = GnCoreGonfig::new(StationType::PassengerCar, Pseudonym(0xabcd));
+    router_config.random_seed = 0xfadecafedeadbeef;
+    router_config.addr_config_mode = GnAddrConfigMode::Managed(ll_addr);
+    let mut router = GnCore::new(router_config, Instant::now());
+
     // Configure interface
     let mut config = Config::new(ll_addr.into(), None);
-    config.random_seed = 0xfadecafedeadbeef;
     let mut iface = Interface::new(config, device.inner_mut());
-
-    // Build GnCore
-    let router_addr = GnAddress::new(true, StationType::PassengerCar, ll_addr);
-    let router_config = GnCoreGonfig::new(router_addr, Pseudonym(0xabcd));
-    let mut router = GnCore::new(router_config, Instant::now());
 
     // Create CAM socket
     let cam_socket = socket::cam::Socket::new();

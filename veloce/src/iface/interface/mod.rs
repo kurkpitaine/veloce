@@ -61,7 +61,8 @@ macro_rules! check {
     };
 }
 
-macro_rules! sequence_number {
+#[cfg(feature = "proto-geonet")]
+macro_rules! next_sequence_number {
     ($handler:ident) => {
         (|| {
             let sn = $handler.sequence_number.clone();
@@ -72,7 +73,9 @@ macro_rules! sequence_number {
 }
 
 use check;
-use sequence_number;
+
+#[cfg(feature = "proto-geonet")]
+use next_sequence_number;
 
 type LsBuffer = PacketBuffer<GeonetUnicast, LS_BUF_ENTRY_NUM, LS_BUF_SIZE>;
 type UcBuffer = PacketBuffer<GeonetUnicast, UC_BUF_ENTRY_NUM, UC_BUF_SIZE>;
@@ -135,11 +138,6 @@ pub struct InterfaceInner {
 /// Configuration structure used for creating a network interface.
 #[non_exhaustive]
 pub struct Config {
-    /// Random seed.
-    ///
-    /// The seed doesn't have to be cryptographically secure.
-    pub random_seed: u64,
-
     /// Set the Hardware address the interface will use.
     ///
     /// # Panics
@@ -153,7 +151,6 @@ pub struct Config {
 impl Config {
     pub fn new(hardware_addr: HardwareAddress, trc: Option<Dcc>) -> Self {
         Config {
-            random_seed: 0,
             hardware_addr,
             trc,
         }
@@ -294,9 +291,7 @@ impl Interface {
     pub fn poll_at(&mut self, sockets: &SocketSet<'_>) -> Option<Instant> {
         let inner = &mut self.inner;
 
-        #[cfg(feature = "proto-dcc")]
         let trc_timeout = self.trc.as_ref().map(|trc| trc.poll_at());
-
         let beacon_timeout = Some(inner.retransmit_beacon_at);
         let ls_timeout = self.location_service.poll_at();
         let cbf_timeout = self.cb_forwarding_buffer.poll_at();
@@ -313,7 +308,6 @@ impl Interface {
             })
             .min();
 
-        #[cfg(feature = "proto-dcc")]
         let values = [
             trc_timeout,
             beacon_timeout,
@@ -321,9 +315,6 @@ impl Interface {
             cbf_timeout,
             sockets_timeout,
         ];
-
-        #[cfg(not(feature = "proto-dcc"))]
-        let values = [beacon_timeout, ls_timeout, cbf_timeout, sockets_timeout];
 
         values.into_iter().flatten().min()
     }

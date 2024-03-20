@@ -1,31 +1,34 @@
 use crate::iface::*;
+use crate::network::GnAddrConfigMode;
 use crate::types::Pseudonym;
 use crate::wire::*;
 
-pub(crate) fn setup<'a>(
-    medium: Medium,
-) -> (GnCore, Interface, SocketSet<'a>, TestingDevice) {
+pub(crate) fn setup<'a>(medium: Medium) -> (GnCore, Interface, SocketSet<'a>, TestingDevice) {
     let mut device = TestingDevice::new(medium);
 
     let raw_ll_addr = [0x02, 0x02, 0x02, 0x02, 0x02, 0x02];
 
-    let config = Config::new(match medium {
-        #[cfg(feature = "medium-ethernet")]
-        Medium::Ethernet => HardwareAddress::Ethernet(EthernetAddress::from_bytes(&raw_ll_addr)),
-        #[cfg(feature = "medium-ieee80211p")]
-        Medium::Ieee80211p => HardwareAddress::Ethernet(EthernetAddress::from_bytes(&raw_ll_addr)),
-        #[cfg(feature = "medium-pc5")]
-        Medium::PC5 => HardwareAddress::PC5(PC5Address::from_bytes(&raw_ll_addr[3..])),
-    }, None);
+    let config = Config::new(
+        match medium {
+            #[cfg(feature = "medium-ethernet")]
+            Medium::Ethernet => {
+                HardwareAddress::Ethernet(EthernetAddress::from_bytes(&raw_ll_addr))
+            }
+            #[cfg(feature = "medium-ieee80211p")]
+            Medium::Ieee80211p => {
+                HardwareAddress::Ethernet(EthernetAddress::from_bytes(&raw_ll_addr))
+            }
+            #[cfg(feature = "medium-pc5")]
+            Medium::PC5 => HardwareAddress::PC5(PC5Address::from_bytes(&raw_ll_addr[3..])),
+        },
+        None,
+    );
 
     let iface = Interface::new(config, &mut device);
 
-    let router_addr = GnAddress::new(
-        true,
-        StationType::RoadSideUnit,
-        EthernetAddress(raw_ll_addr),
-    );
-    let router_config = GnCoreGonfig::new(router_addr, Pseudonym(0xabcd));
+    let mut router_config = GnCoreGonfig::new(StationType::RoadSideUnit, Pseudonym(0xabcd));
+    router_config.addr_config_mode =
+        GnAddrConfigMode::Managed(EthernetAddress::from_bytes(&raw_ll_addr));
     let core = GnCore::new(router_config, Instant::ZERO);
 
     (core, iface, SocketSet::new(vec![]), device)

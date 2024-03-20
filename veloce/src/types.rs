@@ -93,3 +93,52 @@ impl AngleTrait for Angle {
 /// Pseudonym of the station.
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Pseudonym(pub u32);
+
+/// Radio signal power. Inner representation is stored as twice the value
+/// in dBm units, so it allows precision of 0.5 dBm.
+#[derive(Default, Debug, PartialEq, Clone, Copy)]
+pub struct Power(i32);
+
+impl Power {
+    /// Build a new [Power] from a dBm value stored in a [i32].
+    pub const fn from_dbm_i32(val: i32) -> Self {
+        Power(val * 2)
+    }
+
+    /// Build a new [Power] from a dBm value stored in a [f32].
+    /// Values are ceiled to the nearest round value.
+    pub fn from_dbm_f32(val: f32) -> Self {
+        let val = val * 2.0;
+        Power(val.ceil() as i32)
+    }
+
+    /// Return the [Power] value as an [i32] in dBm units.
+    pub const fn as_dbm_i32(&self) -> i32 {
+        self.0 / 2
+    }
+
+    /// Return the [Power] value as an [i16] in dBm units.
+    pub const fn as_dbm_i16(&self) -> i16 {
+        (self.0 / 2) as i16
+    }
+
+    /// Return the [Power] value as an [f32] in dBm units.
+    pub fn as_dbm_f32(&self) -> f32 {
+        self.0 as f32 / 2.0
+    }
+
+    /// Return the [Power] value as an [i32] in 0.5 dBm units.
+    pub const fn as_half_dbm_i32(&self) -> i32 {
+        self.0
+    }
+
+    /// Return the [Power] value as an [f32] in 0.5 dBm units.
+    pub fn as_half_dbm_f32(&self) -> f32 {
+        self.0 as f32
+    }
+
+    /// Return the [Power] value as an [i16] in 0.5 dBm units.
+    pub const fn as_half_dbm_i16(&self) -> i16 {
+        self.0 as i16
+    }
+}

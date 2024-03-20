@@ -9,10 +9,12 @@ pub mod llc;
 pub mod usb;
 //pub mod usb2;
 pub mod usb_phy;
-//pub mod usb_phy3;
+//pub mod usb_phy2;
 
+pub use self::{Channel as NxpChannel, Config as NxpConfig, Radio as NxpRadio, WirelessChannel as NxpWirelessChannel};
 pub use llc::NxpLlcDevice;
 pub use usb::NxpUsbDevice;
+use veloce::{types::Power, wire::EthernetAddress};
 
 /// Max raw frame array size.
 pub const RAW_FRAME_LENGTH_MAX: usize = 1518;
@@ -42,55 +44,132 @@ impl fmt::Display for Error {
 
 pub type Result<T> = core::result::Result<T, Error>;
 
-#[allow(unused)]
-fn cfg_mk5() -> tMKxRadioConfig {
-    tMKxRadioConfig {
-        Hdr: MKxIFMsg {
-            Type: eMKxIFMsgType_MKXIF_RADIOACFG as u16,
-            Len: core::mem::size_of::<tMKxRadioConfig>() as u16,
-            Seq: 0,
-            Ref: 0,
-            Reserved: 0,
-            Ret: eMKxStatus_MKXSTATUS_RESERVED as i16,
-        },
-        RadioConfigData: MKxRadioConfigData {
-            Mode: eRadioMode_MKX_MODE_CHANNEL_0 as u16,
-            SystemTickRateMHz: 0,
-            ChanConfig: [chan1_config(), chan2_config()],
-        },
+/// NXP LLC PHY configuration. Used to define which physical radio and
+/// which logical channel Veloce uses for transmission and reception of
+/// packets.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Config {
+    /// Radio used for Tx and Rx.
+    radio: Radio,
+    /// Radio logical channel used for Tx and Rx.
+    channel: Channel,
+    /// Wireless channel frequency.
+    frequency: WirelessChannel,
+    /// Transmission power.
+    tx_power: Power,
+    /// MAC Address,
+    mac_address: EthernetAddress,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            radio: Radio::A,
+            channel: Channel::Zero,
+            frequency: WirelessChannel::Chan_180,
+            tx_power: Power::from_dbm_i32(32),
+            mac_address: EthernetAddress::from_bytes(&[0x04, 0xe5, 0x48, 0x00, 0x00, 0x00]),
+        }
     }
 }
 
-#[allow(unused)]
-fn cfg_mk5_off() -> tMKxRadioConfig {
-    tMKxRadioConfig {
-        Hdr: MKxIFMsg {
-            Type: eMKxIFMsgType_MKXIF_RADIOACFG as u16,
-            Len: core::mem::size_of::<tMKxRadioConfig>() as u16,
-            Seq: 0,
-            Ref: 0,
-            Reserved: 0,
-            Ret: eMKxStatus_MKXSTATUS_RESERVED as i16,
-        },
-        RadioConfigData: MKxRadioConfigData {
-            Mode: eRadioMode_MKX_MODE_OFF as u16,
-            SystemTickRateMHz: 0,
-            ChanConfig: [chan1_config(), chan2_config()],
-        },
+impl Config {
+    /// Build a [Config] using provided parameters.
+    /// - `radio`: physical radio to set and use.
+    /// - `channel`: logical channel configuration to set and use.
+    /// - `frequency`: wireless channel frequency to set and use.
+    /// - `tx_power`: transmission power to set and use as default value.
+    /// - `mac_address`: hardware address to accept in the LLC PHY internal rx filters.
+    pub fn new(
+        radio: Radio,
+        channel: Channel,
+        frequency: WirelessChannel,
+        tx_power: Power,
+        mac_address: EthernetAddress,
+    ) -> Self {
+        Config {
+            radio,
+            channel,
+            frequency,
+            tx_power,
+            mac_address,
+        }
+    }
+
+    /// Set the mac address.
+    pub fn set_mac_address(&mut self, addr: EthernetAddress) {
+        self.mac_address = addr;
+    }
+
+    /// Emit config data into a [tMKxRadioConfig].
+    pub(crate) fn emit(&self, cfg: &mut tMKxRadioConfig) {
+        let channel_idx = self.channel;
+        let chan_cfg = &mut cfg.RadioConfigData.ChanConfig[channel_idx as usize];
+
+        cfg.Hdr.Type = self.radio as u16;
+        cfg.RadioConfigData.Mode = channel_idx as u16;
+        chan_cfg.PHY.ChannelFreq = self.frequency as u16;
+        chan_cfg.PHY.DefaultTxPower = self.tx_power.as_half_dbm_i16();
+
+        for table in &mut chan_cfg.MAC.AMSTable {
+            // Device Mac Address is always the last entry in our implem.
+            if table.MatchCtrl & eMKxAddressMatchingCtrl_MKX_ADDRMATCH_LAST_ENTRY as u16 > 0 {
+                table.Addr.copy_from_slice(self.mac_address.as_bytes());
+                break;
+            }
+        }
     }
 }
 
-#[allow(unused)]
-fn chan1_config() -> MKxChanConfig {
-    let mut cfg = chan_config();
-    cfg.PHY.ChannelFreq = 5900;
-
-    cfg
+/// NXP LLC PHY Radio identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Radio {
+    /// Radio A.
+    A = 0,
+    /// Radio B.
+    B = 1,
 }
 
-#[allow(unused)]
-fn chan2_config() -> MKxChanConfig {
-    chan_config()
+/// NXP LLC PHY radio config logical channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Channel {
+    /// Channel 0.
+    Zero = 0,
+    /// Channel 1.
+    One = 1,
+}
+
+/// Wireless channel number, associated with its center frequency in MHz.
+/// Those channels are 10MHz bandwidth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WirelessChannel {
+    Chan_172 = 5860,
+    Chan_174 = 5870,
+    Chan_176 = 5880,
+    Chan_178 = 5890,
+    Chan_180 = 5900,
+    Chan_182 = 5910,
+    Chan_184 = 5920,
+}
+
+impl Default for tMKxRadioConfig {
+    fn default() -> Self {
+        Self {
+            Hdr: MKxIFMsg {
+                Type: eMKxIFMsgType_MKXIF_RADIOACFG as u16,
+                Len: core::mem::size_of::<tMKxRadioConfig>() as u16,
+                Seq: 0,
+                Ref: 0,
+                Reserved: 0,
+                Ret: eMKxStatus_MKXSTATUS_RESERVED as i16,
+            },
+            RadioConfigData: MKxRadioConfigData {
+                Mode: eRadioMode_MKX_MODE_OFF as u16,
+                SystemTickRateMHz: 0,
+                ChanConfig: [chan_config(), chan_config()],
+            },
+        }
+    }
 }
 
 #[allow(unused)]

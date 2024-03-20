@@ -13,6 +13,7 @@ futures-lite = "2.2.0"
 nusb = "0.1.6"
 rusb = "0.9.3"
 veloce = { path = "../veloce" }
+heapless = { git = "https://github.com/kurkpitaine/heapless.git", branch = "linked_list" }
 
 [dev-dependencies]
 clap = { version = "4.4.11", features = ["derive"] }

@@ -1,5 +1,5 @@
 use crate::{
-    iface::dcc::{DccError, RateControl, RateFeedback, RateThrottle},
+    iface::dcc::{DccError, RateThrottle},
     network::GnCore,
     phy::{Device, Medium, TxToken},
     wire::{

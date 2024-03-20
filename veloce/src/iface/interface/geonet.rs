@@ -13,7 +13,7 @@ use crate::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, SingleHopReqMeta,
     TopoScopedReqMeta, UnicastReqMeta, UpperProtocol,
 };
-use crate::wire::EthernetRepr;
+use crate::wire::{EthernetRepr, SequenceNumber};
 use crate::{
     common::geo_area::{DistanceAB, GeoArea, Shape},
     config::{
@@ -39,7 +39,7 @@ use crate::{
     },
 };
 
-use super::{check, sequence_number, InterfaceInner, InterfaceServices};
+use super::{check, next_sequence_number, InterfaceInner, InterfaceServices};
 
 impl InterfaceInner {
     /// Defer the beaconing retransmission if the packet source address is ours.
@@ -199,7 +199,11 @@ impl InterfaceInner {
 
         /* Step 3: perform duplicate address detection. */
         svcs.core
-            .duplicate_address_detection(link_layer.src_addr, beacon_repr.src_addr());
+            .duplicate_address_detection(link_layer.src_addr, beacon_repr.src_addr())
+            .and_then(|addr| {
+                self.hardware_addr = addr.into();
+                Some(addr)
+            });
 
         /* Step 4: update Location table */
         let entry = self
@@ -266,7 +270,11 @@ impl InterfaceInner {
 
         /* Step 4: perform duplicate address detection. */
         svcs.core
-            .duplicate_address_detection(link_layer.src_addr, ls_req_repr.src_addr());
+            .duplicate_address_detection(link_layer.src_addr, ls_req_repr.src_addr())
+            .and_then(|addr| {
+                self.hardware_addr = addr.into();
+                Some(addr)
+            });
 
         /* Step 5-6: add/update location table */
         let entry = self
@@ -303,7 +311,7 @@ impl InterfaceInner {
             };
 
             let reply_ls_repr = LocationServiceReplyRepr {
-                sequence_number: sequence_number!(self),
+                sequence_number: next_sequence_number!(self),
                 source_position_vector: svcs.core.ego_position_vector(),
                 destination_position_vector: entry.position_vector.into(),
             };
@@ -415,7 +423,11 @@ impl InterfaceInner {
 
             /* Step 3: perform duplicate address detection. */
             svcs.core
-                .duplicate_address_detection(link_layer.src_addr, ls_rep_repr.src_addr());
+                .duplicate_address_detection(link_layer.src_addr, ls_rep_repr.src_addr())
+                .and_then(|addr| {
+                    self.hardware_addr = addr.into();
+                    Some(addr)
+                });
 
             /* Step 4: update Location table */
             let entry = self
@@ -482,7 +494,11 @@ impl InterfaceInner {
 
         /* Step 3: perform duplicate address detection. */
         svcs.core
-            .duplicate_address_detection(link_layer.src_addr, shb_repr.src_addr());
+            .duplicate_address_detection(link_layer.src_addr, shb_repr.src_addr())
+            .and_then(|addr| {
+                self.hardware_addr = addr.into();
+                Some(addr)
+            });
 
         let ls_pending = {
             /* Step 4: update Location table */
@@ -555,7 +571,11 @@ impl InterfaceInner {
 
         /* Step 4: perform duplicate address detection. */
         svcs.core
-            .duplicate_address_detection(link_layer.src_addr, tsb_repr.src_addr());
+            .duplicate_address_detection(link_layer.src_addr, tsb_repr.src_addr())
+            .and_then(|addr| {
+                self.hardware_addr = addr.into();
+                Some(addr)
+            });
 
         let ls_pending = {
             /* Step 5-6: update Location table */
@@ -727,7 +747,11 @@ impl InterfaceInner {
 
         /* Step 3: perform duplicate address detection. */
         svcs.core
-            .duplicate_address_detection(link_layer.src_addr, uc_repr.src_addr());
+            .duplicate_address_detection(link_layer.src_addr, uc_repr.src_addr())
+            .and_then(|addr| {
+                self.hardware_addr = addr.into();
+                Some(addr)
+            });
 
         /* Step 4: update Location table */
         let entry = self
@@ -832,7 +856,11 @@ impl InterfaceInner {
 
         /* Step 4: perform duplicate address detection */
         svcs.core
-            .duplicate_address_detection(link_layer.src_addr, uc_repr.src_addr());
+            .duplicate_address_detection(link_layer.src_addr, uc_repr.src_addr())
+            .and_then(|addr| {
+                self.hardware_addr = addr.into();
+                Some(addr)
+            });
 
         /* Step 5-6: update Location table */
         let entry = self
@@ -909,7 +937,11 @@ impl InterfaceInner {
 
         /* Step 4: perform duplicate address detection. */
         svcs.core
-            .duplicate_address_detection(link_layer.src_addr, gbc_repr.src_addr());
+            .duplicate_address_detection(link_layer.src_addr, gbc_repr.src_addr())
+            .and_then(|addr| {
+                self.hardware_addr = addr.into();
+                Some(addr)
+            });
 
         let ls_pending = {
             /* Step 5-6: update Location table */
@@ -1028,7 +1060,11 @@ impl InterfaceInner {
 
         /* Step 4: perform duplicate address detection. */
         svcs.core
-            .duplicate_address_detection(link_layer.src_addr, gac_repr.src_addr());
+            .duplicate_address_detection(link_layer.src_addr, gac_repr.src_addr())
+            .and_then(|addr| {
+                self.hardware_addr = addr.into();
+                Some(addr)
+            });
 
         /* Step 5-6: update Location table */
         let entry = self
@@ -1229,7 +1265,7 @@ impl InterfaceInner {
                         };
 
                         let ls_req_repr = LocationServiceRequestRepr {
-                            sequence_number: sequence_number!(self),
+                            sequence_number: next_sequence_number!(self),
                             source_position_vector: svcs.core.ego_position_vector(),
                             request_address: pr.address,
                         };
@@ -1307,7 +1343,7 @@ impl InterfaceInner {
         if let Some(entry) = self.location_table.find(&metadata.destination.mac_addr()) {
             /* Step 1b: set the fields of the unicast header */
             let uc_repr = UnicastRepr {
-                sequence_number: sequence_number!(self),
+                sequence_number: next_sequence_number!(self),
                 source_position_vector: svcs.core.ego_position_vector(),
                 destination_position_vector: entry.position_vector.into(),
             };
@@ -1383,7 +1419,7 @@ impl InterfaceInner {
             /* We set a default destination_position_vector, even it's content are wrong. */
             /* It does not matter because we update the headers with correct data when flushing buffers. */
             let uc_repr = UnicastRepr {
-                sequence_number: sequence_number!(self),
+                sequence_number: next_sequence_number!(self),
                 source_position_vector: svcs.core.ego_position_vector(),
                 destination_position_vector: entry.position_vector.into(),
             };
@@ -1440,7 +1476,7 @@ impl InterfaceInner {
 
         /* Step 1c: set the fields of the tsb header */
         let tsb_repr = TopoBroadcastRepr {
-            sequence_number: sequence_number!(self),
+            sequence_number: next_sequence_number!(self),
             source_position_vector: svcs.core.ego_position_vector(),
         };
 
@@ -1596,7 +1632,7 @@ impl InterfaceInner {
         /* Step 1c: set the fields of the geo broadcast header */
         let gbc_repr = GeoBroadcastRepr {
             source_position_vector: svcs.core.ego_position_vector(),
-            sequence_number: sequence_number!(self),
+            sequence_number: next_sequence_number!(self),
             latitude: metadata.destination.position.latitude,
             longitude: metadata.destination.position.longitude,
             distance_a: metadata.destination.shape.distance_a(),
@@ -1685,7 +1721,7 @@ impl InterfaceInner {
         /* Step 1c: set the fields of the geo anycast header */
         let gbc_repr = GeoAnycastRepr {
             source_position_vector: svcs.core.ego_position_vector(),
-            sequence_number: sequence_number!(self),
+            sequence_number: next_sequence_number!(self),
             latitude: metadata.destination.position.latitude,
             longitude: metadata.destination.position.longitude,
             distance_a: metadata.destination.shape.distance_a(),
@@ -1939,7 +1975,8 @@ impl InterfaceInner {
             let inside = link_layer
                 .and_then(|ll| self.location_table.find(&ll.src_addr))
                 .is_some_and(|neigh| {
-                    neigh.position_vector.is_accurate && area.inside_or_at_border(neigh.geo_position())
+                    neigh.position_vector.is_accurate
+                        && area.inside_or_at_border(neigh.geo_position())
                 });
 
             match (inside, GN_NON_AREA_FORWARDING_ALGORITHM) {
@@ -1975,7 +2012,9 @@ impl InterfaceInner {
 
         let mut next_hop = None;
         for neighbor in self.location_table.neighbour_list().into_iter() {
-            let dist = packet.geo_destination().distance_to(&neighbor.geo_position());
+            let dist = packet
+                .geo_destination()
+                .distance_to(&neighbor.geo_position());
             if mfr < dist {
                 next_hop = Some(neighbor.position_vector.address.mac_addr().into());
                 mfr = dist;

@@ -149,6 +149,40 @@ impl Default for Medium {
     }
 }
 
+/// Channel busy ratio measurement, ie: the ratio of time the channel medium is busy
+/// transmitting/receiving frames. Value is stored as a raw percentage between 0.0 and
+/// 100.0 inclusive.
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ChannelBusyRatio(f32);
+
+impl ChannelBusyRatio {
+    /// Build a new [ChannelBusyRatio] from a percentage value.
+    /// `val` is clamped between 0.0 and 100.0
+    pub fn from_percentage(val: f32) -> Self {
+        let val = val.clamp(0.0, 100.0);
+        ChannelBusyRatio(val)
+    }
+
+    /// Build a new [ChannelBusyRatio] from a ratio value.
+    /// `val` is clamped between 0.0 and 1.0
+    pub fn from_ratio(val: f32) -> Self {
+        let val = (val * 100.0).clamp(0.0, 100.0);
+        ChannelBusyRatio(val)
+    }
+
+    /// Return the [ChannelBusyRatio] value as a percentage.
+    pub fn as_percentage(&self) -> f32 {
+        self.0
+    }
+
+    /// Return the [ChannelBusyRatio] value as a ratio value
+    /// between 0.0 and 1.0.
+    pub fn as_ratio(&self) -> f32 {
+        self.0 / 100.0
+    }
+}
+
 /// An interface for sending and receiving raw network frames.
 ///
 /// The interface is based on _tokens_, which are types that allow to receive/transmit a
@@ -181,6 +215,9 @@ pub trait Device {
 
     /// Get a description of device capabilities.
     fn capabilities(&self) -> DeviceCapabilities;
+
+    /// Set the hardware address of the device.
+    fn set_hardware_addr(&mut self) {}
 }
 
 /// A token to receive a single network packet.

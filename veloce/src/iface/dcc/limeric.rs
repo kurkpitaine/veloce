@@ -208,7 +208,7 @@ impl RateControl for Limeric {
             return;
         }
 
-        self.channel_load = self.cbr_hist_average();
+        self.channel_load = self.smoothed_cbr();
         self.duty_cycle = self.calculate_duty_cycle();
         self.next_run_at = self.schedule_next(timestamp);
         self.update_interval(timestamp);

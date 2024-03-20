@@ -6,7 +6,7 @@ use uom::si::velocity::meter_per_second;
 /// - Maintenance of the Ego Position Vector
 use crate::common::geo_area::GeoPosition;
 use crate::common::{Poti, PotiFix};
-use crate::config::{self, GnAddrConfMethod};
+use crate::config;
 use crate::rand::Rand;
 use crate::time::{Instant, TAI2004};
 use crate::types::{degree, kilometer_per_hour, Heading, Latitude, Longitude, Pseudonym, Speed};
@@ -14,19 +14,23 @@ use crate::wire::{
     EthernetAddress, GnAddress, LongPositionVectorRepr as LongPositionVector, StationType,
 };
 
-// For tests only. Duplicate Address Detection only works with Auto mode.
-#[cfg(test)]
-const GN_LOCAL_ADDR_CONF_METHOD: GnAddrConfMethod = GnAddrConfMethod::Auto;
-#[cfg(not(test))]
-use crate::config::GN_LOCAL_ADDR_CONF_METHOD;
+/// Geonetworking local address configuration mode. If Geonetworking security is enabled,
+/// configuration mode will be forced to Anonymous mode.
+#[derive(Debug)]
+pub enum AddrConfigMode {
+    /// Geonetworking address is automatically generated from a random seed.
+    Auto,
+    /// Geonetworking address is manually set by the user.
+    Managed(EthernetAddress),
+    /// Geonetworking address is derived from security certificate.
+    Anonymous,
+}
 
 #[derive(Debug)]
 pub struct Config {
     /// Random seed.
     /// The seed doesn't have to be cryptographically secure.
     pub random_seed: u64,
-    /// The Geonetworking address the local router will use.
-    pub geonet_addr: GnAddress,
     /// Latitude of the Geonetworking router.
     pub latitude: Latitude,
     /// Longitude of the Geonetworking router.
@@ -39,20 +43,25 @@ pub struct Config {
     pub heading: Heading,
     /// Pseudonym aka. StationId of the Geonetworking router.
     pub pseudonym: Pseudonym,
+    /// Geonetworking station type.
+    pub station_type: StationType,
+    /// Geonetworking address config mode.
+    pub addr_config_mode: AddrConfigMode,
 }
 
 impl Config {
     /// Constructs a new [Config] with default values.
-    pub fn new(geonet_addr: GnAddress, pseudonym: Pseudonym) -> Self {
+    pub fn new(station_type: StationType, pseudonym: Pseudonym) -> Self {
         Config {
             random_seed: 0,
-            geonet_addr: geonet_addr,
             latitude: Latitude::new::<degree>(0.0),
             longitude: Longitude::new::<degree>(0.0),
             position_accurate: false,
             speed: Speed::new::<kilometer_per_hour>(0.0),
             heading: Heading::new::<degree>(0.0),
             pseudonym,
+            station_type,
+            addr_config_mode: AddrConfigMode::Auto,
         }
     }
 }
@@ -64,6 +73,8 @@ pub struct Core {
     pub(crate) now: Instant,
     /// Random number generator.
     pub(crate) rand: Rand,
+    /// Address automatic configuration flag.
+    pub(crate) addr_auto_mode: bool,
     /// Ego Position Vector which includes the local Geonetworking address.
     pub(crate) ego_position_vector: LongPositionVector,
     /// Pseudonym aka. StationId of the Geonetworking router.
@@ -74,9 +85,21 @@ pub struct Core {
 
 impl Core {
     pub fn new(config: Config, now: Instant) -> Self {
-        let rand = Rand::new(config.random_seed);
+        let mut rand = Rand::new(config.random_seed);
+
+        let (address, addr_auto_mode) = match config.addr_config_mode {
+            AddrConfigMode::Auto => {
+                let mac_addr = EthernetAddress::from_bytes(&rand.rand_mac_addr());
+                (GnAddress::new(false, config.station_type, mac_addr), true)
+            }
+            AddrConfigMode::Managed(mac_addr) => {
+                (GnAddress::new(true, config.station_type, mac_addr), false)
+            }
+            AddrConfigMode::Anonymous => unimplemented!(),
+        };
+
         let ego_position_vector = LongPositionVector {
-            address: config.geonet_addr,
+            address,
             timestamp: TAI2004::from_unix_instant(now).into(),
             latitude: config.latitude,
             longitude: config.longitude,
@@ -88,6 +111,7 @@ impl Core {
         Core {
             now,
             rand,
+            addr_auto_mode,
             ego_position_vector,
             pseudonym: config.pseudonym,
             poti: Poti::new(),
@@ -120,10 +144,16 @@ impl Core {
 
     /// Performs the Duplicate Address Detection algorithm specified in
     /// ETSI TS 103 836-4-1 V2.1.1 chapter 10.2.1.5.
-    pub fn duplicate_address_detection(&mut self, sender_addr: EthernetAddress, source: GnAddress) {
+    /// Changes the local Geonetworking address mac address if duplicate.
+    /// Returns an option containing the new mac address part if the address is duplicate.
+    pub fn duplicate_address_detection(
+        &mut self,
+        sender_addr: EthernetAddress,
+        source: GnAddress,
+    ) -> Option<EthernetAddress> {
         // Duplicate address detection is only applied for Auto.
-        if let GnAddrConfMethod::Auto = GN_LOCAL_ADDR_CONF_METHOD {
-            let ego_addr = self.ego_position_vector.address;
+        if self.addr_auto_mode {
+            let ego_addr = self.address();
 
             if ego_addr.mac_addr() == sender_addr || ego_addr == source {
                 // Addresses are equal, we have to generate a new Mac Address.
@@ -131,8 +161,11 @@ impl Core {
                 //let mut generator = Rand::new(self.ego_position_vector.timestamp.secs() as u64);
                 let new_address = EthernetAddress::from_bytes(&self.rand.rand_mac_addr());
                 self.ego_position_vector.address.set_mac_addr(new_address);
+                return Some(new_address);
             }
         }
+
+        None
     }
 
     /// Returns the type of the local ITS Station.
@@ -232,6 +265,7 @@ mod test {
             rand: Rand::new(0xfadecafe),
             pseudonym: Pseudonym(123456789),
             poti: Poti::new(),
+            addr_auto_mode: true,
         };
 
         let eth_addr = EthernetAddress::new(0, 1, 2, 3, 4, 5);
@@ -256,6 +290,7 @@ mod test {
             rand: Rand::new(0xcafefade),
             pseudonym: Pseudonym(123456789),
             poti: Poti::new(),
+            addr_auto_mode: true,
         };
 
         core.duplicate_address_detection(

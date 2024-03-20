@@ -2,14 +2,14 @@ use clap::Parser;
 use log::{debug, error, info, trace};
 
 use veloce::iface::{Config, Interface, SocketSet};
-use veloce::network::{GnCore, GnCoreGonfig};
+use veloce::network::{GnAddrConfigMode, GnCore, GnCoreGonfig};
 use veloce::socket;
 use veloce::time::Instant;
-use veloce::types::Pseudonym;
+use veloce::types::{Power, Pseudonym};
 use veloce::utils;
-use veloce::wire::{EthernetAddress, GnAddress, StationType};
+use veloce::wire::{EthernetAddress, StationType};
 
-use veloce_nxp_phy::NxpUsbDevice;
+use veloce_nxp_phy::{NxpChannel, NxpConfig, NxpRadio, NxpUsbDevice, NxpWirelessChannel};
 
 #[derive(Parser, Default, Debug)]
 struct Arguments {
@@ -22,18 +22,25 @@ fn main() {
 
     let ll_addr = EthernetAddress([0x04, 0xe5, 0x48, 0xfa, 0xde, 0xca]);
 
+    let config = NxpConfig::new(
+        NxpRadio::A,
+        NxpChannel::Zero,
+        NxpWirelessChannel::Chan_180,
+        Power::from_dbm_i32(23),
+        ll_addr,
+    );
     // Configure NXP device
-    let mut device = NxpUsbDevice::new().unwrap();
-    device.configure().expect("Cannot configure device");
+    let mut device = NxpUsbDevice::new(config).unwrap();
+    device.commit_config().expect("Cannot configure device");
 
     // Configure interface
-    let mut config = Config::new(ll_addr.into(), None);
-    config.random_seed = 0xfadecafedeadbeef;
+    let config = Config::new(ll_addr.into(), None);
     let mut iface = Interface::new(config, &mut device);
 
     // Build GnCore
-    let router_addr = GnAddress::new(true, StationType::RoadSideUnit, ll_addr);
-    let router_config = GnCoreGonfig::new(router_addr, Pseudonym(0xabcd));
+    let mut router_config = GnCoreGonfig::new(StationType::RoadSideUnit, Pseudonym(0xabcd));
+    router_config.random_seed = 0xfadecafedeadbeef;
+    router_config.addr_config_mode = GnAddrConfigMode::Managed(ll_addr);
     let mut router = GnCore::new(router_config, Instant::now());
 
     // Create CAM socket

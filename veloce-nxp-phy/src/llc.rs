@@ -5,15 +5,16 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::vec::Vec;
 
-use veloce::phy::{self, sys, Device, DeviceCapabilities, Medium};
+use heapless::HistoryBuffer;
+use veloce::phy::{self, sys, ChannelBusyRatio, Device, DeviceCapabilities, Medium};
 use veloce::time::Instant;
 
 use crate::{
     eMKxAntenna_MKX_ANT_DEFAULT, eMKxChannel_MKX_CHANNEL_0, eMKxIFMsgType_MKXIF_ERROR,
-    eMKxIFMsgType_MKXIF_RXPACKET, eMKxIFMsgType_MKXIF_TXPACKET, eMKxMCS_MKXMCS_DEFAULT,
-    eMKxPower_MKX_POWER_TX_DEFAULT, eMKxRadio_MKX_RADIO_A, eMKxStatus_MKXSTATUS_RESERVED,
-    eMKxTxCtrlFlags_MKX_REGULAR_TRANSMISSION, tMKxIFMsg, tMKxRxPacket, tMKxTxPacket,
-    LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX,
+    eMKxIFMsgType_MKXIF_RADIOASTATS, eMKxIFMsgType_MKXIF_RXPACKET, eMKxIFMsgType_MKXIF_TXPACKET,
+    eMKxMCS_MKXMCS_DEFAULT, eMKxPower_MKX_POWER_TX_DEFAULT, eMKxRadio_MKX_RADIO_A,
+    eMKxStatus_MKXSTATUS_RESERVED, eMKxTxCtrlFlags_MKX_REGULAR_TRANSMISSION, tMKxIFMsg,
+    tMKxRadioStats, tMKxRxPacket, tMKxTxPacket, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX,
 };
 
 /// A socket that captures or transmits the complete frame.
@@ -26,6 +27,10 @@ pub struct NxpLlcDevice {
     tx_seq_num: Rc<RefCell<u16>>,
     /// Sequence number of messages being sent.
     rx_seq_num: u16,
+    /// Channel busy ratio. Measurement should be made over a period of 100ms,
+    /// NXP phy gives us a measurement each 50ms, so store 2 values of it.
+    /// Stored values  ranged from
+    cbr_values: HistoryBuffer<ChannelBusyRatio, 2>,
 }
 
 impl AsRawFd for NxpLlcDevice {
@@ -56,6 +61,7 @@ impl NxpLlcDevice {
             ref_num: Rc::new(RefCell::new(0)),
             tx_seq_num: Rc::new(RefCell::new(0)),
             rx_seq_num: 0,
+            cbr_values: HistoryBuffer::new(),
         })
     }
 }
@@ -108,15 +114,25 @@ impl Device for NxpLlcDevice {
                 }
 
                 // Silently ignore non RXPACKET types.
-                if hdr.Type != eMKxIFMsgType_MKXIF_RXPACKET as u16 {
+                /* if hdr.Type != eMKxIFMsgType_MKXIF_RXPACKET as u16 {
                     return None;
-                }
+                } */
 
                 // Sanity check 3.
                 let len = hdr.Len as usize - size_of::<tMKxIFMsg>();
                 if len < size_of::<tMKxRxPacket>() {
                     return None;
                 };
+
+                if hdr.Type == eMKxIFMsgType_MKXIF_RADIOASTATS as u16 {
+                    let stats_pkt: &tMKxRadioStats = unsafe { &*buffer.as_ptr().cast() };
+                    if hdr.Ref == eMKxChannel_MKX_CHANNEL_0 as u16 {
+                        let stats =
+                            stats_pkt.RadioStatsData.Chan[eMKxChannel_MKX_CHANNEL_0 as usize];
+                        stats.ChannelBusyRatio;
+                        stats.MediumBusyTime;
+                    }
+                }
 
                 // Unpack NxpRxPacketData header.
                 let rx_pkt: &tMKxRxPacket = unsafe { &*buffer.as_ptr().cast() };

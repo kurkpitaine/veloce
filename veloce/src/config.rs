@@ -14,7 +14,6 @@ pub const GN_PROTOCOL_VERSION: u8 = 1;
 pub const GN_IS_MOBILE: bool = true;
 /// Maximum number of Duplicate Packet List (DPL) per source.
 pub const GN_DPL_LENGTH: usize = 8;
-pub const GN_LOCAL_ADDR_CONF_METHOD: GnAddrConfMethod = GnAddrConfMethod::Managed;
 pub const GN_LOC_TABLE_ENTRY_COUNT: usize = 16;
 pub const GN_LOC_TABLE_ENTRY_LIFETIME: Duration = Duration::from_secs(20);
 /// Beacon packet transmit period.
@@ -100,27 +99,6 @@ mod cfg {
     pub const GN_CBF_PACKET_BUFFER_SIZE: usize = 2048;
     /// For tests - Maximum number of elements in the broadcast buffer.
     pub const GN_CBF_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
-}
-
-/// The GeoNetworking protocol Address configuration method.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GnAddrConfMethod {
-    /// Local GN_ADDR is configured from MIB.
-    Auto,
-    /// Local GN_ADDR is configured via the GN management using the service primitive GN-MGMT.
-    Managed,
-    /// Local GN_ADDR is configured by the security entity.
-    Anonymous,
-}
-
-impl fmt::Display for GnAddrConfMethod {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            GnAddrConfMethod::Auto => write!(f, "auto"),
-            GnAddrConfMethod::Managed => write!(f, "managed"),
-            GnAddrConfMethod::Anonymous => write!(f, "anonymous"),
-        }
-    }
 }
 
 /// The GeoNetworking protocol networking interface type.
