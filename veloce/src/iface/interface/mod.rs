@@ -33,8 +33,7 @@ use crate::config::{
 };
 use crate::network::GnCore;
 use crate::network::Indication;
-use crate::phy::PacketMeta;
-use crate::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
+use crate::phy::{Device, DeviceCapabilities, Medium, PacketMeta, RxToken, TxToken};
 
 use crate::socket::geonet::Socket as GeonetSocket;
 use crate::socket::*;
@@ -150,10 +149,7 @@ pub struct Config {
 
 impl Config {
     pub fn new(hardware_addr: HardwareAddress, trc: Option<Dcc>) -> Self {
-        Config {
-            hardware_addr,
-            trc,
-        }
+        Config { hardware_addr, trc }
     }
 }
 
@@ -358,6 +354,10 @@ impl Interface {
             };
 
             rx_token.consume(|frame| {
+                if frame.is_empty() {
+                    return;
+                }
+
                 match self.inner.caps.medium {
                     #[cfg(feature = "medium-ethernet")]
                     Medium::Ethernet => {
@@ -396,6 +396,17 @@ impl Interface {
                 }
                 processed_any = true;
             });
+        }
+
+        // Update device filter.
+        if self.inner.caps.has_rx_mac_filter {
+            let hardware_addr = self.inner.hardware_addr;
+            match device.filter_addr() {
+                Some(filter_addr) if filter_addr != hardware_addr => {
+                    device.set_filter_addr(Some(hardware_addr));
+                }
+                _ => {}
+            }
         }
 
         processed_any

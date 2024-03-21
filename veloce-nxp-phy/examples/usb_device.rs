@@ -25,7 +25,7 @@ fn main() {
     let config = NxpConfig::new(
         NxpRadio::A,
         NxpChannel::Zero,
-        NxpWirelessChannel::Chan_180,
+        NxpWirelessChannel::Chan180,
         Power::from_dbm_i32(23),
         ll_addr,
     );

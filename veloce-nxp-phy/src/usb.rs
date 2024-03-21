@@ -1,17 +1,16 @@
 use core::mem::{size_of, transmute};
-use std::{cell::RefCell, rc::Rc, time::SystemTime};
+use std::{cell::RefCell, os::fd::RawFd, rc::Rc, time::SystemTime};
 
+use heapless::HistoryBuffer;
+use log::{error, trace};
 use veloce::{
-    phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken},
+    phy::{ChannelBusyRatio, Device, DeviceCapabilities, Medium, RxToken, TxToken},
     time::{Duration, Instant},
+    wire::HardwareAddress,
 };
 
 use crate::{
-    eMKxAntenna_MKX_ANT_DEFAULT, eMKxChannel_MKX_CHANNEL_0, eMKxIFMsgType_MKXIF_ERROR,
-    eMKxIFMsgType_MKXIF_RXPACKET, eMKxIFMsgType_MKXIF_TXPACKET, eMKxMCS_MKXMCS_DEFAULT,
-    eMKxPower_MKX_POWER_TX_DEFAULT, eMKxRadio_MKX_RADIO_A, eMKxStatus_MKXSTATUS_RESERVED,
-    eMKxTxCtrlFlags_MKX_REGULAR_TRANSMISSION, tMKxIFMsg, tMKxRadioConfig, tMKxRxPacket,
-    tMKxTxPacket, usb_phy::USB, Config, Error, Result, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX,
+    ffi::*, usb_phy::USB, Error, NxpConfig, NxpRadio, Result, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX,
 };
 
 /// An NXP USB SAF 5X00 device.
@@ -25,12 +24,15 @@ pub struct NxpUsbDevice {
     /// Sequence number of messages being sent.
     rx_seq_num: u16,
     /// Device configuration
-    config: Config,
+    config: NxpConfig,
+    /// Channel busy ratio. Measurement should be made over a period of 100ms,
+    /// NXP phy gives us a measurement each 50ms, so store 2 values of it.
+    cbr_values: HistoryBuffer<ChannelBusyRatio, 2>,
 }
 
 impl NxpUsbDevice {
     /// Constructs a new NxpDevice using `config`.
-    pub fn new(config: Config) -> Result<NxpUsbDevice> {
+    pub fn new(config: NxpConfig) -> Result<NxpUsbDevice> {
         let lower = USB::new().map_err(|_| Error::USB)?;
 
         Ok(NxpUsbDevice {
@@ -39,6 +41,7 @@ impl NxpUsbDevice {
             tx_seq_num: Rc::new(RefCell::new(0)),
             rx_seq_num: 0,
             config,
+            cbr_values: HistoryBuffer::new(),
         })
     }
 
@@ -68,6 +71,11 @@ impl NxpUsbDevice {
 
         rc
     }
+
+    /// Return the file descriptor list to poll for USB operation.
+    pub fn pollfds(&self) -> Vec<RawFd> {
+        self.lower.borrow().get_pollfds()
+    }
 }
 
 impl Device for NxpUsbDevice {
@@ -83,7 +91,28 @@ impl Device for NxpUsbDevice {
         let mut caps = DeviceCapabilities::default();
         caps.max_transmission_unit = RAW_FRAME_LENGTH_MAX;
         caps.medium = Medium::Ieee80211p;
+        caps.has_rx_mac_filter = true;
         caps
+    }
+
+    fn filter_addr(&self) -> Option<HardwareAddress> {
+        Some(self.config.filter_addr.into())
+    }
+
+    fn set_filter_addr(&mut self, addr: Option<HardwareAddress>) {
+        let Some(addr) = addr else {
+            return;
+        };
+
+        self.config.filter_addr = addr.ethernet_or_panic();
+        match self.commit_config() {
+            Ok(_) => {
+                trace!("Filter {} Mac address set", self.config.filter_addr);
+            }
+            Err(e) => {
+                error!("Failed to set filter Mac address: {}", e);
+            }
+        }
     }
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
@@ -124,36 +153,56 @@ impl Device for NxpUsbDevice {
                     self.rx_seq_num = self.rx_seq_num.wrapping_add(1);
                 }
 
-                // Silently ignore non RXPACKET types.
-                if hdr.Type != eMKxIFMsgType_MKXIF_RXPACKET as u16 {
-                    return None;
-                }
-
                 // Sanity check 3.
                 let len = hdr.Len as usize - size_of::<tMKxIFMsg>();
                 if len < size_of::<tMKxRxPacket>() {
                     return None;
                 };
 
-                // Unpack NxpRxPacketData header.
-                let rx_pkt: &tMKxRxPacket = unsafe { &*buffer.as_ptr().cast() };
+                let cfg_channel = self.config.channel;
 
-                // Sanity check 4.
-                let frame_len = rx_pkt.RxPacketData.RxFrameLength;
-                if frame_len < (hdr.Len as usize - size_of::<tMKxRxPacket>()) as u16 {
-                    return None;
+                match (hdr.Type as u32, self.config.radio) {
+                    (eMKxIFMsgType_MKXIF_RADIOASTATS, NxpRadio::A)
+                    | (eMKxIFMsgType_MKXIF_RADIOBSTATS, NxpRadio::B)
+                        if hdr.Ref == cfg_channel as u16 =>
+                    {
+                        let stats_pkt: &tMKxRadioStats = unsafe { &*buffer.as_ptr().cast() };
+                        let stats = stats_pkt.RadioStatsData.Chan[cfg_channel as usize];
+                        let cbr =
+                            ChannelBusyRatio::from_ratio(stats.ChannelBusyRatio as f32 / 255.0);
+                        self.cbr_values.write(cbr);
+
+                        None
+                    }
+                    (eMKxIFMsgType_MKXIF_RXPACKET, radio) => {
+                        // Unpack NxpRxPacketData header.
+                        let rx_pkt: &tMKxRxPacket = unsafe { &*buffer.as_ptr().cast() };
+
+                        // Sanity check 4.
+                        let frame_len = rx_pkt.RxPacketData.RxFrameLength;
+                        if frame_len < (hdr.Len as usize - size_of::<tMKxRxPacket>()) as u16 {
+                            return None;
+                        }
+
+                        if rx_pkt.RxPacketData.RadioID == radio as u8
+                            && rx_pkt.RxPacketData.ChannelID == cfg_channel as u8
+                        {
+                            // Strip packet header.
+                            buffer.drain(..size_of::<tMKxRxPacket>());
+
+                            let rx = NxpRxToken { buffer };
+                            let tx = NxpTxToken {
+                                lower: self.lower.clone(),
+                                ref_num: self.ref_num.clone(),
+                                tx_seq_num: self.tx_seq_num.clone(),
+                            };
+                            return Some((rx, tx));
+                        }
+
+                        None
+                    }
+                    _ => None,
                 }
-
-                // Strip packet header.
-                buffer.drain(..size_of::<tMKxRxPacket>());
-
-                let rx = NxpRxToken { buffer };
-                let tx = NxpTxToken {
-                    lower: self.lower.clone(),
-                    ref_num: self.ref_num.clone(),
-                    tx_seq_num: self.tx_seq_num.clone(),
-                };
-                Some((rx, tx))
             }
             Err(Error::Timeout) => None,
             Err(e) => panic!("{}", e),
@@ -240,7 +289,6 @@ impl TxToken for NxpTxToken {
         println!("{}", unsafe {snap_hdr.__bindgen_anon_1.__bindgen_anon_1.SSAP});
         println!("{}", unsafe {snap_hdr.__bindgen_anon_1.__bindgen_anon_1.DSAP}); */
 
-        let start = SystemTime::now();
         match self.lower.borrow_mut().send(&buffer[..]) {
             Ok(_) => {}
             Err(Error::Timeout) => {
@@ -248,7 +296,6 @@ impl TxToken for NxpTxToken {
             }
             Err(e) => panic!("{}", e),
         }
-        println!("Send elapsed: {:?}", SystemTime::elapsed(&start).unwrap());
         result
     }
 }

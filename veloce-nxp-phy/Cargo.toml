@@ -11,13 +11,14 @@ description = "Veloce NXP SAF5x00 PHY"
 crossbeam = { version = "0.8.4" }
 futures-lite = "2.2.0"
 nusb = "0.1.6"
-rusb = "0.9.3"
+#rusb = "0.9.3"
+rusb = {git = "https://github.com/kurkpitaine/rusb.git", branch = "free_pollfds"}
 veloce = { path = "../veloce" }
 heapless = { git = "https://github.com/kurkpitaine/heapless.git", branch = "linked_list" }
+log = { version = "0.4.20", default-features = false }
 
 [dev-dependencies]
 clap = { version = "4.4.11", features = ["derive"] }
-log = { version = "0.4.20", default-features = false }
 uom = { version = "0.34.0", features = ["autoconvert", "f32"] }
 thread-priority = "0.15.1"
 

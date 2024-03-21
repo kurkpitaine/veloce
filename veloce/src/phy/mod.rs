@@ -12,7 +12,7 @@ and implementations of it:
     on the host OS.
 */
 
-use crate::time::Instant;
+use crate::{time::Instant, wire::HardwareAddress};
 
 #[cfg(all(
     any(feature = "phy-raw_socket", feature = "phy-tuntap_interface"),
@@ -97,6 +97,14 @@ pub struct DeviceCapabilities {
     /// For Ethernet devices, this is the maximum Ethernet frame size, including the Ethernet header (14 octets), but
     /// *not* including the Ethernet FCS (4 octets). Therefore, Ethernet MTU = Geonet MTU + 14.
     pub max_transmission_unit: usize,
+
+    /// MAC layer rx frame filter.
+    ///
+    /// Indicates if the device filters received frames based on the destination hardware address.
+    ///
+    /// Such filter has to be updated when the Geonetworking core or security changes the Geonetworking
+    /// address, since Geonetworking addresses are based on the hardware addresses.
+    pub has_rx_mac_filter: bool,
 }
 
 impl DeviceCapabilities {
@@ -216,8 +224,13 @@ pub trait Device {
     /// Get a description of device capabilities.
     fn capabilities(&self) -> DeviceCapabilities;
 
-    /// Set the hardware address of the device.
-    fn set_hardware_addr(&mut self) {}
+    /// Get the Rx filter destination address.
+    fn filter_addr(&self) -> Option<HardwareAddress> {
+        None
+    }
+
+    /// Set the Rx filter destination address.
+    fn set_filter_addr(&mut self, _addr: Option<HardwareAddress>) {}
 }
 
 /// A token to receive a single network packet.

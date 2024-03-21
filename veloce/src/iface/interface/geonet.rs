@@ -13,7 +13,6 @@ use crate::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, SingleHopReqMeta,
     TopoScopedReqMeta, UnicastReqMeta, UpperProtocol,
 };
-use crate::wire::{EthernetRepr, SequenceNumber};
 use crate::{
     common::geo_area::{DistanceAB, GeoArea, Shape},
     config::{
@@ -31,11 +30,12 @@ use crate::{
     time::Duration,
     wire::{
         BHNextHeader, BasicHeader, BasicHeaderRepr, BeaconHeader, BeaconHeaderRepr, CommonHeader,
-        CommonHeaderRepr, EthernetAddress, GeoAnycastHeader, GeoAnycastRepr, GeoBroadcastHeader,
-        GeoBroadcastRepr, GeonetPacketType, GeonetRepr, GeonetUnicast, GnProtocol,
-        LocationServiceReplyHeader, LocationServiceReplyRepr, LocationServiceRequestHeader,
-        LocationServiceRequestRepr, LongPositionVectorRepr as LongPositionVector, SingleHopHeader,
-        SingleHopHeaderRepr, TopoBroadcastHeader, TopoBroadcastRepr, UnicastHeader, UnicastRepr,
+        CommonHeaderRepr, EthernetAddress, EthernetRepr, GeoAnycastHeader, GeoAnycastRepr,
+        GeoBroadcastHeader, GeoBroadcastRepr, GeonetPacketType, GeonetRepr, GeonetUnicast,
+        GnProtocol, LocationServiceReplyHeader, LocationServiceReplyRepr,
+        LocationServiceRequestHeader, LocationServiceRequestRepr,
+        LongPositionVectorRepr as LongPositionVector, SingleHopHeader, SingleHopHeaderRepr,
+        TopoBroadcastHeader, TopoBroadcastRepr, UnicastHeader, UnicastRepr,
     },
 };
 

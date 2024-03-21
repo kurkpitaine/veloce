@@ -223,7 +223,7 @@ impl HardwareAddress {
     }
 
     #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]
-    pub(crate) fn ethernet_or_panic(&self) -> EthernetAddress {
+    pub fn ethernet_or_panic(&self) -> EthernetAddress {
         match self {
             HardwareAddress::Ethernet(addr) => *addr,
             #[allow(unreachable_patterns)]
@@ -233,7 +233,7 @@ impl HardwareAddress {
 
     #[cfg(feature = "medium-pc5")]
     #[allow(unused)]
-    pub(crate) fn pc5_or_panic(&self) -> PC5Address {
+    pub fn pc5_or_panic(&self) -> PC5Address {
         match self {
             HardwareAddress::PC5(addr) => *addr,
             #[allow(unreachable_patterns)]

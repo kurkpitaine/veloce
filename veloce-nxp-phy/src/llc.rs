@@ -1,21 +1,17 @@
 use std::cell::RefCell;
 use std::io;
-use std::mem::size_of;
+use std::mem::{size_of, transmute};
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::vec::Vec;
 
 use heapless::HistoryBuffer;
+use log::{error, trace};
 use veloce::phy::{self, sys, ChannelBusyRatio, Device, DeviceCapabilities, Medium};
 use veloce::time::Instant;
+use veloce::wire::HardwareAddress;
 
-use crate::{
-    eMKxAntenna_MKX_ANT_DEFAULT, eMKxChannel_MKX_CHANNEL_0, eMKxIFMsgType_MKXIF_ERROR,
-    eMKxIFMsgType_MKXIF_RADIOASTATS, eMKxIFMsgType_MKXIF_RXPACKET, eMKxIFMsgType_MKXIF_TXPACKET,
-    eMKxMCS_MKXMCS_DEFAULT, eMKxPower_MKX_POWER_TX_DEFAULT, eMKxRadio_MKX_RADIO_A,
-    eMKxStatus_MKXSTATUS_RESERVED, eMKxTxCtrlFlags_MKX_REGULAR_TRANSMISSION, tMKxIFMsg,
-    tMKxRadioStats, tMKxRxPacket, tMKxTxPacket, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX,
-};
+use crate::{ffi::*, NxpConfig, NxpRadio, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX};
 
 /// A socket that captures or transmits the complete frame.
 #[derive(Debug)]
@@ -27,9 +23,10 @@ pub struct NxpLlcDevice {
     tx_seq_num: Rc<RefCell<u16>>,
     /// Sequence number of messages being sent.
     rx_seq_num: u16,
+    /// Device configuration
+    config: NxpConfig,
     /// Channel busy ratio. Measurement should be made over a period of 100ms,
     /// NXP phy gives us a measurement each 50ms, so store 2 values of it.
-    /// Stored values  ranged from
     cbr_values: HistoryBuffer<ChannelBusyRatio, 2>,
 }
 
@@ -49,7 +46,7 @@ impl NxpLlcDevice {
     /// This method panics if medium is not of type [`Ieee80211p`]
     ///
     /// [`Ieee80211p`]: Medium#variant.Ieee80211p
-    pub fn new(name: &str) -> io::Result<NxpLlcDevice> {
+    pub fn new(name: &str, config: NxpConfig) -> io::Result<NxpLlcDevice> {
         let medium = Medium::Ieee80211p;
         let mut lower = sys::RawSocketDesc::new(name, medium)?;
         lower.bind_interface()?;
@@ -61,8 +58,19 @@ impl NxpLlcDevice {
             ref_num: Rc::new(RefCell::new(0)),
             tx_seq_num: Rc::new(RefCell::new(0)),
             rx_seq_num: 0,
+            config,
             cbr_values: HistoryBuffer::new(),
         })
+    }
+
+    /// Apply the configuration on the NXP device.
+    #[must_use = "Configuration should be applied to enable communication."]
+    pub fn commit_config(&self) -> io::Result<()> {
+        let mut radio_cfg = tMKxRadioConfig::default();
+        self.config.emit(&mut radio_cfg);
+        let w_buf: [u8; size_of::<tMKxRadioConfig>()] = unsafe { transmute(radio_cfg) };
+
+        self.lower.borrow_mut().send(&w_buf).map(|_| ())
     }
 }
 
@@ -78,7 +86,28 @@ impl Device for NxpLlcDevice {
         let mut caps = DeviceCapabilities::default();
         caps.max_transmission_unit = RAW_FRAME_LENGTH_MAX;
         caps.medium = Medium::Ieee80211p;
+        caps.has_rx_mac_filter = true;
         caps
+    }
+
+    fn filter_addr(&self) -> Option<HardwareAddress> {
+        Some(self.config.filter_addr.into())
+    }
+
+    fn set_filter_addr(&mut self, addr: Option<HardwareAddress>) {
+        let Some(addr) = addr else {
+            return;
+        };
+
+        self.config.filter_addr = addr.ethernet_or_panic();
+        match self.commit_config() {
+            Ok(_) => {
+                trace!("Filter {} Mac address set", self.config.filter_addr);
+            }
+            Err(e) => {
+                error!("Failed to set filter Mac address: {}", e);
+            }
+        }
     }
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
@@ -113,46 +142,56 @@ impl Device for NxpLlcDevice {
                     self.rx_seq_num = self.rx_seq_num.wrapping_add(1);
                 }
 
-                // Silently ignore non RXPACKET types.
-                /* if hdr.Type != eMKxIFMsgType_MKXIF_RXPACKET as u16 {
-                    return None;
-                } */
-
                 // Sanity check 3.
                 let len = hdr.Len as usize - size_of::<tMKxIFMsg>();
                 if len < size_of::<tMKxRxPacket>() {
                     return None;
                 };
 
-                if hdr.Type == eMKxIFMsgType_MKXIF_RADIOASTATS as u16 {
-                    let stats_pkt: &tMKxRadioStats = unsafe { &*buffer.as_ptr().cast() };
-                    if hdr.Ref == eMKxChannel_MKX_CHANNEL_0 as u16 {
-                        let stats =
-                            stats_pkt.RadioStatsData.Chan[eMKxChannel_MKX_CHANNEL_0 as usize];
-                        stats.ChannelBusyRatio;
-                        stats.MediumBusyTime;
+                let cfg_channel = self.config.channel;
+
+                match (hdr.Type as u32, self.config.radio) {
+                    (eMKxIFMsgType_MKXIF_RADIOASTATS, NxpRadio::A)
+                    | (eMKxIFMsgType_MKXIF_RADIOBSTATS, NxpRadio::B)
+                        if hdr.Ref == cfg_channel as u16 =>
+                    {
+                        let stats_pkt: &tMKxRadioStats = unsafe { &*buffer.as_ptr().cast() };
+                        let stats = stats_pkt.RadioStatsData.Chan[cfg_channel as usize];
+                        let cbr =
+                            ChannelBusyRatio::from_ratio(stats.ChannelBusyRatio as f32 / 255.0);
+                        self.cbr_values.write(cbr);
+
+                        None
                     }
+                    (eMKxIFMsgType_MKXIF_RXPACKET, radio) => {
+                        // Unpack NxpRxPacketData header.
+                        let rx_pkt: &tMKxRxPacket = unsafe { &*buffer.as_ptr().cast() };
+
+                        // Sanity check 4.
+                        let frame_len = rx_pkt.RxPacketData.RxFrameLength;
+                        if frame_len < (hdr.Len as usize - size_of::<tMKxRxPacket>()) as u16 {
+                            return None;
+                        }
+
+                        if rx_pkt.RxPacketData.RadioID == radio as u8
+                            && rx_pkt.RxPacketData.ChannelID == cfg_channel as u8
+                        {
+                            // Strip packet header.
+                            buffer.drain(..size_of::<tMKxRxPacket>());
+
+                            let rx = NxpRxToken { buffer };
+                            let tx = NxpTxToken {
+                                lower: self.lower.clone(),
+                                ref_num: self.ref_num.clone(),
+                                tx_seq_num: self.tx_seq_num.clone(),
+                            };
+                            return Some((rx, tx));
+                        }
+
+                        None
+                    }
+                    _ => None,
                 }
-
-                // Unpack NxpRxPacketData header.
-                let rx_pkt: &tMKxRxPacket = unsafe { &*buffer.as_ptr().cast() };
-
-                // Sanity check 4.
-                let frame_len = rx_pkt.RxPacketData.RxFrameLength;
-                if frame_len < (hdr.Len as usize - size_of::<tMKxRxPacket>()) as u16 {
-                    return None;
-                }
-
-                // Strip packet header.
-                buffer.drain(..size_of::<tMKxRxPacket>());
-
-                let rx = NxpRxToken { buffer };
-                let tx = NxpTxToken {
-                    lower: self.lower.clone(),
-                    ref_num: self.ref_num.clone(),
-                    tx_seq_num: self.tx_seq_num.clone(),
-                };
-                Some((rx, tx))
             }
             Err(err) if err.kind() == io::ErrorKind::WouldBlock => None,
             Err(err) => panic!("{}", err),

@@ -1,7 +1,7 @@
 #[cfg(feature = "async")]
 use core::task::Waker;
 
-use crate::common::PotiFix;
+use crate::common::{PotiFix, PotiMode};
 use crate::iface::{Context, ContextMeta};
 use crate::network::{GnCore, Transport};
 
@@ -89,7 +89,7 @@ impl<'a> Socket<'a> {
         Socket {
             inner,
             retransmit_at: Instant::ZERO,
-            retransmit_delay: Duration::ZERO,
+            retransmit_delay: CAM_RETRANSMIT_DELAY,
             prev_low_dynamic_at: Instant::ZERO,
         }
     }
@@ -183,8 +183,14 @@ impl<'a> Socket<'a> {
 
         let ego_station_type = srv.core.station_type();
         let ego_position = srv.core.position();
-        let now_tai2004 = TAI2004::from_unix_instant(srv.core.now);
+        let now_tai2004 = TAI2004::from_unix_instant(now);
         let diff_now_pos = now_tai2004 - ego_position.timestamp;
+
+        if let PotiMode::NoFix = ego_position.mode {
+            net_debug!("CAM cannot be sent: no position fix");
+            self.retransmit_at = now + self.retransmit_delay;
+            return Ok(());
+        };
 
         if diff_now_pos >= Duration::from_millis(32767) {
             net_debug!(
@@ -193,6 +199,7 @@ impl<'a> Socket<'a> {
                 ego_position.timestamp.total_millis(),
                 diff_now_pos.total_millis()
             );
+            self.retransmit_at = now + self.retransmit_delay;
             return Ok(());
         }
 
@@ -212,7 +219,7 @@ impl<'a> Socket<'a> {
             self.retransmit_delay = CAM_RETRANSMIT_DELAY;
         }
 
-        self.retransmit_at = srv.core.now + self.retransmit_delay;
+        self.retransmit_at = now + self.retransmit_delay;
 
         let Ok(raw_cam) = rasn::uper::encode(&cam) else {
             net_trace!("CAM content invalid");

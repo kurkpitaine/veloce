@@ -1,6 +1,11 @@
+use std::os::fd::RawFd;
+
 use veloce::time::Duration;
 
-use rusb::{Context, Device, DeviceDescriptor, DeviceHandle, Direction, TransferType, UsbContext};
+use rusb::{
+    ffi::{libusb_free_pollfds, libusb_get_pollfds},
+    Context, Device, DeviceDescriptor, DeviceHandle, Direction, TransferType, UsbContext,
+};
 
 use crate::{Error, Result, LLC_BUFFER_LEN};
 
@@ -173,5 +178,29 @@ impl USB {
     /// Claim the endpoint interface.
     fn configure_endpoint<T: UsbContext>(handle: &mut DeviceHandle<T>, iface: u8) -> Result<()> {
         handle.claim_interface(iface).map_err(|_| Error::USB)
+    }
+
+    /// Return the file descriptor list to poll for USB operation.
+    pub fn get_pollfds(&self) -> Vec<RawFd> {
+        let fds = unsafe { libusb_get_pollfds(self._ctx.as_raw()) };
+        let mut v = Vec::new();
+        let mut idx = 0;
+
+        loop {
+            let p_pollfd = unsafe { *fds.offset(idx) };
+            if p_pollfd.is_null() {
+                break;
+            }
+
+            let pollfd = unsafe { &*p_pollfd };
+
+            v.push(pollfd.fd);
+
+            idx += 1;
+        }
+
+        unsafe { libusb_free_pollfds(fds) };
+
+        v
     }
 }

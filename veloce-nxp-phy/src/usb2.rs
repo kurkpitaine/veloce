@@ -229,12 +229,10 @@ impl TxToken for NxpTxToken {
         println!("{}", unsafe {snap_hdr.__bindgen_anon_1.__bindgen_anon_1.SSAP});
         println!("{}", unsafe {snap_hdr.__bindgen_anon_1.__bindgen_anon_1.DSAP}); */
 
-        let start = SystemTime::now();
         match self.lower.borrow_mut().send(buffer) {
             Ok(_) => {}
             Err(e) => panic!("{}", e),
         }
-        println!("Send elapsed: {:?}", SystemTime::elapsed(&start).unwrap());
         result
     }
 }

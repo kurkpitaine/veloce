@@ -1,4 +1,5 @@
 use std::io;
+use std::os::fd::AsRawFd;
 
 use clap::Parser;
 use log::{debug, error, info, trace};
@@ -8,16 +9,17 @@ use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
 use veloce::iface::{Config, Interface, SocketSet};
 use veloce::network::{GnAddrConfigMode, GnCore, GnCoreGonfig};
+use veloce::phy::{Medium, RawSocket as VeloceRawSocket};
 use veloce::socket;
 use veloce::time::Instant;
-use veloce::types::{Power, Pseudonym};
+use veloce::types::Pseudonym;
 use veloce::utils;
 use veloce::wire::{EthernetAddress, StationType};
 use veloce_gnss::Gpsd;
-use veloce_nxp_phy::{NxpChannel, NxpConfig, NxpRadio, NxpUsbDevice, NxpWirelessChannel};
 
 #[derive(Parser, Default, Debug)]
 struct Arguments {
+    dev: String,
     log_level: String,
 }
 
@@ -34,19 +36,8 @@ fn main() {
 
     let ll_addr = EthernetAddress([0x04, 0xe5, 0x48, 0xfa, 0xde, 0xca]);
 
-    let config = NxpConfig::new(
-        NxpRadio::A,
-        NxpChannel::Zero,
-        NxpWirelessChannel::Chan180,
-        Power::from_dbm_i32(23),
-        ll_addr,
-    );
-    // Configure NXP device
-    let mut device = UsbSocket::new(config).unwrap();
-    device
-        .inner_mut()
-        .commit_config()
-        .expect("Cannot configure device");
+    // Configure Raw socket device
+    let mut device = RawSocket::new(args.dev.as_str(), Medium::Ethernet).unwrap();
 
     // Register it into the polling registry
     poll.registry()
@@ -128,33 +119,30 @@ fn main() {
     }
 }
 
-pub struct UsbSocket {
-    inner: NxpUsbDevice,
+pub struct RawSocket {
+    inner: VeloceRawSocket,
 }
 
-impl UsbSocket {
-    pub fn new(config: NxpConfig) -> io::Result<UsbSocket> {
-        Ok(UsbSocket {
-            inner: NxpUsbDevice::new(config).map_err(|_| io::ErrorKind::Other)?,
+impl RawSocket {
+    pub fn new(name: &str, medium: Medium) -> io::Result<RawSocket> {
+        Ok(RawSocket {
+            inner: VeloceRawSocket::new(name, medium)?,
         })
     }
 
-    pub fn inner_mut(&mut self) -> &mut NxpUsbDevice {
+    pub fn inner_mut(&mut self) -> &mut VeloceRawSocket {
         &mut self.inner
     }
 }
 
-// Not very clean here, but USB support is only for development purposes. So
-// keep it this way for now.
-impl Source for UsbSocket {
+impl Source for RawSocket {
     fn register(
         &mut self,
         registry: &mio::Registry,
         token: Token,
         interests: mio::Interest,
     ) -> std::io::Result<()> {
-        let fd = self.inner.pollfds()[0];
-        SourceFd(&fd).register(registry, token, interests)
+        SourceFd(&self.inner.as_raw_fd()).register(registry, token, interests)
     }
 
     fn reregister(
@@ -163,12 +151,10 @@ impl Source for UsbSocket {
         token: Token,
         interests: mio::Interest,
     ) -> std::io::Result<()> {
-        let fd = self.inner.pollfds()[0];
-        SourceFd(&fd).reregister(registry, token, interests)
+        SourceFd(&self.inner.as_raw_fd()).reregister(registry, token, interests)
     }
 
     fn deregister(&mut self, registry: &mio::Registry) -> std::io::Result<()> {
-        let fd = self.inner.pollfds()[0];
-        SourceFd(&fd).deregister(registry)
+        SourceFd(&self.inner.as_raw_fd()).deregister(registry)
     }
 }
