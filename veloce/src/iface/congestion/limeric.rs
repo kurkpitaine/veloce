@@ -114,20 +114,10 @@ impl Limeric {
         self.dual_alpha_params.is_some()
     }
 
-    /// Add a CBR value inside the CBR history.
-    pub fn update_cbr(&mut self, value: f32) {
-        let full = self.cbr_hist.is_full();
-        self.cbr_hist.write(value);
-
-        if !full {
-            self.channel_load = self.cbr_hist_average();
-        }
-    }
-
     /// Schedule for next run.
     fn schedule_next_run(&self, timestamp: Instant) -> Instant {
         let interval = self.params.cbr_interval * 2;
-        let next = timestamp + interval;
+        let next: Instant = timestamp + interval;
         let bias = Duration::from_micros(next.total_micros() as u64 % interval.total_micros());
 
         if bias > self.params.cbr_interval {
@@ -213,13 +203,7 @@ impl RateController for Limeric {
     /// Run the Limerick algorithm once. Algorithm will be run
     /// only if the timestamp is equal or superior to the instant
     /// it should be run at.
-    fn run(&mut self, timestamp: Instant, cbr: ChannelBusyRatio) {
-        // Update CBR value if necessary.
-        if timestamp >= self.next_cbr_read_at {
-            self.cbr_hist.write(cbr.as_ratio());
-            self.next_cbr_read_at += self.params.cbr_interval;
-        }
-
+    fn run(&mut self, timestamp: Instant) {
         if timestamp < self.next_run_at {
             return;
         }
@@ -255,6 +239,21 @@ impl RateController for Limeric {
         self.last_tx_duration = duration;
         self.next_release_at = self.last_tx_at + self.tx_interval;
     }
+
+    fn update_cbr(&mut self, timestamp: Instant, cbr: ChannelBusyRatio) {
+        if timestamp < self.next_cbr_read_at {
+            return;
+        }
+
+        let full = self.cbr_hist.is_full();
+        self.cbr_hist.write(cbr.as_ratio());
+
+        if !full {
+            self.channel_load = self.cbr_hist_average();
+        }
+
+        self.next_cbr_read_at = timestamp + self.params.cbr_interval;
+    }
 }
 
 #[cfg(test)]
@@ -272,45 +271,57 @@ mod test {
     #[test]
     fn test_average_cbr_only_measured() {
         let mut limeric = Limeric::new(Default::default());
+        let mut timestamp = Instant::now();
 
-        limeric.update_cbr(0.2);
+        limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.2));
         assert_eq!(limeric.smoothed_cbr(), 0.2);
 
-        limeric.update_cbr(0.4);
+        timestamp += Duration::from_millis(100);
+        limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.4));
         assert_eq!(limeric.smoothed_cbr(), 0.3);
 
-        limeric.update_cbr(0.6);
+        timestamp += Duration::from_millis(100);
+        limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.6));
         assert_eq!(limeric.smoothed_cbr(), 0.4);
 
-        limeric.update_cbr(0.6);
+        timestamp += Duration::from_millis(100);
+        limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.6));
         assert_relative_eq!(limeric.smoothed_cbr(), 0.45);
     }
 
     #[test]
     fn test_average_cbr_with_cycle() {
         let mut limeric = Limeric::new(Default::default());
+        let mut timestamp = Instant::now();
 
-        limeric.update_cbr(0.2);
-        limeric.update_cbr(0.4);
+        limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.2));
+
+        timestamp += Duration::from_millis(100);
+        limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.4));
         assert_relative_eq!(limeric.smoothed_cbr(), 0.3);
 
-        limeric.run(Instant::now());
+        limeric.run(timestamp);
         assert_relative_eq!(limeric.smoothed_cbr(), 0.3);
 
-        limeric.update_cbr(0.2);
+        timestamp += Duration::from_millis(100);
+        limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.2));
         assert_relative_eq!(limeric.smoothed_cbr(), 0.3);
 
-        limeric.update_cbr(0.1);
+        timestamp += Duration::from_millis(100);
+        limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.1));
         assert_relative_eq!(limeric.smoothed_cbr(), 0.225);
 
-        limeric.update_cbr(0.1);
+        timestamp += Duration::from_millis(100);
+        limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.1));
         assert_relative_eq!(limeric.smoothed_cbr(), 0.2);
 
         limeric.run(limeric.next_run_at);
         assert_relative_eq!(limeric.smoothed_cbr(), 0.15);
 
-        limeric.update_cbr(0.3);
-        limeric.update_cbr(0.5);
+        timestamp += Duration::from_millis(100);
+        limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.3));
+        timestamp += Duration::from_millis(100);
+        limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.5));
         assert_relative_eq!(limeric.smoothed_cbr(), 0.3);
     }
 
@@ -319,16 +330,18 @@ mod test {
         let mut limeric = Limeric::new(Default::default());
         let mut limeric_da = Limeric::new(Default::default());
         limeric_da.enable_dual_alpha(Default::default());
+        let mut start = Instant::now();
 
         // Set average CBR to 0.8
-        limeric.update_cbr(0.8);
-        limeric.update_cbr(0.8);
-        limeric_da.update_cbr(0.8);
-        limeric_da.update_cbr(0.8);
+        limeric.update_cbr(start, ChannelBusyRatio::from_ratio(0.8));
+        limeric_da.update_cbr(start, ChannelBusyRatio::from_ratio(0.8));
+
+        start += Duration::from_millis(100);
+        limeric.update_cbr(start, ChannelBusyRatio::from_ratio(0.8));
+        limeric_da.update_cbr(start, ChannelBusyRatio::from_ratio(0.8));
 
         assert_eq!(limeric.duty_cycle, limeric_da.duty_cycle);
 
-        let mut start = Instant::now();
         limeric.run(start);
         limeric_da.run(start);
 

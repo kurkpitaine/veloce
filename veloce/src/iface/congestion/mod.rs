@@ -17,7 +17,7 @@ pub(super) use self::{Error as CongestionError, Success as CongestionSuccess};
 
 pub(super) trait RateController {
     /// Run the Rate Control algorithm once.
-    fn run(&mut self, timestamp: Instant, cbr: ChannelBusyRatio);
+    fn run(&mut self, timestamp: Instant);
     /// Return the instant the Rate Control algorithm should be run at.
     fn run_at(&self) -> Instant;
     /// Return wether Rate Control algorithm allows for transmission.
@@ -32,6 +32,8 @@ pub(super) trait RateController {
     /// at `tx_at` time instant, and for over-the-air
     /// transmission `duration`.
     fn notify(&mut self, tx_at: Instant, duration: Duration);
+    /// Update CBR value.
+    fn update_cbr(&mut self, timestamp: Instant, cbr: ChannelBusyRatio);
 }
 
 /// Dcc queued data type.

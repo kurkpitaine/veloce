@@ -66,10 +66,9 @@ impl Interface {
 
     /// Runs the congestion control algorithm
     pub(crate) fn run_congestion_control(&mut self, timestamp: Instant, cbr: ChannelBusyRatio) {
-        self.congestion_control
-            .controller
-            .inner_mut()
-            .run(timestamp, cbr)
+        let rc = self.congestion_control.controller.inner_mut();
+        rc.update_cbr(timestamp, cbr);
+        rc.run(timestamp);
     }
 
     /// Egress frames buffered in the congestion control queues.

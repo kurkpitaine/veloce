@@ -10,7 +10,7 @@ use super::RateController;
 pub struct NoControl;
 
 impl RateController for NoControl {
-    fn run(&mut self, _timestamp: Instant, _cbr: ChannelBusyRatio) {}
+    fn run(&mut self, _timestamp: Instant) {}
 
     fn run_at(&self) -> Instant {
         Instant::from_micros_const(i64::MAX)
@@ -29,4 +29,6 @@ impl RateController for NoControl {
     }
 
     fn notify(&mut self, _tx_at: Instant, _duration: Duration) {}
+
+    fn update_cbr(&mut self, _timestamp: Instant, _cbr: ChannelBusyRatio) {}
 }
