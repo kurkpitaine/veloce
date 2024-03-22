@@ -34,7 +34,7 @@ fn main() {
     device.commit_config().expect("Cannot configure device");
 
     // Configure interface
-    let config = Config::new(ll_addr.into(), None);
+    let config = Config::new(ll_addr.into());
     let mut iface = Interface::new(config, &mut device);
 
     // Build GnCore

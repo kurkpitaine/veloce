@@ -1,12 +1,10 @@
 use heapless::HistoryBuffer;
 
-use crate::time::Duration;
-use crate::time::Instant;
+use crate::phy::ChannelBusyRatio;
+use crate::time::{Duration, Instant};
 use crate::wire::ieee80211::AccessCategory;
 
-use super::RateControl;
-use super::RateFeedback;
-use super::RateThrottle;
+use super::RateController;
 
 /// Limerick needs at least two CBR measurements on a duration of 200ms.
 const CBR_HISTORY_SIZE: usize = 2;
@@ -84,6 +82,8 @@ pub struct Limeric {
     next_run_at: Instant,
     /// Instant at which the next packet release from the queues should be.
     next_release_at: Instant,
+    /// Instant at which the CBR value should be read.
+    next_cbr_read_at: Instant,
 }
 
 impl Limeric {
@@ -100,12 +100,18 @@ impl Limeric {
             dual_alpha_params: None,
             next_run_at: Instant::ZERO,
             next_release_at: Instant::ZERO,
+            next_cbr_read_at: Instant::ZERO,
         }
     }
 
     /// Enable the Dual Alpha DCC with the provided `dual_alpha_params`.
     pub fn enable_dual_alpha(&mut self, dual_alpha_params: DualAlphaParameters) {
         self.dual_alpha_params = Some(dual_alpha_params);
+    }
+
+    /// Return whether the dual alpha capability is enabled.
+    pub fn dual_alpha_enabled(&self) -> bool {
+        self.dual_alpha_params.is_some()
     }
 
     /// Add a CBR value inside the CBR history.
@@ -118,8 +124,8 @@ impl Limeric {
         }
     }
 
-    /// Schedule for next work.
-    fn schedule_next(&self, timestamp: Instant) -> Instant {
+    /// Schedule for next run.
+    fn schedule_next_run(&self, timestamp: Instant) -> Instant {
         let interval = self.params.cbr_interval * 2;
         let next = timestamp + interval;
         let bias = Duration::from_micros(next.total_micros() as u64 % interval.total_micros());
@@ -135,23 +141,27 @@ impl Limeric {
     fn update_interval(&mut self, timestamp: Instant) {
         let delay = self.next_release_at - timestamp;
         if self.duty_cycle > 0.0 {
-            if delay > Duration::from_micros(0) {
+            if delay > Duration::from_millis(0) {
                 // Apply equation B.2 of TS 102 687 v1.2.1 if gate is closed at the moment
-                let interval = (self.last_tx_at.total_micros() as f32 / self.duty_cycle)
-                    * ((delay.total_micros() / self.tx_interval.total_micros()) as f32);
-                let interval = timestamp - self.last_tx_at + Duration::from_micros(interval as u64);
-                self.tx_interval = interval.min(MIN_INTERVAL).max(MAX_INTERVAL);
+                let interval = (self.last_tx_at.total_millis() as f32 / self.duty_cycle)
+                    * ((delay.total_millis() / self.tx_interval.total_millis()) as f32);
+
+                let interval = timestamp - self.last_tx_at + Duration::from_millis(interval as u64);
+                self.tx_interval = interval.max(MIN_INTERVAL).min(MAX_INTERVAL);
             } else {
                 // use equation B.1 otherwise
-                let interval = self.last_tx_at.total_micros() as f32 / self.duty_cycle;
-                self.tx_interval = Duration::from_micros(interval as u64)
-                    .min(MIN_INTERVAL)
-                    .max(MAX_INTERVAL);
+                let interval = self.last_tx_at.total_millis() as f32 / self.duty_cycle;
+                self.tx_interval = Duration::from_millis(interval as u64)
+                    .max(MIN_INTERVAL)
+                    .min(MAX_INTERVAL);
             }
         } else {
             // bail out with maximum interval if duty cycle is not positive
             self.tx_interval = MAX_INTERVAL;
         }
+
+        println!("self.duty_cycle = {}", self.duty_cycle);
+        println!("self.tx_interval = {}", self.tx_interval);
     }
 
     /// Computes the duty cycle value for the Limerick algorithm.
@@ -199,18 +209,24 @@ impl Limeric {
     }
 }
 
-impl RateControl for Limeric {
+impl RateController for Limeric {
     /// Run the Limerick algorithm once. Algorithm will be run
     /// only if the timestamp is equal or superior to the instant
     /// it should be run at.
-    fn run(&mut self, timestamp: Instant) {
+    fn run(&mut self, timestamp: Instant, cbr: ChannelBusyRatio) {
+        // Update CBR value if necessary.
+        if timestamp >= self.next_cbr_read_at {
+            self.cbr_hist.write(cbr.as_ratio());
+            self.next_cbr_read_at += self.params.cbr_interval;
+        }
+
         if timestamp < self.next_run_at {
             return;
         }
 
         self.channel_load = self.smoothed_cbr();
         self.duty_cycle = self.calculate_duty_cycle();
-        self.next_run_at = self.schedule_next(timestamp);
+        self.next_run_at = self.schedule_next_run(timestamp);
         self.update_interval(timestamp);
     }
 
@@ -218,20 +234,7 @@ impl RateControl for Limeric {
     fn run_at(&self) -> Instant {
         self.next_run_at
     }
-}
 
-impl RateFeedback for Limeric {
-    fn notify(&mut self, tx_at: Instant, duration: Duration) {
-        let interval = duration.total_micros() as f32 / self.duty_cycle;
-        let interval = Duration::from_micros(interval as u64);
-        self.tx_interval = interval.min(MIN_INTERVAL).max(MAX_INTERVAL);
-        self.last_tx_at = tx_at;
-        self.last_tx_duration = duration;
-        self.next_release_at = self.last_tx_at + self.tx_interval;
-    }
-}
-
-impl RateThrottle for Limeric {
     fn can_tx(&self, timestamp: Instant) -> bool {
         self.next_release_at <= timestamp
     }
@@ -242,5 +245,100 @@ impl RateThrottle for Limeric {
 
     fn tx_interval(&self) -> Duration {
         self.tx_interval
+    }
+
+    fn notify(&mut self, tx_at: Instant, duration: Duration) {
+        let interval = duration.total_millis() as f32 / self.duty_cycle;
+        let interval = Duration::from_millis(interval as u64);
+        self.tx_interval = interval.max(MIN_INTERVAL).min(MAX_INTERVAL);
+        self.last_tx_at = tx_at;
+        self.last_tx_duration = duration;
+        self.next_release_at = self.last_tx_at + self.tx_interval;
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn test_init() {
+        let limeric = Limeric::new(Default::default());
+        assert_eq!(limeric.smoothed_cbr(), 0.0);
+        assert_eq!(limeric.duty_cycle, 0.0153);
+    }
+
+    #[test]
+    fn test_average_cbr_only_measured() {
+        let mut limeric = Limeric::new(Default::default());
+
+        limeric.update_cbr(0.2);
+        assert_eq!(limeric.smoothed_cbr(), 0.2);
+
+        limeric.update_cbr(0.4);
+        assert_eq!(limeric.smoothed_cbr(), 0.3);
+
+        limeric.update_cbr(0.6);
+        assert_eq!(limeric.smoothed_cbr(), 0.4);
+
+        limeric.update_cbr(0.6);
+        assert_relative_eq!(limeric.smoothed_cbr(), 0.45);
+    }
+
+    #[test]
+    fn test_average_cbr_with_cycle() {
+        let mut limeric = Limeric::new(Default::default());
+
+        limeric.update_cbr(0.2);
+        limeric.update_cbr(0.4);
+        assert_relative_eq!(limeric.smoothed_cbr(), 0.3);
+
+        limeric.run(Instant::now());
+        assert_relative_eq!(limeric.smoothed_cbr(), 0.3);
+
+        limeric.update_cbr(0.2);
+        assert_relative_eq!(limeric.smoothed_cbr(), 0.3);
+
+        limeric.update_cbr(0.1);
+        assert_relative_eq!(limeric.smoothed_cbr(), 0.225);
+
+        limeric.update_cbr(0.1);
+        assert_relative_eq!(limeric.smoothed_cbr(), 0.2);
+
+        limeric.run(limeric.next_run_at);
+        assert_relative_eq!(limeric.smoothed_cbr(), 0.15);
+
+        limeric.update_cbr(0.3);
+        limeric.update_cbr(0.5);
+        assert_relative_eq!(limeric.smoothed_cbr(), 0.3);
+    }
+
+    #[test]
+    fn test_dual_alpha() {
+        let mut limeric = Limeric::new(Default::default());
+        let mut limeric_da = Limeric::new(Default::default());
+        limeric_da.enable_dual_alpha(Default::default());
+
+        // Set average CBR to 0.8
+        limeric.update_cbr(0.8);
+        limeric.update_cbr(0.8);
+        limeric_da.update_cbr(0.8);
+        limeric_da.update_cbr(0.8);
+
+        assert_eq!(limeric.duty_cycle, limeric_da.duty_cycle);
+
+        let mut start = Instant::now();
+        limeric.run(start);
+        limeric_da.run(start);
+
+        for _ in [0..30] {
+            start += Duration::from_millis(200);
+            limeric.run(start);
+            limeric_da.run(start);
+        }
+
+        // Limeric with dual alpha is faster to converge towards target CBR.
+        assert!(limeric.duty_cycle > limeric_da.duty_cycle);
     }
 }

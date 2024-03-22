@@ -115,14 +115,18 @@ impl Device for NxpUsbDevice {
         }
     }
 
+    fn channel_busy_ratio(&self) -> ChannelBusyRatio {
+        let sum: f32 = self
+            .cbr_values
+            .iter()
+            .fold(0.0, |acc, e| acc + e.as_ratio());
+        let count = self.cbr_values.len() as f32;
+        ChannelBusyRatio::from_ratio(sum / count)
+    }
+
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         let mut lower = self.lower.borrow_mut();
         let mut buffer = vec![0; LLC_BUFFER_LEN];
-
-        // Fail early if we have nothing to receive.
-        if !lower.can_recv() {
-            return None;
-        }
 
         match lower.recv(&mut buffer) {
             Ok(size) => {

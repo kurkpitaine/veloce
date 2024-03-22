@@ -5,7 +5,7 @@ provides lookup and caching of hardware addresses, and handles management packet
 */
 
 #[cfg(feature = "proto-geonet")]
-mod dcc;
+mod congestion;
 
 mod interface;
 #[cfg(feature = "proto-geonet")]
@@ -16,11 +16,9 @@ mod socket_set;
 
 mod v2x_packet;
 
-#[cfg(feature = "proto-geonet")]
-pub(crate) use dcc::Dcc;
-
 pub use self::interface::{
-    Config, Interface, InterfaceInner as Context, InterfaceServices as ContextMeta,
+    congestion::CongestionControl, Config, Interface, InterfaceInner as Context,
+    InterfaceServices as ContextMeta,
 };
 
 pub use self::socket_set::{SocketHandle, SocketSet, SocketStorage};

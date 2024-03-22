@@ -34,7 +34,7 @@ fn main() {
     let fd = device.as_raw_fd();
 
     // Configure interface
-    let config = Config::new(ll_addr.into(), None);
+    let config = Config::new(ll_addr.into());
     let mut iface = Interface::new(config, &mut device);
 
     // Build GnCore

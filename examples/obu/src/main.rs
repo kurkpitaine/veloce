@@ -6,7 +6,7 @@ use log::{debug, error, info, trace};
 use mio::event::Source;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
-use veloce::iface::{Config, Interface, SocketSet};
+use veloce::iface::{Config, CongestionControl, Interface, SocketSet};
 use veloce::network::{GnAddrConfigMode, GnCore, GnCoreGonfig};
 use veloce::socket;
 use veloce::time::Instant;
@@ -60,8 +60,9 @@ fn main() {
     let mut router = GnCore::new(router_config, Instant::now());
 
     // Configure interface
-    let config = Config::new(ll_addr.into(), None);
+    let config = Config::new(ll_addr.into());
     let mut iface = Interface::new(config, device.inner_mut());
+    iface.set_congestion_control(CongestionControl::Limeric);
 
     // Create CAM socket
     let cam_socket = socket::cam::Socket::new();
@@ -103,10 +104,10 @@ fn main() {
             }
         }
 
-        trace!("gpsd poll");
+        // trace!("gpsd poll");
         let _ = gpsd.poll();
 
-        trace!("iface poll");
+        // trace!("iface poll");
         iface.poll(&mut router, device.inner_mut(), &mut sockets);
         let socket = sockets.get_mut::<socket::cam::Socket>(cam_handle);
 
@@ -120,7 +121,7 @@ fn main() {
         }
 
         let iface_timeout = iface.poll_delay(now, &sockets);
-        trace!("timeout: {:?}", iface_timeout);
+        // trace!("timeout: {:?}", iface_timeout);
 
         // Poll Mio for events, blocking until we get an event or a timeout.
         poll.poll(&mut events, iface_timeout.map(|t| t.into()))

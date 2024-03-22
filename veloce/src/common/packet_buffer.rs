@@ -221,9 +221,9 @@ where
     }
 
     /// Dequeue one packet from the buffer.
-    pub fn dequeue_one<F, E>(&mut self, f: F) -> Option<Result<(), E>>
+    pub fn dequeue_one<F, E, S>(&mut self, f: F) -> Option<Result<S, E>>
     where
-        F: FnOnce(&mut Node<T>) -> Result<(), E>,
+        F: FnOnce(&mut Node<T>) -> Result<S, E>,
     {
         let Ok(mut node) = self.storage.pop_front() else {
             return None;

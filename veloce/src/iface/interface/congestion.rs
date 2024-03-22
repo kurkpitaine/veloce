@@ -1,7 +1,8 @@
 use crate::{
-    iface::dcc::{DccError, RateThrottle},
+    iface::congestion::CongestionError,
     network::GnCore,
-    phy::{Device, Medium, TxToken},
+    phy::{ChannelBusyRatio, Device, Medium, TxToken},
+    time::{Duration, Instant},
     wire::{
         ieee80211::{FrameControl, QoSControl},
         EthernetAddress, EthernetFrame, EthernetProtocol, GeonetRepr, Ieee80211Frame,
@@ -11,17 +12,75 @@ use crate::{
 
 use super::{GeonetPacket, GeonetPayload, Interface, InterfaceInner};
 
+/// A congestion control algorithm.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum CongestionControl {
+    /// No congestion control.
+    None,
+    /// Congestion control backed by Limeric algorithm.
+    Limeric,
+    /// Congestion control backed by Limeric with Dual Alpha algorithm.
+    LimericDualAlpha,
+}
+
 impl Interface {
-    pub(crate) fn trc_egress<D>(&mut self, core: &mut GnCore, device: &mut D) -> bool
+    /// Set an algorithm for congestion control.
+    ///
+    /// `CongestionControl::None` indicates that no congestion control is applied.
+    /// Options `CongestionControl::Limeric` and `CongestionControl::LimericDualAlpha` are also available.
+    pub fn set_congestion_control(&mut self, congestion_control: CongestionControl) {
+        use crate::iface::congestion::*;
+
+        let controller = match congestion_control {
+            CongestionControl::None => AnyController::None(no_control::NoControl),
+            CongestionControl::Limeric => {
+                let lim = limeric::Limeric::new(Default::default());
+                AnyController::Limeric(lim)
+            }
+            CongestionControl::LimericDualAlpha => {
+                let mut lim = limeric::Limeric::new(Default::default());
+                lim.enable_dual_alpha(Default::default());
+                AnyController::Limeric(lim)
+            }
+        };
+
+        self.congestion_control = Congestion::new(controller);
+    }
+
+    /// Return the current congestion control algorithm.
+    pub fn congestion_control(&self) -> CongestionControl {
+        use crate::iface::congestion::*;
+
+        match &self.congestion_control.controller {
+            AnyController::None(_) => CongestionControl::None,
+            AnyController::Limeric(lim) => {
+                if lim.dual_alpha_enabled() {
+                    CongestionControl::LimericDualAlpha
+                } else {
+                    CongestionControl::Limeric
+                }
+            }
+        }
+    }
+
+    /// Runs the congestion control algorithm
+    pub(crate) fn run_congestion_control(&mut self, timestamp: Instant, cbr: ChannelBusyRatio) {
+        self.congestion_control
+            .controller
+            .inner_mut()
+            .run(timestamp, cbr)
+    }
+
+    /// Egress frames buffered in the congestion control queues.
+    pub(crate) fn congestion_control_egress<D>(&mut self, core: &mut GnCore, device: &mut D) -> bool
     where
         D: Device + ?Sized,
     {
-        let Some(ref mut trc) = self.trc else {
-            return false;
-        };
+        let trc = &mut self.congestion_control;
 
         // Do not transmit if gate is closed.
-        if trc.rate_controller.can_tx(core.now) {
+        if !trc.controller.inner().can_tx(core.now) {
             return false;
         }
 
@@ -30,7 +89,7 @@ impl Interface {
             .queues
             .iter_mut()
             .filter(|e| !e.1.is_empty())
-            .map(|e| (e.1, trc.rate_controller.tx_at(Some(*e.0))))
+            .map(|e| (e.1, trc.controller.inner().tx_at(Some(*e.0))))
             .min_by_key(|k| k.1);
 
         let Some((q, _)) = queue_opt else {
@@ -40,7 +99,7 @@ impl Interface {
         q.dequeue_one(|node| {
             let tx_token = device.transmit(core.now).ok_or_else(|| {
                 net_debug!("failed to transmit DCC buffered packet: device exhausted");
-                DccError::Exhausted
+                CongestionError::Exhausted
             })?;
 
             let dst_hw_addr = node.metadata().dst_hw_addr;
@@ -49,19 +108,34 @@ impl Interface {
 
             let gn_pkt = GeonetPacket::new(gn_repr, GeonetPayload::Raw(payload));
 
-            self.inner.dispatch_dcc(tx_token, dst_hw_addr, gn_pkt)
+            self.inner
+                .dispatch_congestion_control(tx_token, core, dst_hw_addr, gn_pkt)
         })
-        .is_some_and(|r| r.is_ok())
+        .is_some_and(|r| {
+            match r {
+                Ok(total_len) => {
+                    // G5 bandwidth is 6 Mbps.
+                    let bytes_per_usec: f32 = 6.144 / 8.0;
+                    let tx_duration_usec = bytes_per_usec * total_len as f32;
+                    trc.controller
+                        .inner_mut()
+                        .notify(core.now, Duration::from_micros(tx_duration_usec as u64));
+                    true
+                }
+                Err(_) => false,
+            }
+        })
     }
 }
 
 impl InterfaceInner {
-    pub(super) fn dispatch_dcc<Tx: TxToken>(
+    pub(super) fn dispatch_congestion_control<Tx: TxToken>(
         &mut self,
         mut tx_token: Tx,
+        core: &mut GnCore,
         dst_hw_addr: EthernetAddress,
         packet: GeonetPacket,
-    ) -> Result<(), DccError> {
+    ) -> Result<usize, CongestionError> {
         let gn_repr = packet.geonet_repr();
         let caps = self.caps.clone();
 
@@ -140,23 +214,28 @@ impl InterfaceInner {
         };
 
         tx_token.set_meta(Default::default());
-        tx_token.consume(total_len, |mut tx_buffer| {
-            #[cfg(feature = "medium-ethernet")]
-            if matches!(self.caps.medium, Medium::Ethernet) {
-                emit_ethernet(tx_buffer);
-                tx_buffer = &mut tx_buffer[EthernetFrame::<&[u8]>::header_len()..];
-            }
+        tx_token
+            .consume(total_len, |mut tx_buffer| {
+                #[cfg(feature = "medium-ethernet")]
+                if matches!(self.caps.medium, Medium::Ethernet) {
+                    emit_ethernet(tx_buffer);
+                    tx_buffer = &mut tx_buffer[EthernetFrame::<&[u8]>::header_len()..];
+                }
 
-            #[cfg(feature = "medium-ieee80211p")]
-            if matches!(self.caps.medium, Medium::Ieee80211p) {
-                emit_ieee80211(tx_buffer);
-                let pl_start =
-                    Ieee80211Frame::<&[u8]>::header_len() + LlcFrame::<&[u8]>::header_len();
-                tx_buffer = &mut tx_buffer[pl_start..];
-            }
+                #[cfg(feature = "medium-ieee80211p")]
+                if matches!(self.caps.medium, Medium::Ieee80211p) {
+                    emit_ieee80211(tx_buffer);
+                    let pl_start =
+                        Ieee80211Frame::<&[u8]>::header_len() + LlcFrame::<&[u8]>::header_len();
+                    tx_buffer = &mut tx_buffer[pl_start..];
+                }
 
-            emit_gn(&gn_repr, tx_buffer);
-            Ok(())
-        })
+                emit_gn(&gn_repr, tx_buffer);
+                Ok(total_len)
+            })
+            .and_then(|r| {
+                self.defer_beacon(core, &gn_repr);
+                Ok(r)
+            })
     }
 }

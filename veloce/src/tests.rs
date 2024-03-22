@@ -8,21 +8,14 @@ pub(crate) fn setup<'a>(medium: Medium) -> (GnCore, Interface, SocketSet<'a>, Te
 
     let raw_ll_addr = [0x02, 0x02, 0x02, 0x02, 0x02, 0x02];
 
-    let config = Config::new(
-        match medium {
-            #[cfg(feature = "medium-ethernet")]
-            Medium::Ethernet => {
-                HardwareAddress::Ethernet(EthernetAddress::from_bytes(&raw_ll_addr))
-            }
-            #[cfg(feature = "medium-ieee80211p")]
-            Medium::Ieee80211p => {
-                HardwareAddress::Ethernet(EthernetAddress::from_bytes(&raw_ll_addr))
-            }
-            #[cfg(feature = "medium-pc5")]
-            Medium::PC5 => HardwareAddress::PC5(PC5Address::from_bytes(&raw_ll_addr[3..])),
-        },
-        None,
-    );
+    let config = Config::new(match medium {
+        #[cfg(feature = "medium-ethernet")]
+        Medium::Ethernet => HardwareAddress::Ethernet(EthernetAddress::from_bytes(&raw_ll_addr)),
+        #[cfg(feature = "medium-ieee80211p")]
+        Medium::Ieee80211p => HardwareAddress::Ethernet(EthernetAddress::from_bytes(&raw_ll_addr)),
+        #[cfg(feature = "medium-pc5")]
+        Medium::PC5 => HardwareAddress::PC5(PC5Address::from_bytes(&raw_ll_addr[3..])),
+    });
 
     let iface = Interface::new(config, &mut device);
 

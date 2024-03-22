@@ -78,11 +78,11 @@ impl USB {
     }
 
     /// Return wether the USB device has received something.
-    pub fn can_recv(&self) -> bool {
+    pub fn can_recv_wait(&self) -> bool {
         self.rx_len > 0
     }
 
-    pub fn recv(&mut self, buffer: &mut [u8]) -> Result<usize> {
+    pub fn recv_wait(&mut self, buffer: &mut [u8]) -> Result<usize> {
         if self.rx_len == 0 {
             return Err(Error::NoRxPacket);
         }
@@ -94,6 +94,17 @@ impl USB {
         self.rx_len = 0;
 
         Ok(size)
+    }
+
+    pub fn recv(&mut self, buffer: &mut [u8]) -> Result<usize> {
+        let timeout = core::time::Duration::from_millis(1);
+        self.handle
+            .read_bulk(self.read_addr, buffer, timeout)
+            .and_then(|size| Ok(size))
+            .map_err(|e| match e {
+                rusb::Error::Timeout => Error::Timeout,
+                _ => Error::USB,
+            })
     }
 
     pub fn send(&mut self, buffer: &[u8]) -> Result<usize> {

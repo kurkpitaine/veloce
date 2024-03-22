@@ -51,7 +51,7 @@ fn main() {
     let mut router = GnCore::new(router_config, Instant::now());
 
     // Configure interface
-    let config = Config::new(ll_addr.into(), None);
+    let config = Config::new(ll_addr.into());
     let mut iface = Interface::new(config, device.inner_mut());
 
     // Create CAM socket

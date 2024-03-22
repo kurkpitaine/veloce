@@ -434,24 +434,24 @@ impl<'p> GeonetPacket<'p> {
     /// Emits the payload inside the packet to transmit.
     pub(crate) fn emit_payload(
         &self,
-        _gn_repr: &GeonetRepr,
+        gn_repr: &GeonetRepr,
         payload: &mut [u8],
         _caps: &DeviceCapabilities,
     ) {
         match self.payload() {
             GeonetPayload::Raw(pl) => {
-                payload.copy_from_slice(pl);
+                payload.copy_from_slice(&pl[..gn_repr.payload_len()]);
             }
             GeonetPayload::Any(pl) => {
-                payload.copy_from_slice(pl);
+                payload.copy_from_slice(&pl[..gn_repr.payload_len()]);
             }
             #[cfg(feature = "socket-btp-a")]
             GeonetPayload::BtpA(pl) => {
-                payload.copy_from_slice(pl);
+                payload.copy_from_slice(&pl[..gn_repr.payload_len()]);
             }
             #[cfg(feature = "socket-btp-b")]
             GeonetPayload::BtpB(pl) => {
-                payload.copy_from_slice(pl);
+                payload.copy_from_slice(&pl[..gn_repr.payload_len()]);
             }
             GeonetPayload::IPv6(_) => {}
             GeonetPayload::NoPayload => {}

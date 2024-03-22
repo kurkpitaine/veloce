@@ -4,7 +4,7 @@ mod tests;
 #[cfg(feature = "proto-btp")]
 mod btp;
 #[cfg(feature = "proto-geonet")]
-mod dcc;
+pub mod congestion;
 #[cfg(feature = "medium-ethernet")]
 mod ethernet;
 #[cfg(feature = "proto-geonet")]
@@ -12,11 +12,11 @@ mod geonet;
 #[cfg(feature = "medium-ieee80211p")]
 mod ieee80211p;
 
-use super::dcc::DccSuccess;
+use super::congestion::{AnyController, Congestion, CongestionSuccess};
 
 use super::location_service::LocationService;
 use super::location_table::LocationTable;
-use super::{v2x_packet::*, Dcc};
+use super::v2x_packet::*;
 
 use super::socket_set::SocketSet;
 
@@ -105,9 +105,9 @@ pub struct Interface {
     /// Contention Based forwarding packet buffer.
     #[cfg(feature = "proto-geonet")]
     pub(crate) cb_forwarding_buffer: CbfBuffer,
-    /// Transmit rate control (aka DCC)
+    /// Rate control (aka DCC)
     #[cfg(feature = "proto-geonet")]
-    trc: Option<Dcc>,
+    congestion_control: Congestion,
 }
 
 /// The device independent part of an access interface.
@@ -142,14 +142,11 @@ pub struct Config {
     /// # Panics
     /// Creating the interface panics if the address is not unicast.
     pub hardware_addr: HardwareAddress,
-
-    /// Transmit rate control.
-    pub trc: Option<Dcc>,
 }
 
 impl Config {
-    pub fn new(hardware_addr: HardwareAddress, trc: Option<Dcc>) -> Self {
-        Config { hardware_addr, trc }
+    pub fn new(hardware_addr: HardwareAddress) -> Self {
+        Config { hardware_addr }
     }
 }
 
@@ -198,7 +195,7 @@ impl Interface {
             uc_forwarding_buffer: PacketBuffer::new(),
             bc_forwarding_buffer: PacketBuffer::new(),
             cb_forwarding_buffer: ContentionBuffer::new(),
-            trc: config.trc,
+            congestion_control: Congestion::new(AnyController::new()),
             inner: InterfaceInner {
                 caps,
                 hardware_addr: config.hardware_addr,
@@ -233,7 +230,8 @@ impl Interface {
     {
         #[cfg(feature = "proto-geonet")]
         {
-            if self.trc_egress(core, device) {
+            self.run_congestion_control(core.now, device.channel_busy_ratio());
+            if self.congestion_control_egress(core, device) {
                 return true;
             }
         }
@@ -243,28 +241,28 @@ impl Interface {
         loop {
             let mut did_something = false;
 
-            // net_trace!("socket_ingress");
             did_something |= self.socket_ingress(core, device, sockets);
-            // net_trace!("socket_egress");
+            // net_trace!("socket_ingress = {}", did_something);
             did_something |= self.socket_egress(core, device, sockets);
+            // net_trace!("socket_egress = {}", did_something);
 
             // Buffered packets inside different buffers are dequeued here after.
             // One call to xx_buffered_egress send ALL the packets marked for flush.
             // This could lead to some packets not being transmitted because of device exhaustion
             // if a large number of packets has to be sent.
-            // net_trace!("ls_buffered_egress");
             did_something |= self.ls_buffered_egress(core, device);
-            // net_trace!("uc_buffered_egress");
+            // net_trace!("ls_buffered_egress = {}", did_something);
             did_something |= self.uc_buffered_egress(core, device);
-            // net_trace!("bc_buffered_egress");
+            // net_trace!("uc_buffered_egress = {}", did_something);
             did_something |= self.bc_buffered_egress(core, device);
-            // net_trace!("cb_buffered_egress");
+            // net_trace!("bc_buffered_egress = {}", did_something);
             did_something |= self.cb_buffered_egress(core, device);
+            // net_trace!("cb_buffered_egress = {}", did_something);
 
-            // net_trace!("location_service_egress");
             did_something |= self.location_service_egress(core, device);
-            // net_trace!("beacon_service_egress");
+            // net_trace!("location_service_egress = {}", did_something);
             did_something |= self.beacon_service_egress(core, device);
+            // net_trace!("beacon_service_egress = {}", did_something);
 
             if did_something {
                 readiness_may_have_changed = true;
@@ -287,7 +285,7 @@ impl Interface {
     pub fn poll_at(&mut self, sockets: &SocketSet<'_>) -> Option<Instant> {
         let inner = &mut self.inner;
 
-        let trc_timeout = self.trc.as_ref().map(|trc| trc.poll_at());
+        let trc_timeout = self.congestion_control.poll_at();
         let beacon_timeout = Some(inner.retransmit_beacon_at);
         let ls_timeout = self.location_service.poll_at();
         let cbf_timeout = self.cb_forwarding_buffer.poll_at();
@@ -369,7 +367,7 @@ impl Interface {
                                 svcs.core,
                                 dst_addr,
                                 packet,
-                                &mut self.trc,
+                                &mut self.congestion_control,
                             ) {
                                 net_debug!("Failed to send response: {:?}", err);
                             }
@@ -385,7 +383,7 @@ impl Interface {
                                 svcs.core,
                                 dst_addr,
                                 packet,
-                                &mut self.trc,
+                                &mut self.congestion_control,
                             ) {
                                 net_debug!("Failed to send response: {:?}", err);
                             }
@@ -441,7 +439,14 @@ impl Interface {
                 })?;
 
                 inner
-                    .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
+                    .dispatch_geonet(
+                        t,
+                        core,
+                        meta,
+                        dst_ll_addr,
+                        response,
+                        &mut self.congestion_control,
+                    )
                     .map_err(EgressError::Dispatch)?;
 
                 emitted_any = true;
@@ -520,7 +525,7 @@ impl Interface {
             match result {
                 Err(EgressError::Exhausted) => break, // Device buffer full.
                 Err(EgressError::Dispatch(_)) => {
-                    net_trace!("");
+                    net_trace!("failed to transmit geonet packet: dispatch error");
                 }
                 Ok(()) => {}
             }
@@ -551,7 +556,14 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
+                .dispatch_geonet(
+                    t,
+                    core,
+                    meta,
+                    dst_ll_addr,
+                    response,
+                    &mut self.congestion_control,
+                )
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -615,7 +627,14 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
+                .dispatch_geonet(
+                    t,
+                    core,
+                    meta,
+                    dst_ll_addr,
+                    response,
+                    &mut self.congestion_control,
+                )
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -679,7 +698,14 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
+                .dispatch_geonet(
+                    t,
+                    core,
+                    meta,
+                    dst_ll_addr,
+                    response,
+                    &mut self.congestion_control,
+                )
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -758,7 +784,14 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
+                .dispatch_geonet(
+                    t,
+                    core,
+                    meta,
+                    dst_ll_addr,
+                    response,
+                    &mut self.congestion_control,
+                )
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -837,7 +870,14 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
+                .dispatch_geonet(
+                    t,
+                    core,
+                    meta,
+                    dst_ll_addr,
+                    response,
+                    &mut self.congestion_control,
+                )
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -934,7 +974,14 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(t, core, meta, dst_ll_addr, response, &mut self.trc)
+                .dispatch_geonet(
+                    t,
+                    core,
+                    meta,
+                    dst_ll_addr,
+                    response,
+                    &mut self.congestion_control,
+                )
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -1051,7 +1098,7 @@ impl InterfaceInner {
         core: &mut GnCore,
         dst_hardware_addr: EthernetAddress,
         packet: EthernetPacket,
-        trc: &mut Option<Dcc>,
+        trc: &mut Congestion,
     ) -> Result<(), DispatchError>
     where
         Tx: TxToken,
@@ -1075,18 +1122,19 @@ impl InterfaceInner {
         meta: PacketMeta,
         dst_hw_addr: EthernetAddress,
         packet: GeonetPacket,
-        mut trc: &mut Option<Dcc>,
+        trc: &mut Congestion,
     ) -> Result<(), DispatchError> {
-        if let Some(trc) = &mut trc {
-            match trc.dispatch(&packet, dst_hw_addr, core.timestamp()) {
-                Ok(DccSuccess::ImmediateTx) => {}
-                Ok(DccSuccess::Enqueued) => {
-                    return Ok(());
-                }
-                Err(_) => {
-                    net_trace!("Error in DCC transmit rate control");
-                    return Err(DispatchError::RateControl);
-                }
+        match trc.dispatch(&packet, dst_hw_addr, core.timestamp()) {
+            Ok(CongestionSuccess::ImmediateTx) => {
+                net_trace!("CongestionSuccess::ImmediateTx");
+            }
+            Ok(CongestionSuccess::Enqueued) => {
+                net_trace!("CongestionSuccess::Enqueued");
+                return Ok(());
+            }
+            Err(_) => {
+                net_trace!("Error in DCC transmit rate control");
+                return Err(DispatchError::RateControl);
             }
         }
 
@@ -1188,6 +1236,12 @@ impl InterfaceInner {
                 Ok(())
             })
             .and_then(|_| {
+                // G5 bandwidth is 6 Mbps.
+                let bytes_per_usec: f32 = 6.144 / 8.0;
+                let tx_duration_usec = bytes_per_usec * total_len as f32;
+                trc.controller
+                    .inner_mut()
+                    .notify(core.now, Duration::from_micros(tx_duration_usec as u64));
                 self.defer_beacon(core, &gn_repr);
                 Ok(())
             })

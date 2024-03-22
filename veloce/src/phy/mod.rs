@@ -231,6 +231,12 @@ pub trait Device {
 
     /// Set the Rx filter destination address.
     fn set_filter_addr(&mut self, _addr: Option<HardwareAddress>) {}
+
+    /// Get the CBR value from the device. Measurement should be made on a duration of
+    /// 100ms.
+    fn channel_busy_ratio(&self) -> ChannelBusyRatio {
+        ChannelBusyRatio::from_ratio(0.0)
+    }
 }
 
 /// A token to receive a single network packet.
