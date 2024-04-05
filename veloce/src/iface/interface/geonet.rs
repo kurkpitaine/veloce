@@ -8,11 +8,14 @@ use crate::config::{
     GN_DEFAULT_MAX_COMMUNICATION_RANGE, VELOCE_CBF_MAX_RETRANSMIT,
 };
 use crate::iface::location_service::LocationServiceRequest;
-use crate::iface::SocketSet;
+use crate::iface::location_table::LocationTableG5Extension;
+use crate::iface::{Congestion, SocketSet};
 use crate::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, SingleHopReqMeta,
     TopoScopedReqMeta, UnicastReqMeta, UpperProtocol,
 };
+use crate::phy::{Medium, PacketMeta};
+use crate::wire::G5Extension;
 use crate::{
     common::geo_area::{DistanceAB, GeoArea, Shape},
     config::{
@@ -64,6 +67,7 @@ impl InterfaceInner {
         &mut self,
         svcs: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
+        meta: PacketMeta,
         gn_packet: &'packet [u8],
         link_layer: EthernetRepr,
     ) -> Option<(
@@ -71,7 +75,7 @@ impl InterfaceInner {
         EthernetAddress,
         GeonetPacket<'packet>,
     )> {
-        self.process_basic_header(svcs, sockets, gn_packet, link_layer)
+        self.process_basic_header(svcs, sockets, meta, gn_packet, link_layer)
     }
 
     /// Processes the Basic Header of a Geonetworking packet.
@@ -79,6 +83,7 @@ impl InterfaceInner {
         &mut self,
         svcs: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
+        meta: PacketMeta,
         gn_packet: &'packet [u8],
         link_layer: EthernetRepr,
     ) -> Option<(
@@ -100,7 +105,7 @@ impl InterfaceInner {
 
         match bh_repr.next_header {
             BHNextHeader::Any | BHNextHeader::CommonHeader => {
-                self.process_common_header(svcs, sockets, bh_repr, bh.payload(), link_layer)
+                self.process_common_header(svcs, sockets, meta, bh_repr, bh.payload(), link_layer)
             }
             BHNextHeader::SecuredHeader => todo!(),
             BHNextHeader::Unknown(_) => {
@@ -115,6 +120,7 @@ impl InterfaceInner {
         &mut self,
         svcs: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
+        meta: PacketMeta,
         bh_repr: BasicHeaderRepr,
         bh_payload: &'packet [u8],
         link_layer: EthernetRepr,
@@ -147,24 +153,24 @@ impl InterfaceInner {
             GeonetPacketType::Beacon => {
                 self.process_beacon(svcs, bh_repr, ch_repr, ch_payload, link_layer)
             }
-            GeonetPacketType::GeoUnicast => {
-                self.process_unicast(svcs, sockets, bh_repr, ch_repr, ch_payload, link_layer)
-            }
+            GeonetPacketType::GeoUnicast => self.process_unicast(
+                svcs, sockets, meta, bh_repr, ch_repr, ch_payload, link_layer,
+            ),
             GeonetPacketType::GeoAnycastCircle
             | GeonetPacketType::GeoAnycastRect
-            | GeonetPacketType::GeoAnycastElip => {
-                self.process_geo_anycast(svcs, sockets, bh_repr, ch_repr, ch_payload, link_layer)
-            }
+            | GeonetPacketType::GeoAnycastElip => self.process_geo_anycast(
+                svcs, sockets, meta, bh_repr, ch_repr, ch_payload, link_layer,
+            ),
             GeonetPacketType::GeoBroadcastCircle
             | GeonetPacketType::GeoBroadcastRect
-            | GeonetPacketType::GeoBroadcastElip => {
-                self.process_geo_broadcast(svcs, sockets, bh_repr, ch_repr, ch_payload, link_layer)
-            }
+            | GeonetPacketType::GeoBroadcastElip => self.process_geo_broadcast(
+                svcs, sockets, meta, bh_repr, ch_repr, ch_payload, link_layer,
+            ),
             GeonetPacketType::TsbSingleHop => self.process_single_hop_broadcast(
-                svcs, sockets, bh_repr, ch_repr, ch_payload, link_layer,
+                svcs, sockets, meta, bh_repr, ch_repr, ch_payload, link_layer,
             ),
             GeonetPacketType::TsbMultiHop => self.process_topo_scoped_broadcast(
-                svcs, sockets, bh_repr, ch_repr, ch_payload, link_layer,
+                svcs, sockets, meta, bh_repr, ch_repr, ch_payload, link_layer,
             ),
             GeonetPacketType::LsRequest => {
                 self.process_ls_request(svcs, bh_repr, ch_repr, ch_payload, link_layer)
@@ -480,6 +486,7 @@ impl InterfaceInner {
         &mut self,
         svcs: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
+        meta: PacketMeta,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
@@ -516,12 +523,28 @@ impl InterfaceInner {
             /* Step 6: set ìs_neighbour` flag in Location table */
             entry.is_neighbour = true;
 
+            /*  Update media dependent data in Location Table */
+            #[cfg(feature = "medium-ieee80211p")]
+            if self.caps.medium == Medium::Ieee80211p {
+                let g5_ext = G5Extension::from_bytes(shb_repr.extension());
+                let extension = LocationTableG5Extension {
+                    local_update_tst: svcs.core.now,
+                    station_pv_tst: shb_repr.source_position_vector.timestamp.into(),
+                    local_cbr: g5_ext.cbr_l0_hop(),
+                    one_hop_cbr: g5_ext.cbr_l1_hop(),
+                    tx_power: g5_ext.tx_power(),
+                    rx_power: meta.power,
+                };
+
+                entry.extensions = Some(extension.into());
+            }
+
             entry.ls_pending
         };
 
         /* Step 7: Go to upper layer */
         let gn_repr = GeonetRepr::new_single_hop_broadcast(bh_repr, ch_repr, shb_repr);
-        self.pass_up(sockets, &gn_repr, shb.payload());
+        self.pass_up(sockets, meta, &gn_repr, shb.payload());
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming SHB packet. */
@@ -548,6 +571,7 @@ impl InterfaceInner {
         &mut self,
         svcs: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
+        meta: PacketMeta,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
@@ -600,7 +624,7 @@ impl InterfaceInner {
 
         /* Step 7: Go to upper layer */
         let gn_repr = GeonetRepr::new_topo_scoped_broadcast(bh_repr, ch_repr, tsb_repr);
-        self.pass_up(sockets, &gn_repr, tsb.payload());
+        self.pass_up(sockets, meta, &gn_repr, tsb.payload());
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming TSB packet. */
@@ -661,6 +685,7 @@ impl InterfaceInner {
         &mut self,
         svcs: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
+        meta: PacketMeta,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
@@ -679,6 +704,7 @@ impl InterfaceInner {
             self.receive_unicast(
                 svcs,
                 sockets,
+                meta,
                 bh_repr,
                 ch_repr,
                 uc_repr,
@@ -839,6 +865,7 @@ impl InterfaceInner {
         &mut self,
         svcs: InterfaceServices,
         sockets: &mut SocketSet,
+        meta: PacketMeta,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         uc_repr: UnicastRepr,
@@ -898,7 +925,7 @@ impl InterfaceInner {
 
         /* Step 8: pass payload to upper protocol. */
         let gn_repr: GeonetRepr = GeonetRepr::new_unicast(bh_repr, ch_repr, uc_repr);
-        self.pass_up(sockets, &gn_repr, payload);
+        self.pass_up(sockets, meta, &gn_repr, payload);
     }
 
     /// Process a Geo Broadcast packet.
@@ -906,6 +933,7 @@ impl InterfaceInner {
         &mut self,
         mut svcs: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
+        meta: PacketMeta,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
@@ -967,7 +995,7 @@ impl InterfaceInner {
         /* Step 7: pass payload to upper protocol if we are inside the destination area */
         if inside {
             let gn_repr = GeonetRepr::new_broadcast(bh_repr, ch_repr, gbc_repr);
-            self.pass_up(sockets, &gn_repr, gbc.payload());
+            self.pass_up(sockets, meta, &gn_repr, gbc.payload());
         }
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
@@ -1037,6 +1065,7 @@ impl InterfaceInner {
         &mut self,
         mut svcs: InterfaceServices<'svcs>,
         sockets: &mut SocketSet,
+        meta: PacketMeta,
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         ch_payload: &'packet [u8],
@@ -1107,7 +1136,7 @@ impl InterfaceInner {
         /* Step 9: pass payload to upper protocol if we are inside the destination area */
         if inside {
             let gn_repr = GeonetRepr::new_anycast(bh_repr, ch_repr, gac_repr);
-            self.pass_up(sockets, &gn_repr, gac.payload());
+            self.pass_up(sockets, meta, &gn_repr, gac.payload());
         }
 
         /* Step 10a: decrement Remaining Hop limit */
@@ -1165,6 +1194,7 @@ impl InterfaceInner {
         F: FnOnce(
             &mut InterfaceInner,
             &mut GnCore,
+            &mut Congestion,
             (
                 EthernetAddress,
                 BasicHeaderRepr,
@@ -1207,6 +1237,7 @@ impl InterfaceInner {
         emit(
             self,
             svcs.core,
+            svcs.congestion_control,
             (EthernetAddress::BROADCAST, bh_repr, ch_repr, beacon_repr),
         )?;
 
@@ -1223,6 +1254,7 @@ impl InterfaceInner {
         F: FnOnce(
             &mut InterfaceInner,
             &mut GnCore,
+            &mut Congestion,
             (
                 EthernetAddress,
                 BasicHeaderRepr,
@@ -1273,6 +1305,7 @@ impl InterfaceInner {
                         emit(
                             self,
                             svcs.core,
+                            svcs.congestion_control,
                             (EthernetAddress::BROADCAST, bh_repr, ch_repr, ls_req_repr),
                         )?;
 
@@ -1312,6 +1345,7 @@ impl InterfaceInner {
         F: FnOnce(
             &mut InterfaceInner,
             &mut GnCore,
+            &mut Congestion,
             (
                 EthernetAddress,
                 BasicHeaderRepr,
@@ -1398,6 +1432,7 @@ impl InterfaceInner {
             emit(
                 self,
                 svcs.core,
+                svcs.congestion_control,
                 (nh_ll_addr, bh_repr, ch_repr, uc_repr, payload),
             )?;
         } else {
@@ -1447,6 +1482,7 @@ impl InterfaceInner {
         F: FnOnce(
             &mut InterfaceInner,
             &mut GnCore,
+            &mut Congestion,
             (
                 EthernetAddress,
                 BasicHeaderRepr,
@@ -1499,6 +1535,7 @@ impl InterfaceInner {
         emit(
             self,
             svcs.core,
+            svcs.congestion_control,
             (
                 EthernetAddress::BROADCAST,
                 bh_repr,
@@ -1523,6 +1560,7 @@ impl InterfaceInner {
         F: FnOnce(
             &mut InterfaceInner,
             &mut GnCore,
+            &mut Congestion,
             (
                 EthernetAddress,
                 BasicHeaderRepr,
@@ -1550,10 +1588,23 @@ impl InterfaceInner {
             max_hop_limit: 1,
         };
 
-        /* Step 1c: set the fields of the tsb header */
-        let shb_repr = SingleHopHeaderRepr {
+        /* Step 1c: set the fields of the shb header */
+        let mut shb_repr = SingleHopHeaderRepr {
             source_position_vector: svcs.core.ego_position_vector(),
+            extension: [0; SingleHopHeaderRepr::extension_len()],
         };
+
+        #[cfg(feature = "medium-ieee80211p")]
+        if self.caps.medium == Medium::Ieee80211p {
+            let congestion_ctrl = &svcs.congestion_control;
+            let g5_ext = G5Extension::new(
+                congestion_ctrl.local_cbr(),
+                congestion_ctrl.global_cbr(),
+                self.caps.radio.tx_power,
+            );
+
+            shb_repr.extension.copy_from_slice(g5_ext.as_bytes());
+        }
 
         /* Step 2: TODO: security sign packet */
 
@@ -1574,6 +1625,7 @@ impl InterfaceInner {
         emit(
             self,
             svcs.core,
+            svcs.congestion_control,
             (
                 EthernetAddress::BROADCAST,
                 bh_repr,
@@ -1598,6 +1650,7 @@ impl InterfaceInner {
         F: FnOnce(
             &mut InterfaceInner,
             &mut GnCore,
+            &mut Congestion,
             (
                 EthernetAddress,
                 BasicHeaderRepr,
@@ -1669,6 +1722,7 @@ impl InterfaceInner {
         emit(
             self,
             svcs.core,
+            svcs.congestion_control,
             (dst_addr, bh_repr, ch_repr, gbc_repr, payload),
         )?;
 
@@ -1687,6 +1741,7 @@ impl InterfaceInner {
         F: FnOnce(
             &mut InterfaceInner,
             &mut GnCore,
+            &mut Congestion,
             (
                 EthernetAddress,
                 BasicHeaderRepr,
@@ -1758,6 +1813,7 @@ impl InterfaceInner {
         emit(
             self,
             svcs.core,
+            svcs.congestion_control,
             (dst_addr, bh_repr, ch_repr, gbc_repr, payload),
         )?;
 
@@ -1775,6 +1831,7 @@ impl InterfaceInner {
         F: FnOnce(
             &mut InterfaceInner,
             &mut GnCore,
+            &mut Congestion,
             (
                 EthernetAddress,
                 BasicHeaderRepr,
@@ -1806,6 +1863,7 @@ impl InterfaceInner {
             emit(
                 self,
                 svcs.core,
+                svcs.congestion_control,
                 (
                     dest_addr,
                     meta.basic_header.to_owned(),
@@ -1828,6 +1886,7 @@ impl InterfaceInner {
         F: FnOnce(
             &mut InterfaceInner,
             &mut GnCore,
+            &mut Congestion,
             (
                 EthernetAddress,
                 BasicHeaderRepr,
@@ -1856,6 +1915,7 @@ impl InterfaceInner {
             emit(
                 self,
                 svcs.core,
+                svcs.congestion_control,
                 (
                     dest_addr,
                     meta.basic_header.to_owned(),
@@ -1878,6 +1938,7 @@ impl InterfaceInner {
         F: FnOnce(
             &mut InterfaceInner,
             &mut GnCore,
+            &mut Congestion,
             (EthernetAddress, GeonetRepr, &[u8]),
         ) -> Result<(), E>,
     {
@@ -1895,6 +1956,7 @@ impl InterfaceInner {
             emit(
                 self,
                 svcs.core,
+                svcs.congestion_control,
                 (
                     EthernetAddress::BROADCAST,
                     meta.to_owned(),
@@ -1915,6 +1977,7 @@ impl InterfaceInner {
         F: FnOnce(
             &mut InterfaceInner,
             &mut GnCore,
+            &mut Congestion,
             (EthernetAddress, GeonetRepr, &[u8]),
         ) -> Result<(), E>,
     {
@@ -1935,6 +1998,7 @@ impl InterfaceInner {
                 emit(
                     self,
                     svcs.core,
+                    svcs.congestion_control,
                     (
                         EthernetAddress::BROADCAST,
                         meta.to_owned(),
@@ -2294,7 +2358,13 @@ impl InterfaceInner {
     }
 
     /// Pass received Geonetworking payload to upper layer.
-    fn pass_up(&mut self, sockets: &mut SocketSet, repr: &GeonetRepr, payload: &[u8]) {
+    fn pass_up(
+        &mut self,
+        sockets: &mut SocketSet,
+        _meta: PacketMeta,
+        repr: &GeonetRepr,
+        payload: &[u8],
+    ) {
         let ind = Indication {
             upper_proto: repr.next_header().into(),
             transport: repr.transport(),

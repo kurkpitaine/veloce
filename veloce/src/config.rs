@@ -52,6 +52,16 @@ pub const GN_MAX_GEO_AREA_SIZE: f32 = 10.0;
 /// Distance related to the confidence interval for latitude and longitude [m].
 pub const GN_PAI_INTERVAL: f32 = 80.0;
 
+/// Lifetime for the ITS-G5 extensions of the location table entry.
+pub const GN_LIFETIME_LOC_TE_X: Duration = Duration::from_secs(1);
+/// Value for the intended global channel busy ratio CBR_Target.
+pub const GN_CBR_TARGET: f32 = 0.62;
+/// Trigger interval for calculation of CBR_G.
+pub const GN_CBR_G_TRIGGER_INTERVAL: Duration = Duration::from_millis(100);
+/// Lifetime for the received CBR value (T_Cbr, see clause 5.2), i.e. duration of
+/// time in which the value received from a neighbouring ITS-S is regarded as valid.
+pub const GN_CBR_LIFETIME: Duration = Duration::from_millis(1000);
+
 /// Maximum size of one DCC queue.
 pub const DCC_QUEUE_SIZE: usize = 10 * 1000;
 /// Maximum number of elements in one DCC queue.

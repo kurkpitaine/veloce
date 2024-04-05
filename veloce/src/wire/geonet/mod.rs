@@ -148,7 +148,7 @@ impl fmt::Display for StationType {
 }
 
 #[cfg(feature = "asn1")]
-use veloce_asn1::e_t_s_i__i_t_s__c_d_d::TrafficParticipantType;
+use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::TrafficParticipantType;
 
 #[cfg(feature = "asn1")]
 impl From<TrafficParticipantType> for StationType {

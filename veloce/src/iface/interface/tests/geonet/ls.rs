@@ -134,13 +134,14 @@ fn test_receive_ls_req() {
     let (ethernet, ls_req) = make_ls_req_packet();
 
     let ctx_meta = meta!(core, iface);
+    let pkt_meta = PacketMeta::default();
 
     let mut buf = [0u8; LS_REQ_LEN];
     ls_req.emit(&mut buf);
 
     let res = iface
         .inner
-        .process_geonet_packet(ctx_meta, &mut sockets, &buf, ethernet);
+        .process_geonet_packet(ctx_meta, &mut sockets, pkt_meta, &buf, ethernet);
 
     // Processing an LS request packet with a remaining hop limit > 1 should return.
     assert!(res.is_some());
@@ -237,13 +238,14 @@ fn test_receive_ls_rep() {
     let (ethernet, ls_rep) = make_ls_rep_packet();
 
     let ctx_meta = meta!(core, iface);
+    let pkt_meta = PacketMeta::default();
 
     let mut buf = [0u8; LS_REP_LEN];
     ls_rep.emit(&mut buf);
 
     let res = iface
         .inner
-        .process_geonet_packet(ctx_meta, &mut sockets, &buf, ethernet);
+        .process_geonet_packet(ctx_meta, &mut sockets, pkt_meta, &buf, ethernet);
 
     // Processing an LS request packet with a remaining hop limit > 1 should return.
     assert!(res.is_some());

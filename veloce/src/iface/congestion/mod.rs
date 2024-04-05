@@ -1,21 +1,23 @@
-use heapless::FnvIndexMap;
+use heapless::{FnvIndexMap, Vec};
 
 use crate::{
     common::{PacketBuffer, PacketBufferMeta},
-    config::{DCC_QUEUE_ENTRY_COUNT, DCC_QUEUE_SIZE},
+    config::{
+        DCC_QUEUE_ENTRY_COUNT, DCC_QUEUE_SIZE, GN_CBR_G_TRIGGER_INTERVAL, GN_LOC_TABLE_ENTRY_COUNT,
+    },
     phy::ChannelBusyRatio,
     time::{Duration, Instant},
     wire::{ieee80211::AccessCategory, EthernetAddress, GeonetRepr},
 };
 
-use super::GeonetPacket;
+use super::{location_table::LocationTable, GeonetPacket};
 
-pub(super) mod limeric;
-pub(super) mod no_control;
+pub(crate) mod limeric;
+pub(crate) mod no_control;
 
-pub(super) use self::{Error as CongestionError, Success as CongestionSuccess};
+pub(crate) use self::{Error as CongestionError, Success as CongestionSuccess};
 
-pub(super) trait RateController {
+pub(crate) trait RateController {
     /// Run the Rate Control algorithm once.
     fn run(&mut self, timestamp: Instant);
     /// Return the instant the Rate Control algorithm should be run at.
@@ -25,20 +27,24 @@ pub(super) trait RateController {
     /// Get next instant where transmission is allowed,
     /// for corresponding priority queue. If `prio` is none, it
     /// returns the minimal waiting time between all the queues.
-    fn tx_at(&self, prio: Option<AccessCategory>) -> Instant;
-    /// Get current interval between transmissions.
+    fn tx_allowed_at(&self, prio: Option<AccessCategory>) -> Instant;
+    /// Get allowed duration between transmissions.
     fn tx_interval(&self) -> Duration;
     /// Notify DCC algorithm for transmission activity,
     /// at `tx_at` time instant, and for over-the-air
     /// transmission `duration`.
-    fn notify(&mut self, tx_at: Instant, duration: Duration);
+    fn notify_tx(&mut self, tx_at: Instant, duration: Duration);
     /// Update CBR value.
     fn update_cbr(&mut self, timestamp: Instant, cbr: ChannelBusyRatio);
+    /// Returns the local CBR value.
+    fn local_cbr(&self) -> ChannelBusyRatio;
+    /// Returns the CBR target value.
+    fn target_cbr(&self) -> ChannelBusyRatio;
 }
 
 /// Dcc queued data type.
 #[derive(Debug)]
-pub(super) struct QueuedPacket {
+pub(crate) struct QueuedPacket {
     /// Destination hardware address.
     pub dst_hw_addr: EthernetAddress,
     /// Geonet packet data.
@@ -59,11 +65,20 @@ type DccQueue = PacketBuffer<QueuedPacket, DCC_QUEUE_ENTRY_COUNT, DCC_QUEUE_SIZE
 
 /// _Decentralized Congestion Control_ controller.
 #[derive(Debug)]
-pub(super) struct Congestion {
+pub(crate) struct Congestion {
     /// Rate control algorithm.
     pub controller: AnyController,
     /// DCC queues. One queue for each priority category.
     pub queues: FnvIndexMap<AccessCategory, DccQueue, 4>,
+    /// Instant at which queues should be checked for sending packets.
+    /// Optional as queues could be empty.
+    pub egress_at: Option<Instant>,
+    /// Global channel busy ratio, calculated from [LocationTable] entries.
+    global_cbr: ChannelBusyRatio,
+    /// Previous local channel busy ratio.
+    prev_local_cbr: ChannelBusyRatio,
+    /// Instant at which `global_cbr` value should be (re)computed.
+    compute_global_cbr_at: Instant,
 }
 
 impl Congestion {
@@ -83,7 +98,24 @@ impl Congestion {
             .insert(AccessCategory::Voice, DccQueue::new())
             .expect("Cannot insert AccessCategory::Voice DCC queue");
 
-        Congestion { controller, queues }
+        Congestion {
+            controller,
+            queues,
+            egress_at: None,
+            global_cbr: ChannelBusyRatio::from_ratio(0.0),
+            prev_local_cbr: ChannelBusyRatio::from_ratio(0.0),
+            compute_global_cbr_at: Instant::ZERO,
+        }
+    }
+
+    /// Returns the local Channel Busy Ratio value.
+    pub fn local_cbr(&self) -> ChannelBusyRatio {
+        self.controller.inner().local_cbr()
+    }
+
+    /// Returns the global Channel Busy Ratio value.
+    pub fn global_cbr(&self) -> ChannelBusyRatio {
+        self.global_cbr
     }
 
     pub fn dispatch(
@@ -109,7 +141,7 @@ impl Congestion {
             > 0;
 
         // Check for immediate transmission
-        if !has_pkt && self.controller.inner().tx_at(Some(cat)) <= timestamp {
+        if !has_pkt && self.controller.inner().tx_allowed_at(Some(cat)) <= timestamp {
             return Ok(Success::ImmediateTx);
         }
 
@@ -133,25 +165,99 @@ impl Congestion {
             .enqueue(pkt, payload, timestamp)
             .map_err(|_| Error::BufferError)?;
 
+        // Schedule for egress.
+        if self.egress_at.is_none() {
+            self.egress_at = Some(timestamp + self.controller.inner().tx_interval());
+        }
+
         Ok(Success::Enqueued)
     }
 
-    /// Return the minimum time the DCC service should be polled at.
-    pub fn poll_at(&self) -> Option<Instant> {
-        match &self.controller {
-            AnyController::None(_) => None,
-            AnyController::Limeric(lim) => {
-                let tx_at = lim.tx_at(None);
-                Some(lim.run_at().min(tx_at))
-            }
+    /// Computes the Global CBR value, as defined in ETSI TS 102 636-4-2 V1.3.1
+    /// and schedule for next computing instant.
+    pub(super) fn compute_global_cbr(
+        &mut self,
+        location_table: &LocationTable,
+        timestamp: Instant,
+    ) {
+        if self.compute_global_cbr_at < timestamp {
+            return;
         }
+
+        let cbr_values = location_table.local_one_hop_cbr_values(timestamp);
+        let target_cbr = self.controller.inner().target_cbr();
+
+        // Step 1 and 3: Calculate the average of CBR_R_0_Hop and CBR_R_1_Hop.
+        let (cbr_r_0_hop, cbr_r_1_hop) = {
+            let (sum_r_0, sum_r_1) = cbr_values.iter().fold((0.0, 0.0), |acc, e| {
+                (acc.0 + e.0.as_ratio(), acc.1 + e.1.as_ratio())
+            });
+            (
+                sum_r_0 / cbr_values.len() as f32,
+                sum_r_1 / cbr_values.len() as f32,
+            )
+        };
+
+        // Split in two vecs.
+        let (mut r_0_values, mut r_1_values): (
+            Vec<ChannelBusyRatio, GN_LOC_TABLE_ENTRY_COUNT>,
+            Vec<ChannelBusyRatio, GN_LOC_TABLE_ENTRY_COUNT>,
+        ) = cbr_values.into_iter().unzip();
+
+        // Sort values in reverse order.
+        // Safety: we never push NAN in location table.
+        r_0_values.sort_unstable_by(|a, b| b.as_ratio().partial_cmp(&a.as_ratio()).unwrap());
+        r_1_values.sort_unstable_by(|a, b| b.as_ratio().partial_cmp(&a.as_ratio()).unwrap());
+
+        // Step 2
+        let cbr_l_1_hop = if r_0_values.len() > 1 {
+            if cbr_r_0_hop > target_cbr.as_ratio() {
+                r_0_values[0].as_ratio()
+            } else {
+                r_0_values[1].as_ratio()
+            }
+        } else {
+            0.0
+        };
+
+        // Step 4
+        let cbr_l_2_hop = if r_1_values.len() > 1 {
+            if cbr_r_1_hop > target_cbr.as_ratio() {
+                r_1_values[0].as_ratio()
+            } else {
+                r_1_values[1].as_ratio()
+            }
+        } else {
+            0.0
+        };
+
+        let computed_cbr = [self.prev_local_cbr.as_ratio(), cbr_l_1_hop, cbr_l_2_hop]
+            .into_iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap(); // Safety: we have 3 values inside the slice.
+
+        self.global_cbr = ChannelBusyRatio::from_ratio(computed_cbr);
+        self.prev_local_cbr = self.controller.inner().local_cbr();
+
+        // Re-schedule for next computation.
+        self.compute_global_cbr_at = timestamp + GN_CBR_G_TRIGGER_INTERVAL;
+    }
+
+    /// Return the minimum time the congestion control service should be polled at.
+    pub fn poll_at(&self) -> Option<Instant> {
+        let ctrl_run_at = Some(self.controller.inner().run_at());
+        let egress_at = self.egress_at;
+        let cbrg_at = Some(self.compute_global_cbr_at);
+
+        let instant = [ctrl_run_at, egress_at, cbrg_at];
+        instant.into_iter().flatten().min()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// DCC success result.
-pub(super) enum Success {
+pub(crate) enum Success {
     /// Packet should be transmitted immediately.
     ImmediateTx,
     /// Packet should be enqueued.
@@ -159,7 +265,7 @@ pub(super) enum Success {
 }
 
 /// DCC error type.
-pub(super) enum Error {
+pub(crate) enum Error {
     /// The hardware device transmit buffer is full. Try again later.
     Exhausted,
     /// No existing queue for the requested traffic class.
@@ -171,7 +277,7 @@ pub(super) enum Error {
 
 /// Transmit Rate Control controller algorithm.
 #[derive(Debug)]
-pub(super) enum AnyController {
+pub(crate) enum AnyController {
     /// No rate controller.
     None(no_control::NoControl),
     /// Limeric algorithm.

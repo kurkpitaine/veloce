@@ -83,13 +83,14 @@ fn test_receive_ls_rep() {
     let (ethernet, geo_uc) = make_guc_packet();
 
     let ctx_meta = meta!(core, iface);
+    let pkt_meta = PacketMeta::default();
 
     let mut buf = [0u8; GUC_LEN];
     geo_uc.emit(&mut buf);
 
     let res = iface
         .inner
-        .process_geonet_packet(ctx_meta, &mut sockets, &buf, ethernet);
+        .process_geonet_packet(ctx_meta, &mut sockets, pkt_meta, &buf, ethernet);
 
     // Processing an Geo Unicast packet with a remaining hop limit > 1 should return.
     assert!(res.is_some());

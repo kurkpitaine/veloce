@@ -16,10 +16,11 @@ mod socket_set;
 
 mod v2x_packet;
 
+pub(crate) use self::congestion::Congestion;
 pub use self::interface::{
     congestion::CongestionControl, Config, Interface, InterfaceInner as Context,
-    InterfaceServices as ContextMeta,
 };
 
+pub(crate) use self::interface::InterfaceServices as ContextMeta;
 pub use self::socket_set::{SocketHandle, SocketSet, SocketStorage};
 pub(crate) use self::v2x_packet::{GeonetPacket, GeonetPayload};

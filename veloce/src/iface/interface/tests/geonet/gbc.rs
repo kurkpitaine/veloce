@@ -80,13 +80,14 @@ fn test_receive_gbc() {
     let (ethernet, gbc) = make_gbc_packet();
 
     let ctx_meta = meta!(core, iface);
+    let pkt_meta = PacketMeta::default();
 
     let mut buf = [0u8; GBC_LEN];
     gbc.emit(&mut buf);
 
     let res = iface
         .inner
-        .process_geonet_packet(ctx_meta, &mut sockets, &buf, ethernet);
+        .process_geonet_packet(ctx_meta, &mut sockets, pkt_meta, &buf, ethernet);
 
     // Processing a GBC packet with a remaining hop limit > 1 should return.
     assert!(res.is_some());

@@ -3,4 +3,11 @@
 #![allow(non_snake_case)]
 #![cfg_attr(not(test), no_std)]
 
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+// Reexport Rasn
+pub mod prelude {
+    pub use rasn;
+}
+
+pub mod defs {
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}

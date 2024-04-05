@@ -6,7 +6,7 @@ use uom::si::area::square_kilometer;
 use uom::si::f32::Area;
 
 use crate::config;
-use crate::iface::{Context, ContextMeta};
+use crate::iface::{Congestion, Context, ContextMeta};
 use crate::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, Request, SingleHopReqMeta,
     TopoScopedReqMeta, Transport, UnicastReqMeta,
@@ -320,7 +320,12 @@ impl<'a> Socket<'a> {
         emit: F,
     ) -> Result<(), E>
     where
-        F: FnOnce(&mut Context, &mut GnCore, (EthernetAddress, GeonetRepr, &[u8])) -> Result<(), E>,
+        F: FnOnce(
+            &mut Context,
+            &mut GnCore,
+            &mut Congestion,
+            (EthernetAddress, GeonetRepr, &[u8]),
+        ) -> Result<(), E>,
     {
         let res = self.tx_buffer.dequeue_with(|&mut req, payload_buf| {
             net_trace!("gn: sending {} octets", payload_buf.len());
@@ -340,9 +345,9 @@ impl<'a> Socket<'a> {
                         srv,
                         meta,
                         payload_buf,
-                        |cx, core, (dst_ll_addr, bh_repr, ch_repr, uc_repr, pl)| {
+                        |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, uc_repr, pl)| {
                             let gn_repr = GeonetRepr::new_unicast(bh_repr, ch_repr, uc_repr);
-                            emit(cx, core, (dst_ll_addr, gn_repr, pl))
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
                         },
                     )
                 }
@@ -360,9 +365,9 @@ impl<'a> Socket<'a> {
                         srv,
                         meta,
                         payload_buf,
-                        |cx, core, (dst_ll_addr, bh_repr, ch_repr, gac_repr, pl)| {
+                        |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, gac_repr, pl)| {
                             let gn_repr = GeonetRepr::new_anycast(bh_repr, ch_repr, gac_repr);
-                            emit(cx, core, (dst_ll_addr, gn_repr, pl))
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
                         },
                     )
                 }
@@ -380,9 +385,9 @@ impl<'a> Socket<'a> {
                         srv,
                         meta,
                         payload_buf,
-                        |cx, core, (dst_ll_addr, bh_repr, ch_repr, gac_repr, pl)| {
+                        |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, gac_repr, pl)| {
                             let gn_repr = GeonetRepr::new_broadcast(bh_repr, ch_repr, gac_repr);
-                            emit(cx, core, (dst_ll_addr, gn_repr, pl))
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
                         },
                     )
                 }
@@ -399,10 +404,10 @@ impl<'a> Socket<'a> {
                         srv,
                         meta,
                         payload_buf,
-                        |cx, core, (dst_ll_addr, bh_repr, ch_repr, shb_repr, pl)| {
+                        |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, shb_repr, pl)| {
                             let gn_repr =
                                 GeonetRepr::new_single_hop_broadcast(bh_repr, ch_repr, shb_repr);
-                            emit(cx, core, (dst_ll_addr, gn_repr, pl))
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
                         },
                     )
                 }
@@ -419,10 +424,10 @@ impl<'a> Socket<'a> {
                         srv,
                         meta,
                         payload_buf,
-                        |cx, core, (dst_ll_addr, bh_repr, ch_repr, tsb_repr, pl)| {
+                        |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, tsb_repr, pl)| {
                             let gn_repr =
                                 GeonetRepr::new_topo_scoped_broadcast(bh_repr, ch_repr, tsb_repr);
-                            emit(cx, core, (dst_ll_addr, gn_repr, pl))
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
                         },
                     )
                 }

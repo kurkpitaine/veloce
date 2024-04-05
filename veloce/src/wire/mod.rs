@@ -53,7 +53,9 @@ pub use geonet::{
         HEADER_LEN as SHORT_POSITION_VECTOR_HEADER_LEN,
     },
     single_hop_header::{
-        Header as SingleHopHeader, Repr as SingleHopHeaderRepr, HEADER_LEN as SINGLE_HOP_HEADER_LEN,
+        G5Ext as G5Extension, Header as SingleHopHeader, PC5Ext as PC5Extension,
+        PC5ExtVersion as PC5ExtensionVersion, Repr as SingleHopHeaderRepr,
+        HEADER_LEN as SINGLE_HOP_HEADER_LEN,
     },
     topo_header::{
         Header as TopoBroadcastHeader, Repr as TopoBroadcastRepr,

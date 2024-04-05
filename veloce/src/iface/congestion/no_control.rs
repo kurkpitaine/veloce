@@ -20,7 +20,7 @@ impl RateController for NoControl {
         true
     }
 
-    fn tx_at(&self, _prio: Option<crate::wire::ieee80211::AccessCategory>) -> Instant {
+    fn tx_allowed_at(&self, _prio: Option<crate::wire::ieee80211::AccessCategory>) -> Instant {
         Instant::ZERO
     }
 
@@ -28,7 +28,15 @@ impl RateController for NoControl {
         Duration::ZERO
     }
 
-    fn notify(&mut self, _tx_at: Instant, _duration: Duration) {}
+    fn notify_tx(&mut self, _tx_at: Instant, _duration: Duration) {}
 
     fn update_cbr(&mut self, _timestamp: Instant, _cbr: ChannelBusyRatio) {}
+
+    fn target_cbr(&self) -> ChannelBusyRatio {
+        ChannelBusyRatio::from_ratio(0.0)
+    }
+
+    fn local_cbr(&self) -> ChannelBusyRatio {
+        ChannelBusyRatio::from_ratio(0.0)
+    }
 }

@@ -12,7 +12,7 @@ and implementations of it:
     on the host OS.
 */
 
-use crate::{time::Instant, wire::HardwareAddress};
+use crate::{time::Instant, types::Power, wire::HardwareAddress};
 
 #[cfg(all(
     any(feature = "phy-raw_socket", feature = "phy-tuntap_interface"),
@@ -55,9 +55,6 @@ pub use self::tuntap_interface::TunTapInterface;
 /// struct becomes zero-sized, which allows the compiler to optimize it out as if
 /// the packet metadata mechanism didn't exist at all.
 ///
-/// Currently only UDP sockets allow setting/retrieving packet metadata. The metadata
-/// for packets emitted with other sockets will be all default values.
-///
 /// This struct is marked as `#[non_exhaustive]`. This means it is not possible to
 /// create it directly by specifying all fields. You have to instead create it with
 /// default values and then set the fields you want. This makes adding metadata
@@ -66,6 +63,7 @@ pub use self::tuntap_interface::TunTapInterface;
 /// ```rust,ignore
 /// let mut meta = PacketMeta::new();
 /// meta.id = 15;
+/// meta.power = None;
 /// ```
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Default)]
@@ -73,6 +71,43 @@ pub use self::tuntap_interface::TunTapInterface;
 pub struct PacketMeta {
     #[cfg(feature = "packetmeta-id")]
     pub id: u32,
+    #[cfg(feature = "packetmeta-power")]
+    pub power: Option<Power>,
+}
+
+/// A description of filter behavior for every supported protocol.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum MacFilterCapabilities {
+    #[default]
+    /// No mac filter capabilities
+    None,
+    /// A filter that processes Rx packets.
+    Rx,
+}
+
+impl MacFilterCapabilities {
+    /// Behavior that results in not filtering frames.
+    pub fn no_filter() -> Self {
+        MacFilterCapabilities::None
+    }
+}
+
+/// A description of radio capabilities for a wireless PHY.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct RadioCapabilities {
+    /// MAC layer rx frame filter.
+    ///
+    /// Indicates if the device filters received frames based on the hardware address.
+    ///
+    /// Such filter has to be updated when the Geonetworking core or security changes the Geonetworking
+    /// address, since Geonetworking addresses are based on the hardware addresses.
+    pub mac_filter: MacFilterCapabilities,
+    /// TX power value of the PHY.
+    ///
+    /// Indicates the signal power used when transmitting frames over the air.
+    pub tx_power: Power,
 }
 
 /// A description of device capabilities.
@@ -98,13 +133,11 @@ pub struct DeviceCapabilities {
     /// *not* including the Ethernet FCS (4 octets). Therefore, Ethernet MTU = Geonet MTU + 14.
     pub max_transmission_unit: usize,
 
-    /// MAC layer rx frame filter.
+    /// Radio capabilities.
     ///
-    /// Indicates if the device filters received frames based on the destination hardware address.
-    ///
-    /// Such filter has to be updated when the Geonetworking core or security changes the Geonetworking
-    /// address, since Geonetworking addresses are based on the hardware addresses.
-    pub has_rx_mac_filter: bool,
+    /// When a wireless PHY is used to transmit frames, this capability should be used.
+    #[cfg(any(feature = "medium-pc5", feature = "medium-ieee80211p"))]
+    pub radio: RadioCapabilities,
 }
 
 impl DeviceCapabilities {
@@ -225,11 +258,13 @@ pub trait Device {
     fn capabilities(&self) -> DeviceCapabilities;
 
     /// Get the Rx filter destination address.
+    #[cfg(any(feature = "medium-pc5", feature = "medium-ieee80211p"))]
     fn filter_addr(&self) -> Option<HardwareAddress> {
         None
     }
 
     /// Set the Rx filter destination address.
+    #[cfg(any(feature = "medium-pc5", feature = "medium-ieee80211p"))]
     fn set_filter_addr(&mut self, _addr: Option<HardwareAddress>) {}
 
     /// Get the CBR value from the device. Measurement should be made on a duration of

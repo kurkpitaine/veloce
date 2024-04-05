@@ -33,7 +33,9 @@ use crate::config::{
 };
 use crate::network::GnCore;
 use crate::network::Indication;
-use crate::phy::{Device, DeviceCapabilities, Medium, PacketMeta, RxToken, TxToken};
+use crate::phy::{
+    Device, DeviceCapabilities, MacFilterCapabilities, Medium, PacketMeta, RxToken, TxToken,
+};
 
 use crate::socket::geonet::Socket as GeonetSocket;
 use crate::socket::*;
@@ -152,11 +154,13 @@ impl Config {
 
 /// Utility struct containing metadata for [InterfaceInner] processing.
 #[cfg(feature = "proto-geonet")]
-pub struct InterfaceServices<'a> {
+pub(crate) struct InterfaceServices<'a> {
     /// Reference on the Geonetworking core services.
     pub core: &'a mut GnCore,
     /// Reference on the Location Service.
     pub ls: &'a mut LocationService,
+    /// Reference on the Congestion Control Service.
+    pub congestion_control: &'a mut Congestion,
     /// Location Service packet buffer.
     pub ls_buffer: &'a mut LsBuffer,
     /// Unicast forwarding packet buffer.
@@ -345,6 +349,7 @@ impl Interface {
             let srv = InterfaceServices {
                 core,
                 ls: &mut self.location_service,
+                congestion_control: &mut self.congestion_control,
                 ls_buffer: &mut self.ls_buffer,
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
@@ -367,7 +372,7 @@ impl Interface {
                                 svcs.core,
                                 dst_addr,
                                 packet,
-                                &mut self.congestion_control,
+                                svcs.congestion_control,
                             ) {
                                 net_debug!("Failed to send response: {:?}", err);
                             }
@@ -383,7 +388,7 @@ impl Interface {
                                 svcs.core,
                                 dst_addr,
                                 packet,
-                                &mut self.congestion_control,
+                                svcs.congestion_control,
                             ) {
                                 net_debug!("Failed to send response: {:?}", err);
                             }
@@ -397,7 +402,8 @@ impl Interface {
         }
 
         // Update device filter.
-        if self.inner.caps.has_rx_mac_filter {
+        #[cfg(any(feature = "medium-pc5", feature = "medium-ieee80211p"))]
+        if self.inner.caps.radio.mac_filter == MacFilterCapabilities::Rx {
             let hardware_addr = self.inner.hardware_addr;
             match device.filter_addr() {
                 Some(filter_addr) if filter_addr != hardware_addr => {
@@ -430,6 +436,7 @@ impl Interface {
         for item in sockets.items_mut() {
             let mut respond = |inner: &mut InterfaceInner,
                                core: &mut GnCore,
+                               congestion_ctrl: &mut Congestion,
                                meta: PacketMeta,
                                dst_ll_addr: EthernetAddress,
                                response: GeonetPacket| {
@@ -439,14 +446,7 @@ impl Interface {
                 })?;
 
                 inner
-                    .dispatch_geonet(
-                        t,
-                        core,
-                        meta,
-                        dst_ll_addr,
-                        response,
-                        &mut self.congestion_control,
-                    )
+                    .dispatch_geonet(t, core, meta, dst_ll_addr, response, congestion_ctrl)
                     .map_err(EgressError::Dispatch)?;
 
                 emitted_any = true;
@@ -457,6 +457,7 @@ impl Interface {
             let srv = InterfaceServices {
                 core,
                 ls: &mut self.location_service,
+                congestion_control: &mut self.congestion_control,
                 ls_buffer: &mut self.ls_buffer,
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
@@ -468,10 +469,11 @@ impl Interface {
                 Socket::Geonet(socket) => socket.dispatch(
                     &mut self.inner,
                     srv,
-                    |inner, core, (dst_ll_addr, gn, raw)| {
+                    |inner, core, congestion, (dst_ll_addr, gn, raw)| {
                         respond(
                             inner,
                             core,
+                            congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
                             GeonetPacket::new(gn, GeonetPayload::Raw(raw)),
@@ -482,10 +484,11 @@ impl Interface {
                 Socket::BtpA(socket) => socket.dispatch(
                     &mut self.inner,
                     srv,
-                    |inner, core, (dst_ll_addr, gn, pl)| {
+                    |inner, core, congestion, (dst_ll_addr, gn, pl)| {
                         respond(
                             inner,
                             core,
+                            congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
                             GeonetPacket::new(gn.into(), GeonetPayload::Raw(pl)),
@@ -496,10 +499,11 @@ impl Interface {
                 Socket::BtpB(socket) => socket.dispatch(
                     &mut self.inner,
                     srv,
-                    |inner, core, (dst_ll_addr, gn, pl)| {
+                    |inner, core, congestion, (dst_ll_addr, gn, pl)| {
                         respond(
                             inner,
                             core,
+                            congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
                             GeonetPacket::new(gn, GeonetPayload::Raw(pl)),
@@ -510,10 +514,11 @@ impl Interface {
                 Socket::Cam(socket) => socket.dispatch(
                     &mut self.inner,
                     srv,
-                    |inner, core, (dst_ll_addr, gn, pl)| {
+                    |inner, core, congestion, (dst_ll_addr, gn, pl)| {
                         respond(
                             inner,
                             core,
+                            congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
                             GeonetPacket::new(gn, GeonetPayload::Raw(pl)),
@@ -547,6 +552,7 @@ impl Interface {
 
         let mut respond = |inner: &mut InterfaceInner,
                            core: &mut GnCore,
+                           congestion_ctrl: &mut Congestion,
                            meta: PacketMeta,
                            dst_ll_addr: EthernetAddress,
                            response: GeonetPacket| {
@@ -556,14 +562,7 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(
-                    t,
-                    core,
-                    meta,
-                    dst_ll_addr,
-                    response,
-                    &mut self.congestion_control,
-                )
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response, congestion_ctrl)
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -574,6 +573,7 @@ impl Interface {
         let srv = InterfaceServices {
             core,
             ls: &mut self.location_service,
+            congestion_control: &mut self.congestion_control,
             ls_buffer: &mut self.ls_buffer,
             uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
             bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
@@ -582,10 +582,11 @@ impl Interface {
 
         let result = self.inner.dispatch_beacon(
             srv,
-            |inner, core, (dst_ll_addr, bh_repr, ch_repr, bc_repr)| {
+            |inner, core, congestion, (dst_ll_addr, bh_repr, ch_repr, bc_repr)| {
                 respond(
                     inner,
                     core,
+                    congestion,
                     PacketMeta::default(),
                     dst_ll_addr,
                     GeonetPacket::new_beacon(bh_repr, ch_repr, bc_repr),
@@ -618,6 +619,7 @@ impl Interface {
 
         let mut respond = |inner: &mut InterfaceInner,
                            core: &mut GnCore,
+                           congestion_ctrl: &mut Congestion,
                            meta: PacketMeta,
                            dst_ll_addr: EthernetAddress,
                            response: GeonetPacket| {
@@ -627,14 +629,7 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(
-                    t,
-                    core,
-                    meta,
-                    dst_ll_addr,
-                    response,
-                    &mut self.congestion_control,
-                )
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response, congestion_ctrl)
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -645,6 +640,7 @@ impl Interface {
         let srv = InterfaceServices {
             core,
             ls: &mut self.location_service,
+            congestion_control: &mut self.congestion_control,
             ls_buffer: &mut self.ls_buffer,
             uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
             bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
@@ -653,10 +649,11 @@ impl Interface {
 
         let result = self.inner.dispatch_ls_request(
             srv,
-            |inner, core, (dst_ll_addr, bh_repr, ch_repr, ls_repr)| {
+            |inner, core, congestion, (dst_ll_addr, bh_repr, ch_repr, ls_repr)| {
                 respond(
                     inner,
                     core,
+                    congestion,
                     PacketMeta::default(),
                     dst_ll_addr,
                     GeonetPacket::new_location_service_request(bh_repr, ch_repr, ls_repr),
@@ -689,6 +686,7 @@ impl Interface {
 
         let mut respond = |inner: &mut InterfaceInner,
                            core: &mut GnCore,
+                           congestion_ctrl: &mut Congestion,
                            meta: PacketMeta,
                            dst_ll_addr: EthernetAddress,
                            response: GeonetPacket| {
@@ -698,14 +696,7 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(
-                    t,
-                    core,
-                    meta,
-                    dst_ll_addr,
-                    response,
-                    &mut self.congestion_control,
-                )
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response, congestion_ctrl)
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -717,6 +708,7 @@ impl Interface {
             let srv = InterfaceServices {
                 core,
                 ls: &mut self.location_service,
+                congestion_control: &mut self.congestion_control,
                 ls_buffer: &mut self.ls_buffer,
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
@@ -725,10 +717,11 @@ impl Interface {
 
             let dequeued_some = self.inner.dispatch_ls_buffer(
                 srv,
-                |inner, core, (dst_ll_addr, bh_repr, ch_repr, uc_repr, raw)| {
+                |inner, core, congestion, (dst_ll_addr, bh_repr, ch_repr, uc_repr, raw)| {
                     respond(
                         inner,
                         core,
+                        congestion,
                         PacketMeta::default(),
                         dst_ll_addr,
                         GeonetPacket::new_unicast(
@@ -775,6 +768,7 @@ impl Interface {
 
         let mut respond = |inner: &mut InterfaceInner,
                            core: &mut GnCore,
+                           congestion_ctrl: &mut Congestion,
                            meta: PacketMeta,
                            dst_ll_addr: EthernetAddress,
                            response: GeonetPacket| {
@@ -784,14 +778,7 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(
-                    t,
-                    core,
-                    meta,
-                    dst_ll_addr,
-                    response,
-                    &mut self.congestion_control,
-                )
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response, congestion_ctrl)
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -803,6 +790,7 @@ impl Interface {
             let srv = InterfaceServices {
                 core,
                 ls: &mut self.location_service,
+                congestion_control: &mut self.congestion_control,
                 ls_buffer: &mut self.ls_buffer,
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
@@ -811,10 +799,11 @@ impl Interface {
 
             let dequeued_some = self.inner.dispatch_unicast_buffer(
                 srv,
-                |inner, core, (dst_ll_addr, bh_repr, ch_repr, uc_repr, raw)| {
+                |inner, core, congestion, (dst_ll_addr, bh_repr, ch_repr, uc_repr, raw)| {
                     respond(
                         inner,
                         core,
+                        congestion,
                         PacketMeta::default(),
                         dst_ll_addr,
                         GeonetPacket::new_unicast(
@@ -861,6 +850,7 @@ impl Interface {
 
         let mut respond = |inner: &mut InterfaceInner,
                            core: &mut GnCore,
+                           congestion_ctrl: &mut Congestion,
                            meta: PacketMeta,
                            dst_ll_addr: EthernetAddress,
                            response: GeonetPacket| {
@@ -870,14 +860,7 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(
-                    t,
-                    core,
-                    meta,
-                    dst_ll_addr,
-                    response,
-                    &mut self.congestion_control,
-                )
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response, congestion_ctrl)
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -889,6 +872,7 @@ impl Interface {
             let srv = InterfaceServices {
                 core,
                 ls: &mut self.location_service,
+                congestion_control: &mut self.congestion_control,
                 ls_buffer: &mut self.ls_buffer,
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
@@ -897,7 +881,7 @@ impl Interface {
 
             let dequeued_some = self.inner.dispatch_broadcast_buffer(
                 srv,
-                |inner, core, (dst_ll_addr, gn_repr, raw)| {
+                |inner, core, congestion, (dst_ll_addr, gn_repr, raw)| {
                     let response = match gn_repr {
                         GeonetRepr::Anycast(p) => GeonetPacket::new_anycast(
                             p.basic_header,
@@ -927,7 +911,14 @@ impl Interface {
                         ),
                         _ => unreachable!(), // No other packet type.
                     };
-                    respond(inner, core, PacketMeta::default(), dst_ll_addr, response)
+                    respond(
+                        inner,
+                        core,
+                        congestion,
+                        PacketMeta::default(),
+                        dst_ll_addr,
+                        response,
+                    )
                 },
             );
 
@@ -965,6 +956,7 @@ impl Interface {
 
         let mut respond = |inner: &mut InterfaceInner,
                            core: &mut GnCore,
+                           congestion_ctrl: &mut Congestion,
                            meta: PacketMeta,
                            dst_ll_addr: EthernetAddress,
                            response: GeonetPacket| {
@@ -974,14 +966,7 @@ impl Interface {
             })?;
 
             inner
-                .dispatch_geonet(
-                    t,
-                    core,
-                    meta,
-                    dst_ll_addr,
-                    response,
-                    &mut self.congestion_control,
-                )
+                .dispatch_geonet(t, core, meta, dst_ll_addr, response, congestion_ctrl)
                 .map_err(EgressError::Dispatch)?;
 
             emitted_any = true;
@@ -993,6 +978,7 @@ impl Interface {
             let srv = InterfaceServices {
                 core,
                 ls: &mut self.location_service,
+                congestion_control: &mut self.congestion_control,
                 ls_buffer: &mut self.ls_buffer,
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
@@ -1001,7 +987,7 @@ impl Interface {
 
             let dequeued_some = self.inner.dispatch_contention_buffer(
                 srv,
-                |inner, core, (dst_ll_addr, gn_repr, raw)| {
+                |inner, core, congestion, (dst_ll_addr, gn_repr, raw)| {
                     let response = match gn_repr {
                         GeonetRepr::Anycast(p) => GeonetPacket::new_anycast(
                             p.basic_header,
@@ -1031,7 +1017,14 @@ impl Interface {
                         ),
                         _ => unreachable!(), // No other packet type.
                     };
-                    respond(inner, core, PacketMeta::default(), dst_ll_addr, response)
+                    respond(
+                        inner,
+                        core,
+                        congestion,
+                        PacketMeta::default(),
+                        dst_ll_addr,
+                        response,
+                    )
                 },
             );
 
@@ -1126,10 +1119,10 @@ impl InterfaceInner {
     ) -> Result<(), DispatchError> {
         match trc.dispatch(&packet, dst_hw_addr, core.timestamp()) {
             Ok(CongestionSuccess::ImmediateTx) => {
-                net_trace!("CongestionSuccess::ImmediateTx");
+                // net_trace!("CongestionSuccess::ImmediateTx");
             }
             Ok(CongestionSuccess::Enqueued) => {
-                net_trace!("CongestionSuccess::Enqueued");
+                // net_trace!("CongestionSuccess::Enqueued");
                 return Ok(());
             }
             Err(_) => {
@@ -1241,7 +1234,7 @@ impl InterfaceInner {
                 let tx_duration_usec = bytes_per_usec * total_len as f32;
                 trc.controller
                     .inner_mut()
-                    .notify(core.now, Duration::from_micros(tx_duration_usec as u64));
+                    .notify_tx(core.now, Duration::from_micros(tx_duration_usec as u64));
                 self.defer_beacon(core, &gn_repr);
                 Ok(())
             })

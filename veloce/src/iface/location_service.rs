@@ -87,8 +87,6 @@ impl LocationService {
 
     /// Finds the first free slot available for the Location Service.
     pub fn ls_find_free_handle(&mut self) -> Option<LocationServiceRequestHandle> {
-        net_trace!("ls_find_free_handle");
-        println!("{:?}", self.ls_requests);
         for (i, q) in self.ls_requests.iter().enumerate() {
             if q.is_none() {
                 return Some(LocationServiceRequestHandle(i));

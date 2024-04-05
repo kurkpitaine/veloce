@@ -1,6 +1,10 @@
-use crate::wire::{Error, Result};
-use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
+
+use crate::{
+    phy::ChannelBusyRatio,
+    types::Power,
+    wire::{Error, Result},
+};
 
 use super::{
     long_position_vector::{Header as LPVBuf, Repr as LongPositionVector},
@@ -13,14 +17,16 @@ pub struct Header<T: AsRef<[u8]>> {
     buffer: T,
 }
 
-// See ETSI EN 302 636-4-1 V1.4.1 chapter 9.8.3.2 for details about fields
+/// See ETSI EN 302 636-4-1 V1.4.1 chapter 9.8.3.2 for details about fields
 mod field {
     use crate::wire::field::*;
 
-    // 24-octet Source Position Vector of the Geonetworking Single Hop Broadcast Header.
+    /// 24-octet Source Position Vector of the Geonetworking Single Hop Broadcast Header.
     pub const SO_PV: Field = 0..24;
-    // 4-octet Reserved field of the Geonetworking Single Hop Broadcast Header.
+    /// 4-octet Reserved field of the Geonetworking Single Hop Broadcast Header.
     pub const RESERVED: Field = 24..28;
+    /// Length of the `RESERVED` field.
+    pub const RESERVED_LEN: usize = 4;
 }
 
 // The Geonetworking Single Hop Broadcast Header length.
@@ -68,11 +74,10 @@ impl<T: AsRef<[u8]>> Header<T> {
         LongPositionVector::parse(&spv_buf)
     }
 
-    /// Return the reserved field as [`DccMco`].
+    /// Return the reserved field.
     #[inline]
-    pub fn dcc_mco(&self) -> DccMco {
-        let data = self.buffer.as_ref();
-        DccMco::from_bytes(&data[field::RESERVED])
+    pub fn reserved(&self) -> &[u8] {
+        &self.buffer.as_ref()[field::RESERVED]
     }
 }
 
@@ -94,18 +99,11 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
         value.emit(&mut spv_buf);
     }
 
-    /// Clear the reserved field.
+    /// Set the reserved field.
     #[inline]
-    pub fn clear_reserved(&mut self) {
+    pub fn set_reserved(&mut self, value: &[u8; field::RESERVED_LEN]) {
         let data = self.buffer.as_mut();
-        NetworkEndian::write_u32(&mut data[field::RESERVED], 0);
-    }
-
-    /// Set the reserved field as [`DccMco`].
-    #[inline]
-    pub fn set_dcc_mco(&mut self, value: DccMco) {
-        let data = self.buffer.as_mut();
-        data.copy_from_slice(value.as_bytes());
+        data[field::RESERVED].copy_from_slice(value);
     }
 }
 
@@ -126,15 +124,22 @@ impl<'a, T: AsRef<[u8]>> fmt::Display for Header<&'a T> {
 pub struct Repr {
     /// The Source Position Vector contained inside the Single Hop Broadcast header.
     pub source_position_vector: LongPositionVector,
+    /// Slice containing the raw extension.
+    pub extension: [u8; field::RESERVED_LEN],
 }
 
 impl Repr {
     /// Parse a Single Hop Broadcast Header and return a high-level representation.
     pub fn parse<T: AsRef<[u8]> + ?Sized>(header: &Header<&T>) -> Result<Repr> {
         header.check_len()?;
-        Ok(Repr {
+        let mut repr = Repr {
             source_position_vector: header.source_position_vector()?,
-        })
+            extension: [0; field::RESERVED_LEN],
+        };
+
+        repr.extension.copy_from_slice(header.reserved());
+
+        Ok(repr)
     }
 
     /// Return the length, in bytes, of a header that will be emitted from this high-level
@@ -146,6 +151,12 @@ impl Repr {
     /// Emit a high-level representation into a Single Hop Broadcast Header.
     pub fn emit<T: AsRef<[u8]> + AsMut<[u8]>>(&self, header: &mut Header<T>) {
         header.set_source_position_vector(self.source_position_vector);
+        header.set_reserved(&self.extension);
+    }
+
+    /// Returns the extension field length.
+    pub const fn extension_len() -> usize {
+        field::RESERVED_LEN
     }
 
     /// Returns the source Geonetworking address contained inside the
@@ -153,91 +164,210 @@ impl Repr {
     pub const fn src_addr(&self) -> Address {
         self.source_position_vector.address
     }
+
+    /// Return the extension as a reference.
+    pub const fn extension(&self) -> &[u8; field::RESERVED_LEN] {
+        &self.extension
+    }
+
+    /// Return the extension as a mutable reference.
+    pub fn extension_mut(&mut self) -> &mut [u8; field::RESERVED_LEN] {
+        &mut self.extension
+    }
 }
 
 impl fmt::Display for Repr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Single Hop Broadcast Header so_pv={}",
-            self.source_position_vector
+            "Single Hop Broadcast Header so_pv={}, ext={:?}",
+            self.source_position_vector, self.extension
         )
     }
 }
 
-/// An four-octet DCC-MCO extension field.
+/// An four-octet DCC-G5 extension field.
 #[derive(Default, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub struct DccMco(pub [u8; 4]);
+pub struct G5Ext(pub [u8; 4]);
 
-impl DccMco {
-    /// Constructs a DCC MCO field.
-    pub fn new(cbr_l0_hop: f32, cbr_l1_hop: f32, tx_power: u8) -> DccMco {
-        let cbr_l0_hop = (cbr_l0_hop * 255.0).floor() as u8;
-        let cbr_l1_hop = (cbr_l1_hop * 255.0).floor() as u8;
-        let tx_power = tx_power.clamp(0, 31) & 0x1f;
+impl G5Ext {
+    /// Constructs a DCC G5 extension field.
+    pub fn new(
+        cbr_l0_hop: ChannelBusyRatio,
+        cbr_l1_hop: ChannelBusyRatio,
+        tx_power: Power,
+    ) -> G5Ext {
+        let cbr_l0_hop = (cbr_l0_hop.as_ratio() * 255.0).floor() as u8;
+        let cbr_l1_hop = (cbr_l1_hop.as_ratio() * 255.0).floor() as u8;
+        let tx_power = tx_power.as_dbm_i32().clamp(0, 31) & 0x1f;
 
-        DccMco([cbr_l0_hop, cbr_l1_hop, tx_power, 0])
+        G5Ext([cbr_l0_hop, cbr_l1_hop, tx_power as u8, 0])
     }
 
-    /// Constructs a DCC MCO field from a sequence of octets, in big-endian.
+    /// Constructs a DCC G5 extension field from a sequence of octets, in big-endian.
     ///
     /// # Panics
     /// The function panics if `data` is not 4 octets long.
-    pub fn from_bytes(data: &[u8]) -> DccMco {
+    pub fn from_bytes(data: &[u8]) -> G5Ext {
         let mut bytes = [0; 4];
         bytes.copy_from_slice(data);
-        DccMco(bytes)
+        G5Ext(bytes)
     }
 
-    /// Return a DCC MCO field as a sequence of octets, in big-endian.
+    /// Return a DCC G5 extension field as a sequence of octets, in big-endian.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 
     /// Returns the `cbr_l0_hop` field.
-    pub fn cbr_l0_hop(&self) -> f32 {
-        f32::from(self.0[0]) / 255.0
+    pub fn cbr_l0_hop(&self) -> ChannelBusyRatio {
+        let val = f32::from(self.0[0]) / 255.0;
+        ChannelBusyRatio::from_ratio(val)
     }
 
     /// Returns the `cbr_l1_hop` field.
-    pub fn cbr_l1_hop(&self) -> f32 {
-        f32::from(self.0[1]) / 255.0
+    pub fn cbr_l1_hop(&self) -> ChannelBusyRatio {
+        let val = f32::from(self.0[1]) / 255.0;
+        ChannelBusyRatio::from_ratio(val)
     }
 
     /// Returns the `tx_power` field, in dBm units.
-    pub fn tx_power(&self) -> u8 {
-        self.0[2]
+    pub fn tx_power(&self) -> Power {
+        Power::from_dbm_i32(self.0[2].into())
     }
 
     /// Sets the `cbr_l0_hop` field.
-    pub fn set_cbr_l0_hop(&mut self, value: f32) {
-        let value = (value * 255.0).floor() as u8;
+    pub fn set_cbr_l0_hop(&mut self, value: ChannelBusyRatio) {
+        let value = (value.as_ratio() * 255.0).floor() as u8;
         self.0[0] = value;
     }
 
     /// Sets the `cbr_l1_hop` field.
-    pub fn set_cbr_l1_hop(&mut self, value: f32) {
-        let value = (value * 255.0).floor() as u8;
+    pub fn set_cbr_l1_hop(&mut self, value: ChannelBusyRatio) {
+        let value = (value.as_ratio() * 255.0).floor() as u8;
         self.0[1] = value;
     }
 
     /// Sets the `tx_power` field, in dBm units.
-    pub fn set_tx_power(&mut self, value: u8) {
-        let value = value.clamp(0, 31);
+    pub fn set_tx_power(&mut self, value: Power) {
+        let value = value.as_dbm_i32().clamp(0, 31);
         let raw = self.0[2] & !0x1f;
-        self.0[2] = raw | (value & 0x1f);
+        self.0[2] = raw | (value as u8 & 0x1f);
     }
 }
 
-impl fmt::Display for DccMco {
+impl fmt::Display for G5Ext {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "DccMco  cbr_l0_hop={:.2} cbr_l1_hop={:.2} tx_power={} dBm EIRP",
-            self.cbr_l0_hop(),
-            self.cbr_l1_hop(),
-            self.tx_power()
+            "G5Ext  cbr_l0_hop={:.2} cbr_l1_hop={:.2} tx_power={} dBm EIRP",
+            self.cbr_l0_hop().as_ratio(),
+            self.cbr_l1_hop().as_ratio(),
+            self.tx_power().as_dbm_i32()
         )
+    }
+}
+
+/// An four-octet PC5 extension field.
+#[derive(Default, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub struct PC5Ext(pub [u8; 4]);
+
+impl PC5Ext {
+    /// Constructs a PC5 extension field.
+    pub fn new(version: PC5ExtVersion) -> PC5Ext {
+        match version {
+            PC5ExtVersion::One(meta) => {
+                let byte = u8::from(meta) << 4 | 0x01;
+                PC5Ext([byte, 0, 0, 0])
+            }
+            _ => PC5Ext([0, 0, 0, 0]),
+        }
+    }
+
+    /// Constructs a PC5 extension field from a sequence of octets, in big-endian.
+    ///
+    /// # Panics
+    /// The function panics if `data` is not 4 octets long.
+    pub fn from_bytes(data: &[u8]) -> PC5Ext {
+        let mut bytes = [0; 4];
+        bytes.copy_from_slice(data);
+        PC5Ext(bytes)
+    }
+
+    /// Return a PC5 extension field as a sequence of octets, in big-endian.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Returns the Version and its associated metadata.
+    pub fn version(&self) -> PC5ExtVersion {
+        match self.version_field() {
+            0 => PC5ExtVersion::Zero,
+            1 => PC5ExtVersion::One(self.time_sync_confidence_field()),
+            _ => PC5ExtVersion::Unknown,
+        }
+    }
+
+    /// Sets the Version and its associated metadata.
+    pub fn set_version(&mut self, version: PC5ExtVersion) {
+        match version {
+            PC5ExtVersion::One(meta) => {
+                self.set_version_field(1);
+                self.set_time_sync_confidence_field(meta);
+            }
+            _ => {
+                self.0[0] = 0;
+            }
+        }
+    }
+
+    /// Returns the `version` field.
+    fn version_field(&self) -> u8 {
+        self.0[0] & 0x0f
+    }
+
+    /// Returns the `time_sync_confidence` field.
+    fn time_sync_confidence_field(&self) -> TimeSyncConfidence {
+        TimeSyncConfidence::from(self.0[0] >> 4)
+    }
+
+    /// Sets the `version` field.
+    fn set_version_field(&mut self, version: u8) {
+        self.0[0] = version & 0x0f;
+    }
+
+    /// Sets the `time_sync_confidence` field.
+    fn set_time_sync_confidence_field(&mut self, confidence: TimeSyncConfidence) {
+        let raw = self.0[0] & 0x0f;
+        let raw = raw | u8::from(confidence) << 4;
+        self.0[0] = raw;
+    }
+}
+
+/// PC5 Extension.
+#[derive(Default, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub enum PC5ExtVersion {
+    /// Extension version is 0, ie: device is not equipped or time sync is unavailable.
+    #[default]
+    Zero,
+    /// Extension version is 1, ie: time synchronization is supported.
+    One(TimeSyncConfidence),
+    /// Unknown version value.
+    Unknown,
+}
+
+enum_with_unknown! {
+    /// The Time Sync Confidence provides the absolute accuracy of the reported timing values in the SDU
+    /// with a predefined confidence level, i.e. 95 %.
+    pub enum TimeSyncConfidence(u8) {
+        BetterThan5MicroSec = 0,
+        BetterThan4MicroSec = 1,
+        BetterThan3MicroSec = 2,
+        BetterThan2MicroSec = 3,
+        BetterThan1MicroSec = 4,
+        BetterThan500NanoSec = 5,
+        BetterThan400NanoSec = 6,
+        BetterThan300NanoSec = 7,
     }
 }
 
@@ -293,6 +423,7 @@ mod test {
             repr,
             Repr {
                 source_position_vector: lpv_repr(),
+                extension: [0; Repr::extension_len()],
             }
         );
     }
@@ -301,6 +432,7 @@ mod test {
     fn test_repr_emit() {
         let repr = Repr {
             source_position_vector: lpv_repr(),
+            extension: [0; Repr::extension_len()],
         };
         let mut bytes = [0u8; HEADER_LEN];
         let mut long = Header::new_unchecked(&mut bytes);

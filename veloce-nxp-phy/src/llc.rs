@@ -7,8 +7,12 @@ use std::vec::Vec;
 
 use heapless::HistoryBuffer;
 use log::{error, trace};
-use veloce::phy::{self, sys, ChannelBusyRatio, Device, DeviceCapabilities, Medium};
+use veloce::phy::{
+    self, sys, ChannelBusyRatio, Device, DeviceCapabilities, MacFilterCapabilities, Medium,
+    PacketMeta,
+};
 use veloce::time::Instant;
+use veloce::types::Power;
 use veloce::wire::HardwareAddress;
 
 use crate::{ffi::*, NxpConfig, NxpRadio, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX};
@@ -86,7 +90,8 @@ impl Device for NxpLlcDevice {
         let mut caps = DeviceCapabilities::default();
         caps.max_transmission_unit = RAW_FRAME_LENGTH_MAX;
         caps.medium = Medium::Ieee80211p;
-        caps.has_rx_mac_filter = true;
+        caps.radio.mac_filter = MacFilterCapabilities::Rx;
+        caps.radio.tx_power = self.config.tx_power;
         caps
     }
 
@@ -185,10 +190,19 @@ impl Device for NxpLlcDevice {
                         if rx_pkt.RxPacketData.RadioID == radio as u8
                             && rx_pkt.RxPacketData.ChannelID == cfg_channel as u8
                         {
+                            let mut meta = PacketMeta::default();
+                            meta.power = Some(Power::from_half_dbm_i32(
+                                rx_pkt
+                                    .RxPacketData
+                                    .RxPowerAnt1
+                                    .max(rx_pkt.RxPacketData.RxPowerAnt2)
+                                    .into(),
+                            ));
+
                             // Strip packet header.
                             buffer.drain(..size_of::<tMKxRxPacket>());
 
-                            let rx = NxpRxToken { buffer };
+                            let rx = NxpRxToken { buffer, meta };
                             let tx = NxpTxToken {
                                 lower: self.lower.clone(),
                                 ref_num: self.ref_num.clone(),
@@ -219,6 +233,7 @@ impl Device for NxpLlcDevice {
 #[doc(hidden)]
 pub struct NxpRxToken {
     buffer: Vec<u8>,
+    meta: PacketMeta,
 }
 
 impl phy::RxToken for NxpRxToken {
@@ -227,6 +242,10 @@ impl phy::RxToken for NxpRxToken {
         F: FnOnce(&mut [u8]) -> R,
     {
         f(&mut self.buffer[..])
+    }
+
+    fn meta(&self) -> PacketMeta {
+        self.meta
     }
 }
 

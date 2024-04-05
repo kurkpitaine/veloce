@@ -6,7 +6,7 @@ use uom::si::area::square_kilometer;
 use uom::si::f32::Area;
 
 use super::{BindError, Endpoint, Indication, ListenEndpoint, RecvError, Request};
-use crate::iface::{Context, ContextMeta};
+use crate::iface::{Congestion, Context, ContextMeta};
 use crate::network::{GnCore, Transport, UnicastReqMeta, UpperProtocol};
 #[cfg(feature = "async")]
 use crate::socket::WakerRegistration;
@@ -486,6 +486,7 @@ impl<'a> Socket<'a> {
         F: FnOnce(
             &mut Context,
             &mut GnCore,
+            &mut Congestion,
             (EthernetAddress, GeonetUnicast, &[u8]),
         ) -> Result<(), E>,
     {
@@ -494,7 +495,7 @@ impl<'a> Socket<'a> {
             let (packet_meta, req) = req;
 
             net_trace!(
-                "BTP-A:{}:{}: sending {} octets",
+                "btp-a:{}:{}: sending {} octets",
                 endpoint,
                 packet_meta.endpoint,
                 payload_buf.len()
@@ -513,9 +514,9 @@ impl<'a> Socket<'a> {
                 srv,
                 meta,
                 payload_buf,
-                |cx, core, (dst_ll_addr, bh_repr, ch_repr, uc_repr, pl)| {
+                |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, uc_repr, pl)| {
                     let uc_repr = GeonetUnicast::new(bh_repr, ch_repr, uc_repr);
-                    emit(cx, core, (dst_ll_addr, uc_repr, pl))
+                    emit(cx, core, congestion, (dst_ll_addr, uc_repr, pl))
                 },
             )
         });

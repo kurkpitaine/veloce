@@ -1,5 +1,4 @@
 use std::io;
-use std::os::fd::AsRawFd;
 
 use clap::Parser;
 use log::{debug, error, info, trace};
@@ -7,19 +6,18 @@ use log::{debug, error, info, trace};
 use mio::event::Source;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
-use veloce::iface::{Config, Interface, SocketSet};
+use veloce::iface::{Config, CongestionControl, Interface, SocketSet};
 use veloce::network::{GnAddrConfigMode, GnCore, GnCoreGonfig};
-use veloce::phy::{Medium, RawSocket as VeloceRawSocket};
 use veloce::socket;
 use veloce::time::Instant;
-use veloce::types::Pseudonym;
+use veloce::types::{Power, Pseudonym};
 use veloce::utils;
 use veloce::wire::{EthernetAddress, StationType};
 use veloce_gnss::Gpsd;
+use veloce_nxp_phy::{NxpChannel, NxpConfig, NxpRadio, NxpUsbDevice, NxpWirelessChannel};
 
 #[derive(Parser, Default, Debug)]
 struct Arguments {
-    dev: String,
     log_level: String,
 }
 
@@ -36,8 +34,19 @@ fn main() {
 
     let ll_addr = EthernetAddress([0x04, 0xe5, 0x48, 0xfa, 0xde, 0xca]);
 
-    // Configure Raw socket device
-    let mut device = RawSocket::new(args.dev.as_str(), Medium::Ethernet).unwrap();
+    let config = NxpConfig::new(
+        NxpRadio::A,
+        NxpChannel::Zero,
+        NxpWirelessChannel::Chan180,
+        Power::from_dbm_i32(23),
+        ll_addr,
+    );
+    // Configure NXP device
+    let mut device = UsbSocket::new(config).unwrap();
+    device
+        .inner_mut()
+        .commit_config()
+        .expect("Cannot configure device");
 
     // Register it into the polling registry
     poll.registry()
@@ -53,6 +62,7 @@ fn main() {
     // Configure interface
     let config = Config::new(ll_addr.into());
     let mut iface = Interface::new(config, device.inner_mut());
+    iface.set_congestion_control(CongestionControl::Limeric);
 
     // Create CAM socket
     let cam_socket = socket::cam::Socket::new();
@@ -94,10 +104,10 @@ fn main() {
             }
         }
 
-        trace!("gpsd poll");
+        // trace!("gpsd poll");
         let _ = gpsd.poll();
 
-        trace!("iface poll");
+        // trace!("iface poll");
         iface.poll(&mut router, device.inner_mut(), &mut sockets);
         let socket = sockets.get_mut::<socket::cam::Socket>(cam_handle);
 
@@ -111,7 +121,7 @@ fn main() {
         }
 
         let iface_timeout = iface.poll_delay(now, &sockets);
-        trace!("timeout: {:?}", iface_timeout);
+        // trace!("timeout: {:?}", iface_timeout);
 
         // Poll Mio for events, blocking until we get an event or a timeout.
         poll.poll(&mut events, iface_timeout.map(|t| t.into()))
@@ -119,30 +129,33 @@ fn main() {
     }
 }
 
-pub struct RawSocket {
-    inner: VeloceRawSocket,
+pub struct UsbSocket {
+    inner: NxpUsbDevice,
 }
 
-impl RawSocket {
-    pub fn new(name: &str, medium: Medium) -> io::Result<RawSocket> {
-        Ok(RawSocket {
-            inner: VeloceRawSocket::new(name, medium)?,
+impl UsbSocket {
+    pub fn new(config: NxpConfig) -> io::Result<UsbSocket> {
+        Ok(UsbSocket {
+            inner: NxpUsbDevice::new(config).map_err(|_| io::ErrorKind::Other)?,
         })
     }
 
-    pub fn inner_mut(&mut self) -> &mut VeloceRawSocket {
+    pub fn inner_mut(&mut self) -> &mut NxpUsbDevice {
         &mut self.inner
     }
 }
 
-impl Source for RawSocket {
+// Not very clean here, but USB support is only for development purposes. So
+// keep it this way for now.
+impl Source for UsbSocket {
     fn register(
         &mut self,
         registry: &mio::Registry,
         token: Token,
         interests: mio::Interest,
     ) -> std::io::Result<()> {
-        SourceFd(&self.inner.as_raw_fd()).register(registry, token, interests)
+        let fd = self.inner.pollfds()[0];
+        SourceFd(&fd).register(registry, token, interests)
     }
 
     fn reregister(
@@ -151,10 +164,12 @@ impl Source for RawSocket {
         token: Token,
         interests: mio::Interest,
     ) -> std::io::Result<()> {
-        SourceFd(&self.inner.as_raw_fd()).reregister(registry, token, interests)
+        let fd = self.inner.pollfds()[0];
+        SourceFd(&fd).reregister(registry, token, interests)
     }
 
     fn deregister(&mut self, registry: &mio::Registry) -> std::io::Result<()> {
-        SourceFd(&self.inner.as_raw_fd()).deregister(registry)
+        let fd = self.inner.pollfds()[0];
+        SourceFd(&fd).deregister(registry)
     }
 }

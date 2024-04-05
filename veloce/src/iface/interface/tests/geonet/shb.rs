@@ -45,6 +45,7 @@ fn make_shb_packet() -> (EthernetRepr, GeonetSingleHop) {
                 speed: Speed::new::<meter_per_second>(0.0),
                 heading: Heading::new::<degree>(0.0),
             },
+            extension: [0; SingleHopHeaderRepr::extension_len()],
         },
     };
 
@@ -68,13 +69,14 @@ fn test_receive_shb() {
     let (ethernet, shb) = make_shb_packet();
 
     let ctx_meta = meta!(core, iface);
+    let pkt_meta = PacketMeta::default();
 
     let mut buf = [0u8; SHB_LEN];
     shb.emit(&mut buf);
 
     let res = iface
         .inner
-        .process_geonet_packet(ctx_meta, &mut sockets, &buf, ethernet);
+        .process_geonet_packet(ctx_meta, &mut sockets, pkt_meta, &buf, ethernet);
 
     // Processing a SHB packet should return nothing.
     assert!(res.is_none());

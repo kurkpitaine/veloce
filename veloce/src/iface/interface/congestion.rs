@@ -64,11 +64,14 @@ impl Interface {
         }
     }
 
-    /// Runs the congestion control algorithm
+    /// Runs the congestion control algorithm.
     pub(crate) fn run_congestion_control(&mut self, timestamp: Instant, cbr: ChannelBusyRatio) {
         let rc = self.congestion_control.controller.inner_mut();
         rc.update_cbr(timestamp, cbr);
         rc.run(timestamp);
+
+        self.congestion_control
+            .compute_global_cbr(&self.inner.location_table, timestamp);
     }
 
     /// Egress frames buffered in the congestion control queues.
@@ -78,52 +81,67 @@ impl Interface {
     {
         let trc = &mut self.congestion_control;
 
-        // Do not transmit if gate is closed.
+        let egress_at = match trc.egress_at {
+            Some(e) if e <= core.now => e,
+            _ => return false,
+        };
+        /* // Do not transmit if gate is closed.
         if !trc.controller.inner().can_tx(core.now) {
             return false;
-        }
+        } */
 
         // Find the queue with the smallest delay.
         let queue_opt = trc
             .queues
             .iter_mut()
             .filter(|e| !e.1.is_empty())
-            .map(|e| (e.1, trc.controller.inner().tx_at(Some(*e.0))))
+            .map(|e| (e.1, trc.controller.inner().tx_allowed_at(Some(*e.0))))
             .min_by_key(|k| k.1);
 
         let Some((q, _)) = queue_opt else {
             return false;
         };
 
-        q.dequeue_one(|node| {
-            let tx_token = device.transmit(core.now).ok_or_else(|| {
-                net_debug!("failed to transmit DCC buffered packet: device exhausted");
-                CongestionError::Exhausted
-            })?;
+        let rc = q
+            .dequeue_one(|node| {
+                let tx_token = device.transmit(core.now).ok_or_else(|| {
+                    net_debug!("failed to transmit DCC buffered packet: device exhausted");
+                    CongestionError::Exhausted
+                })?;
 
-            let dst_hw_addr = node.metadata().dst_hw_addr;
-            let gn_repr = node.metadata().packet.to_owned();
-            let payload = node.payload();
+                let dst_hw_addr = node.metadata().dst_hw_addr;
+                let gn_repr = node.metadata().packet.to_owned();
+                let payload = node.payload();
 
-            let gn_pkt = GeonetPacket::new(gn_repr, GeonetPayload::Raw(payload));
+                let gn_pkt = GeonetPacket::new(gn_repr, GeonetPayload::Raw(payload));
 
-            self.inner
-                .dispatch_congestion_control(tx_token, core, dst_hw_addr, gn_pkt)
-        })
-        .is_some_and(|r| {
-            match r {
-                Ok(total_len) => {
-                    // G5 bandwidth is 6 Mbps.
-                    let bytes_per_usec: f32 = 6.144 / 8.0;
-                    let tx_duration_usec = bytes_per_usec * total_len as f32;
-                    trc.controller
-                        .inner_mut()
-                        .notify(core.now, Duration::from_micros(tx_duration_usec as u64));
-                    true
+                self.inner
+                    .dispatch_congestion_control(tx_token, core, dst_hw_addr, gn_pkt)
+            })
+            .is_some_and(|r| {
+                match r {
+                    Ok(total_len) => {
+                        // G5 bandwidth is 6 Mbps.
+                        let bytes_per_usec: f32 = 6.144 / 8.0;
+                        let tx_duration_usec = bytes_per_usec * total_len as f32;
+                        trc.controller
+                            .inner_mut()
+                            .notify_tx(core.now, Duration::from_micros(tx_duration_usec as u64));
+                        true
+                    }
+                    Err(_) => false,
                 }
-                Err(_) => false,
-            }
-        })
+            });
+
+        // Reschedule for egress if there is at least one queue with packets.
+        let has_pkt = trc.queues.iter().filter(|q| !q.1.is_empty()).count() > 0;
+        if has_pkt {
+            trc.egress_at = Some(egress_at + trc.controller.inner().tx_interval());
+        } else {
+            trc.egress_at = None;
+        }
+
+        rc
     }
 }
 
@@ -233,6 +251,7 @@ impl InterfaceInner {
                 Ok(total_len)
             })
             .and_then(|r| {
+                // Not sure about that...
                 self.defer_beacon(core, &gn_repr);
                 Ok(r)
             })

@@ -26,6 +26,7 @@ macro_rules! meta {
         ContextMeta {
             core: &mut $core,
             ls: &mut $iface.location_service,
+            congestion_control: &mut $iface.congestion_control,
             ls_buffer: &mut $iface.ls_buffer,
             uc_forwarding_buffer: &mut $iface.uc_forwarding_buffer,
             bc_forwarding_buffer: &mut $iface.bc_forwarding_buffer,
@@ -84,13 +85,14 @@ fn test_receive_beacon() {
     };
 
     let ctx_meta = meta!(core, iface);
+    let pkt_meta = PacketMeta::default();
 
     let mut buf = [0u8; BEACON_LEN];
     beacon.emit(&mut buf);
 
     let res = iface
         .inner
-        .process_geonet_packet(ctx_meta, &mut sockets, &buf, ethernet);
+        .process_geonet_packet(ctx_meta, &mut sockets, pkt_meta, &buf, ethernet);
 
     // Processing a beacon packet should return nothing.
     assert!(res.is_none());

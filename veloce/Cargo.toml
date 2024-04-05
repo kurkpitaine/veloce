@@ -16,7 +16,6 @@ libc = { version = "0.2.149", optional = true }
 log = { version = "0.4.20", default-features = false, optional = true }
 managed = { version = "0.8", default-features = false, features = ["map"] }
 uom = { version = "0.35", features = ["autoconvert", "f32"] }
-rasn = "0.12"
 veloce-asn1 = { path = "../veloce-asn1", optional = true }
 
 [dev-dependencies]
@@ -54,6 +53,7 @@ conformance = []
 "socket-cam" = ["alloc", "socket", "proto-cam", "asn1"]
 
 "packetmeta-id" = []
+"packetmeta-power" = []
 
 "async" = []
 
@@ -73,21 +73,9 @@ default = [
    "socket-btp-b",
    "socket-cam",
    "packetmeta-id",
+   "packetmeta-power",
    "async",
    "conformance",
-]
-
-[[example]]
-name = "mix"
-required-features = [
-   "std",
-   "log",
-   "medium-ethernet",
-   "phy-raw_socket",
-   "proto-geonet",
-   "proto-btp",
-   "socket-geonet",
-   "socket-btp-b",
 ]
 
 [[example]]

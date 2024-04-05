@@ -81,7 +81,7 @@ pub struct Limeric {
     /// Instant at which reschedule the Limerick algorithm execution.
     next_run_at: Instant,
     /// Instant at which the next packet release from the queues should be.
-    next_release_at: Instant,
+    next_tx_allowed_at: Instant,
     /// Instant at which the CBR value should be read.
     next_cbr_read_at: Instant,
 }
@@ -99,7 +99,7 @@ impl Limeric {
             params,
             dual_alpha_params: None,
             next_run_at: Instant::ZERO,
-            next_release_at: Instant::ZERO,
+            next_tx_allowed_at: Instant::ZERO,
             next_cbr_read_at: Instant::ZERO,
         }
     }
@@ -129,19 +129,19 @@ impl Limeric {
 
     /// Recalculate current transmission interval.
     fn update_interval(&mut self, timestamp: Instant) {
-        let delay = self.next_release_at - timestamp;
-        if self.duty_cycle > 0.0 {
-            if delay > Duration::from_millis(0) {
+        let delay = self.next_tx_allowed_at.total_micros() - timestamp.total_micros();
+        if self.duty_cycle >= 0.0 {
+            if delay > 0 {
                 // Apply equation B.2 of TS 102 687 v1.2.1 if gate is closed at the moment
-                let interval = (self.last_tx_at.total_millis() as f32 / self.duty_cycle)
-                    * ((delay.total_millis() / self.tx_interval.total_millis()) as f32);
+                let interval = (self.last_tx_duration.total_micros() as f32 / self.duty_cycle)
+                    * ((delay / self.tx_interval.total_micros() as i64) as f32);
 
-                let interval = timestamp - self.last_tx_at + Duration::from_millis(interval as u64);
+                let interval = timestamp - self.last_tx_at + Duration::from_micros(interval as u64);
                 self.tx_interval = interval.max(MIN_INTERVAL).min(MAX_INTERVAL);
             } else {
                 // use equation B.1 otherwise
-                let interval = self.last_tx_at.total_millis() as f32 / self.duty_cycle;
-                self.tx_interval = Duration::from_millis(interval as u64)
+                let interval = self.last_tx_duration.total_micros() as f32 / self.duty_cycle;
+                self.tx_interval = Duration::from_micros(interval as u64)
                     .max(MIN_INTERVAL)
                     .min(MAX_INTERVAL);
             }
@@ -149,9 +149,6 @@ impl Limeric {
             // bail out with maximum interval if duty cycle is not positive
             self.tx_interval = MAX_INTERVAL;
         }
-
-        println!("self.duty_cycle = {}", self.duty_cycle);
-        println!("self.tx_interval = {}", self.tx_interval);
     }
 
     /// Computes the duty cycle value for the Limerick algorithm.
@@ -216,28 +213,28 @@ impl RateController for Limeric {
 
     /// Return the instant the Limerick algorithm should be run at.
     fn run_at(&self) -> Instant {
-        self.next_run_at
+        self.next_run_at.min(self.next_cbr_read_at)
     }
 
     fn can_tx(&self, timestamp: Instant) -> bool {
-        self.next_release_at <= timestamp
+        self.next_tx_allowed_at <= timestamp
     }
 
-    fn tx_at(&self, _: Option<AccessCategory>) -> Instant {
-        self.next_release_at
+    fn tx_allowed_at(&self, _: Option<AccessCategory>) -> Instant {
+        self.next_tx_allowed_at
     }
 
     fn tx_interval(&self) -> Duration {
         self.tx_interval
     }
 
-    fn notify(&mut self, tx_at: Instant, duration: Duration) {
-        let interval = duration.total_millis() as f32 / self.duty_cycle;
-        let interval = Duration::from_millis(interval as u64);
+    fn notify_tx(&mut self, tx_at: Instant, duration: Duration) {
+        let interval = duration.total_micros() as f32 / self.duty_cycle;
+        let interval = Duration::from_micros(interval as u64);
         self.tx_interval = interval.max(MIN_INTERVAL).min(MAX_INTERVAL);
         self.last_tx_at = tx_at;
         self.last_tx_duration = duration;
-        self.next_release_at = self.last_tx_at + self.tx_interval;
+        self.next_tx_allowed_at = self.last_tx_at + self.tx_interval;
     }
 
     fn update_cbr(&mut self, timestamp: Instant, cbr: ChannelBusyRatio) {
@@ -253,6 +250,17 @@ impl RateController for Limeric {
         }
 
         self.next_cbr_read_at = timestamp + self.params.cbr_interval;
+    }
+
+    fn local_cbr(&self) -> ChannelBusyRatio {
+        match self.cbr_hist.recent() {
+            Some(cbr) => ChannelBusyRatio::from_ratio(*cbr),
+            None => ChannelBusyRatio::from_ratio(0.0),
+        }
+    }
+
+    fn target_cbr(&self) -> ChannelBusyRatio {
+        ChannelBusyRatio::from_ratio(self.params.cbr_target)
     }
 }
 

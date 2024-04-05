@@ -70,11 +70,11 @@ pub struct Position {
 }
 
 impl Position {
-    /// Return the latitude as a [Latitude](veloce_asn1::e_t_s_i__i_t_s__c_d_d::Latitude).
+    /// Return the latitude as a [Latitude](veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::Latitude).
     #[cfg(feature = "asn1")]
-    pub fn latitude_value(&self) -> veloce_asn1::e_t_s_i__i_t_s__c_d_d::Latitude {
+    pub fn latitude_value(&self) -> veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::Latitude {
         use crate::types::tenth_of_microdegree;
-        use veloce_asn1::e_t_s_i__i_t_s__c_d_d::Latitude;
+        use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::Latitude;
 
         self.latitude.map_or(Latitude(900_000_001), |lat| {
             let val = lat.get::<tenth_of_microdegree>() as i32;
@@ -82,11 +82,11 @@ impl Position {
         })
     }
 
-    /// Return the longitude as a [Longitude](veloce_asn1::e_t_s_i__i_t_s__c_d_d::Longitude).
+    /// Return the longitude as a [Longitude](veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::Longitude).
     #[cfg(feature = "asn1")]
-    pub fn longitude_value(&self) -> veloce_asn1::e_t_s_i__i_t_s__c_d_d::Longitude {
+    pub fn longitude_value(&self) -> veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::Longitude {
         use crate::types::tenth_of_microdegree;
-        use veloce_asn1::e_t_s_i__i_t_s__c_d_d::Longitude;
+        use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::Longitude;
 
         self.longitude.map_or(Longitude(1_800_000_001), |lon| {
             let val = lon.get::<tenth_of_microdegree>() as i32;
@@ -94,11 +94,11 @@ impl Position {
         })
     }
 
-    /// Return the altitude as a [AltitudeValue](veloce_asn1::e_t_s_i__i_t_s__c_d_d::AltitudeValue).
+    /// Return the altitude as a [AltitudeValue](veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::AltitudeValue).
     #[cfg(feature = "asn1")]
-    pub fn altitude_value(&self) -> veloce_asn1::e_t_s_i__i_t_s__c_d_d::AltitudeValue {
+    pub fn altitude_value(&self) -> veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::AltitudeValue {
         use uom::si::length::centimeter;
-        use veloce_asn1::e_t_s_i__i_t_s__c_d_d::AltitudeValue;
+        use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::AltitudeValue;
 
         self.altitude.map_or(AltitudeValue(800_001), |alt| {
             let val = alt.get::<centimeter>() as i32;
@@ -120,11 +120,11 @@ pub struct Motion {
 }
 
 impl Motion {
-    /// Return the speed as a [SpeedValue](veloce_asn1::e_t_s_i__i_t_s__c_d_d::SpeedValue).
+    /// Return the speed as a [SpeedValue](veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::SpeedValue).
     #[cfg(feature = "asn1")]
-    pub fn speed_value(&self) -> veloce_asn1::e_t_s_i__i_t_s__c_d_d::SpeedValue {
+    pub fn speed_value(&self) -> veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::SpeedValue {
         use uom::si::velocity::centimeter_per_second;
-        use veloce_asn1::e_t_s_i__i_t_s__c_d_d::SpeedValue;
+        use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::SpeedValue;
 
         self.speed.map_or(SpeedValue(16383), |spd| {
             let val = spd.get::<centimeter_per_second>() as u16;
@@ -132,11 +132,11 @@ impl Motion {
         })
     }
 
-    /// Return the heading as a [HeadingValue](veloce_asn1::e_t_s_i__i_t_s__c_d_d::HeadingValue).
+    /// Return the heading as a [HeadingValue](veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::HeadingValue).
     #[cfg(feature = "asn1")]
-    pub fn heading_value(&self) -> veloce_asn1::e_t_s_i__i_t_s__c_d_d::HeadingValue {
+    pub fn heading_value(&self) -> veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::HeadingValue {
         use crate::types::decidegree;
-        use veloce_asn1::e_t_s_i__i_t_s__c_d_d::HeadingValue;
+        use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::HeadingValue;
 
         self.heading.map_or(HeadingValue(3601), |axis| {
             let val = axis.get::<decidegree>() as u16;
@@ -159,11 +159,13 @@ pub struct Confidence {
 }
 
 impl Confidence {
-    /// Return altitude confidence as a [AltitudeConfidence](veloce_asn1::e_t_s_i__i_t_s__c_d_d::AltitudeConfidence).
+    /// Return altitude confidence as a [AltitudeConfidence](veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::AltitudeConfidence).
     #[cfg(feature = "asn1")]
-    pub fn altitude_confidence(&self) -> veloce_asn1::e_t_s_i__i_t_s__c_d_d::AltitudeConfidence {
+    pub fn altitude_confidence(
+        &self,
+    ) -> veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::AltitudeConfidence {
         use uom::si::length::meter;
-        use veloce_asn1::e_t_s_i__i_t_s__c_d_d::AltitudeConfidence;
+        use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::AltitudeConfidence;
 
         self.altitude
             .map_or(AltitudeConfidence::unavailable, |alt| {
@@ -188,11 +190,11 @@ impl Confidence {
             })
     }
 
-    /// Return the speed confidence as a [SpeedConfidence](veloce_asn1::e_t_s_i__i_t_s__c_d_d::SpeedConfidence).
+    /// Return the speed confidence as a [SpeedConfidence](veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::SpeedConfidence).
     #[cfg(feature = "asn1")]
-    pub fn speed_confidence(&self) -> veloce_asn1::e_t_s_i__i_t_s__c_d_d::SpeedConfidence {
+    pub fn speed_confidence(&self) -> veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::SpeedConfidence {
         use uom::si::velocity::centimeter_per_second;
-        use veloce_asn1::e_t_s_i__i_t_s__c_d_d::SpeedConfidence;
+        use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::SpeedConfidence;
 
         self.speed.map_or(SpeedConfidence(127), |spd| {
             let val = spd.get::<centimeter_per_second>() as u8;
@@ -200,11 +202,13 @@ impl Confidence {
         })
     }
 
-    /// Return the heading confidence as a [HeadingConfidence](veloce_asn1::e_t_s_i__i_t_s__c_d_d::HeadingConfidence).
+    /// Return the heading confidence as a [HeadingConfidence](veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::HeadingConfidence).
     #[cfg(feature = "asn1")]
-    pub fn heading_confidence(&self) -> veloce_asn1::e_t_s_i__i_t_s__c_d_d::HeadingConfidence {
+    pub fn heading_confidence(
+        &self,
+    ) -> veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::HeadingConfidence {
         use crate::types::decidegree;
-        use veloce_asn1::e_t_s_i__i_t_s__c_d_d::HeadingConfidence;
+        use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::HeadingConfidence;
 
         self.heading.map_or(HeadingConfidence(127), |hdg| {
             let val = hdg.get::<decidegree>() as u8;
@@ -226,11 +230,13 @@ pub struct PositionConfidence {
 }
 
 impl PositionConfidence {
-    /// Return the semi major axis confidence as a [SemiAxisLength](veloce_asn1::e_t_s_i__i_t_s__c_d_d::SemiAxisLength).
+    /// Return the semi major axis confidence as a [SemiAxisLength](veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::SemiAxisLength).
     #[cfg(feature = "asn1")]
-    pub fn semi_major_axis_length(&self) -> veloce_asn1::e_t_s_i__i_t_s__c_d_d::SemiAxisLength {
+    pub fn semi_major_axis_length(
+        &self,
+    ) -> veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::SemiAxisLength {
         use uom::si::length::centimeter;
-        use veloce_asn1::e_t_s_i__i_t_s__c_d_d::SemiAxisLength;
+        use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::SemiAxisLength;
 
         self.semi_major.map_or(SemiAxisLength(4095), |axis| {
             let val = axis.get::<centimeter>() as u16;
@@ -238,11 +244,13 @@ impl PositionConfidence {
         })
     }
 
-    /// Return the semi major axis confidence as a [SemiAxisLength](veloce_asn1::e_t_s_i__i_t_s__c_d_d::SemiAxisLength).
+    /// Return the semi major axis confidence as a [SemiAxisLength](veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::SemiAxisLength).
     #[cfg(feature = "asn1")]
-    pub fn semi_minor_axis_length(&self) -> veloce_asn1::e_t_s_i__i_t_s__c_d_d::SemiAxisLength {
+    pub fn semi_minor_axis_length(
+        &self,
+    ) -> veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::SemiAxisLength {
         use uom::si::length::centimeter;
-        use veloce_asn1::e_t_s_i__i_t_s__c_d_d::SemiAxisLength;
+        use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::SemiAxisLength;
 
         self.semi_minor.map_or(SemiAxisLength(4095), |axis| {
             let val = axis.get::<centimeter>() as u16;
@@ -250,13 +258,13 @@ impl PositionConfidence {
         })
     }
 
-    /// Return the semi major axis confidence as a [Wgs84AngleValue](veloce_asn1::e_t_s_i__i_t_s__c_d_d::Wgs84AngleValue).
+    /// Return the semi major axis confidence as a [Wgs84AngleValue](veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::Wgs84AngleValue).
     #[cfg(feature = "asn1")]
     pub fn semi_minor_orientation_angle(
         &self,
-    ) -> veloce_asn1::e_t_s_i__i_t_s__c_d_d::Wgs84AngleValue {
+    ) -> veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::Wgs84AngleValue {
         use crate::types::decidegree;
-        use veloce_asn1::e_t_s_i__i_t_s__c_d_d::Wgs84AngleValue;
+        use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::Wgs84AngleValue;
 
         self.semi_major_orientation
             .map_or(Wgs84AngleValue(3601), |axis| {

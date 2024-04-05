@@ -96,13 +96,18 @@ pub struct Pseudonym(pub u32);
 
 /// Radio signal power. Inner representation is stored as twice the value
 /// in dBm units, so it allows precision of 0.5 dBm.
-#[derive(Default, Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Default)]
 pub struct Power(i32);
 
 impl Power {
     /// Build a new [Power] from a dBm value stored in a [i32].
     pub const fn from_dbm_i32(val: i32) -> Self {
         Power(val * 2)
+    }
+
+    /// Build a new [Power] from a half dBm value stored in a [i32].
+    pub const fn from_half_dbm_i32(val: i32) -> Self {
+        Power(val)
     }
 
     /// Build a new [Power] from a dBm value stored in a [f32].

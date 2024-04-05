@@ -4,7 +4,9 @@ use crate::config::{
     GN_MAX_PACKET_DATA_RATE_EMA_BETA,
 };
 
-use crate::time::Instant;
+use crate::phy::ChannelBusyRatio;
+use crate::time::{Instant, TAI2004};
+use crate::types::Power;
 use crate::wire::geonet::PositionVectorTimestamp;
 use crate::wire::GnAddress;
 use crate::wire::{
@@ -36,8 +38,7 @@ pub(super) struct LocationTableEntry {
     /// Packet data rate last update time point.
     pub packet_data_rate_updated_at: Instant,
     /// Extensions for the station.
-    #[allow(unused)]
-    pub extensions: Option<()>,
+    pub extensions: Option<LocationTableAnyExtension>,
     /// Time point at which this entry expires.
     pub expires_at: Instant,
 }
@@ -304,6 +305,31 @@ impl LocationTable {
     pub fn clear(&mut self) {
         self.storage.clear();
     }
+
+    /// Returns the valid (in time) local an one hop CBR values.
+    #[cfg(feature = "medium-ieee80211p")]
+    pub fn local_one_hop_cbr_values(
+        &self,
+        timestamp: Instant,
+    ) -> Vec<(ChannelBusyRatio, ChannelBusyRatio), GN_LOC_TABLE_ENTRY_COUNT> {
+        use crate::config::GN_LIFETIME_LOC_TE_X;
+
+        // Filter entries without extension and expired values.
+        self.storage
+            .values()
+            .filter_map(|e| match &e.extensions {
+                Some(ext) => {
+                    let g5_ext = ext.g5_extension_or_panic();
+                    if g5_ext.local_update_tst + GN_LIFETIME_LOC_TE_X > timestamp {
+                        Some((g5_ext.local_cbr, g5_ext.one_hop_cbr))
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            })
+            .collect()
+    }
 }
 
 /// Determine if `left` [`LongPositionVector`] is more fresh than `right` [`LongPositionVector`].
@@ -319,16 +345,49 @@ pub fn compare_position_vector_freshness(
         || ((tst_right > tst_left) && ((tst_right - tst_left) > half_tst_max))
 }
 
-/// Decentralized Congestion Control for G5 (802.11p) Medium.
-pub struct DccG5Extension {
-    /// Local timestamp of the last update of the corresponding
-    /// location table entry.
+/// Location table entry extension.
+#[derive(Debug, Clone)]
+pub enum LocationTableAnyExtension {
+    /// No extension.
+    #[allow(unused)]
+    None,
+    /// DCC G5 Extension.
+    #[cfg(feature = "medium-ieee80211p")]
+    G5(LocationTableG5Extension),
+}
+
+impl LocationTableAnyExtension {
+    #[cfg(feature = "medium-ieee80211p")]
+    pub fn g5_extension_or_panic(&self) -> LocationTableG5Extension {
+        match self {
+            LocationTableAnyExtension::G5(e) => e.to_owned(),
+            #[allow(unreachable_patterns)]
+            _ => panic!("Location Table extension is not a LocationTableG5Extension type."),
+        }
+    }
+}
+
+impl From<LocationTableG5Extension> for LocationTableAnyExtension {
+    fn from(value: LocationTableG5Extension) -> Self {
+        LocationTableAnyExtension::G5(value)
+    }
+}
+
+/// Decentralized Congestion Control for G5 (802.11p) Medium Location Table extension.
+#[cfg(feature = "medium-ieee80211p")]
+#[derive(Debug, Clone)]
+pub struct LocationTableG5Extension {
+    /// Local timestamp of the last update of this extension.
     pub local_update_tst: Instant,
     /// Station source position vector timestamp of last received
     /// SHB packet.
-    pub station_update_tst: Instant,
+    pub station_pv_tst: TAI2004,
     /// Local CBR.
-    pub local_cbr: u8,
+    pub local_cbr: ChannelBusyRatio,
     /// Maximum CBR measurement from 1-hop reachable neighbors.
-    pub one_hop_cbr: u8,
+    pub one_hop_cbr: ChannelBusyRatio,
+    /// Transmit power of the packet that updated the entry.
+    pub tx_power: Power,
+    /// Reception power of the packet that updated the entry.
+    pub rx_power: Option<Power>,
 }

@@ -12,7 +12,7 @@ impl InterfaceInner {
         &mut self,
         srv: InterfaceServices<'services>,
         sockets: &mut SocketSet,
-        _meta: PacketMeta,
+        meta: PacketMeta,
         frame: &'frame [u8],
     ) -> Option<(
         InterfaceServices<'services>,
@@ -33,7 +33,7 @@ impl InterfaceInner {
         match eth_frame.ethertype() {
             #[cfg(feature = "proto-geonet")]
             EthernetProtocol::Geonet => self
-                .process_geonet_packet(srv, sockets, &eth_frame.payload(), eth_repr)
+                .process_geonet_packet(srv, sockets, meta, &eth_frame.payload(), eth_repr)
                 .map(|e| (e.0, e.1, EthernetPacket::Geonet(e.2))),
             // Drop all other traffic.
             _ => None,

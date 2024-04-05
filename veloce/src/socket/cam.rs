@@ -2,7 +2,7 @@
 use core::task::Waker;
 
 use crate::common::{PotiFix, PotiMode};
-use crate::iface::{Context, ContextMeta};
+use crate::iface::{Congestion, Context, ContextMeta};
 use crate::network::{GnCore, Transport};
 
 use crate::socket::{self, btp::SocketB as BtpBSocket, PollAt};
@@ -13,10 +13,9 @@ use crate::wire::{self, ports, GnTrafficClass};
 use crate::storage::PacketBuffer;
 use crate::wire::{EthernetAddress, GeonetRepr, StationType};
 
-use rasn::error::DecodeError;
-use rasn::types::SequenceOf;
-use veloce_asn1::c_a_m__p_d_u__descriptions as cam;
-use veloce_asn1::e_t_s_i__i_t_s__c_d_d as cdd;
+use veloce_asn1::defs::c_a_m__p_d_u__descriptions as cam;
+use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d as cdd;
+use veloce_asn1::prelude::rasn::{self, error::DecodeError, types::SequenceOf};
 
 use super::btp::{Indication, RecvError, Request};
 
@@ -164,7 +163,12 @@ impl<'a> Socket<'a> {
         emit: F,
     ) -> Result<(), E>
     where
-        F: FnOnce(&mut Context, &mut GnCore, (EthernetAddress, GeonetRepr, &[u8])) -> Result<(), E>,
+        F: FnOnce(
+            &mut Context,
+            &mut GnCore,
+            &mut Congestion,
+            (EthernetAddress, GeonetRepr, &[u8]),
+        ) -> Result<(), E>,
     {
         let now = srv.core.now;
         if self.retransmit_at > now {
@@ -210,6 +214,9 @@ impl<'a> Socket<'a> {
             ego_position,
             srv.core.pseudonym(),
         );
+
+        // T_GenCam_Dcc
+        srv.congestion_control.controller.inner().tx_interval();
 
         // TODO: Make retransmit delay dynamic for non-rsu station types.
         // ie: check position, speed and heading vs values in prev cam.
