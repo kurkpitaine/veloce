@@ -1,5 +1,7 @@
 use std::io;
 use std::os::fd::AsRawFd;
+use std::rc::Rc;
+use std::time::{Instant as RInstant, SystemTime};
 
 use clap::Parser;
 use log::{debug, error, info, trace};
@@ -16,6 +18,11 @@ use veloce::types::Pseudonym;
 use veloce::utils;
 use veloce::wire::{EthernetAddress, StationType};
 use veloce_gnss::Gpsd;
+use veloce_ipc::{
+    prelude::rkyv::ser::{serializers::AllocSerializer, Serializer},
+    IpcEvent, IpcEventType,
+};
+use veloce_ipc::{IpcSerializer, ZmqPublisher};
 
 #[derive(Parser, Default, Debug)]
 struct Arguments {
@@ -29,6 +36,10 @@ const GPSD_TOKEN: Token = Token(1);
 fn main() {
     let args = Arguments::parse();
     utils::setup_logging(args.log_level.as_str());
+
+    // Configure IPC
+    let start_time = RInstant::now();
+    let ipc_pub = Rc::new(ZmqPublisher::new("127.0.0.1:45556".to_string()).unwrap());
 
     // Mio setup
     let mut poll = Poll::new().unwrap();
@@ -56,7 +67,23 @@ fn main() {
     iface.set_congestion_control(CongestionControl::LimericDualAlpha);
 
     // Create CAM socket
-    let cam_socket = socket::cam::Socket::new();
+    let mut cam_socket = socket::cam::Socket::new();
+
+    // Register the tx callback.
+    let ipc_tx = ipc_pub.clone();
+    cam_socket.register_send_callback(move |uper, _| {
+        let evt = IpcEvent::new(IpcEventType::CamTx(uper.to_vec()), start_time);
+        let bytes = evt.to_bytes().unwrap();
+        ipc_tx.send(&bytes).unwrap();
+    });
+
+    // Register the rx callback.
+    let ipc_rx = ipc_pub.clone();
+    cam_socket.register_recv_callback(move |uper, _| {
+        let evt = IpcEvent::new(IpcEventType::CamRx(uper.to_vec()), start_time);
+        let bytes = evt.to_bytes().unwrap();
+        ipc_rx.send(&bytes).unwrap();
+    });
 
     // Add it to a SocketSet
     let mut sockets = SocketSet::new(vec![]);
@@ -64,8 +91,7 @@ fn main() {
 
     // Create GPSD client
     let mut gpsd = Gpsd::new(
-        // "127.0.0.1:2947".to_string(),
-        "10.29.2.229:2947".to_string(),
+        "127.0.0.1:2947".to_string(),
         poll.registry().try_clone().unwrap(),
         GPSD_TOKEN,
     )

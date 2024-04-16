@@ -1,0 +1,13 @@
+[package]
+name = "veloce-ipc"
+version = "0.1.0"
+authors = ["Thibaud Rouillé <veloce@ferroxyde.com>"]
+edition = "2021"
+description = "Veloce IPC for messaging between apps."
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytecheck = { version = "0.7" }
+rkyv = { version = "0.7", features = ["strict", "validation"] }
+zmq = "0.10"

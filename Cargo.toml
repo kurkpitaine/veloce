@@ -1,3 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["veloce", "veloce-asn1", "veloce-gnss", "veloce-nxp-phy"]
+members = [
+   "veloce",
+   "veloce-asn1",
+   "veloce-ipc",
+   "veloce-gnss",
+   "veloce-nxp-phy",
+]

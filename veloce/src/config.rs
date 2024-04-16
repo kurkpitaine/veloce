@@ -28,6 +28,7 @@ pub const GN_MAX_PACKET_LIFETIME: Duration = Duration::from_secs(600);
 pub const GN_DEFAULT_PACKET_LIFETIME: Duration = Duration::from_secs(60);
 pub const GN_MAX_PACKET_DATA_RATE_KILO_BYTE_PER_SEC: u8 = 100;
 pub const GN_MAX_PACKET_DATA_RATE_EMA_BETA: f32 = 0.9;
+/// Maximum segment length carried by a Geonetworking packet.
 pub const GN_MAX_SDU_SIZE: usize = 1398;
 pub const GN_MAX_GEO_NETWORKING_HEADER_SIZE: usize = 88;
 /// Location service retransmission period.
@@ -61,6 +62,9 @@ pub const GN_CBR_G_TRIGGER_INTERVAL: Duration = Duration::from_millis(100);
 /// Lifetime for the received CBR value (T_Cbr, see clause 5.2), i.e. duration of
 /// time in which the value received from a neighbouring ITS-S is regarded as valid.
 pub const GN_CBR_LIFETIME: Duration = Duration::from_millis(1000);
+
+/// Maximum payload length carried by a BTP packet.
+pub const BTP_MAX_PL_SIZE: usize = GN_MAX_SDU_SIZE - 4;
 
 /// Maximum size of one DCC queue.
 pub const DCC_QUEUE_SIZE: usize = 10 * 1000;

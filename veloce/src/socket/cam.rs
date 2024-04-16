@@ -1,7 +1,9 @@
+use core::fmt;
 #[cfg(feature = "async")]
 use core::task::Waker;
 
 use crate::common::{PotiFix, PotiMode};
+use crate::config::BTP_MAX_PL_SIZE;
 use crate::iface::{Congestion, Context, ContextMeta};
 use crate::network::{GnCore, Transport};
 
@@ -44,9 +46,11 @@ const CAM_RX_BUF_NUM: usize = 5;
 /// Maximum size of data in receive buffer.
 const CAM_RX_BUF_SIZE: usize = 4096;
 /// Retransmission delay for a mobile station type.
-const CAM_RETRANSMIT_DELAY: Duration = Duration::from_millis(100);
+const CAM_VEH_RETRANSMIT_DELAY: Duration = Duration::from_millis(100);
 /// Retransmission delay for an RSU station type.
 const CAM_RSU_RETRANSMIT_DELAY: Duration = Duration::from_millis(1000);
+/// Retransmission delay for the Low Frequency Container of a CAM message.
+const CAM_LF_RETRANSMIT_DELAY: Duration = Duration::from_millis(500);
 
 /// An ETSI CAM type socket.
 ///
@@ -59,7 +63,6 @@ const CAM_RSU_RETRANSMIT_DELAY: Duration = Duration::from_millis(1000);
 /// Transmission of CAMs is automatic. Therefore, the socket must be
 /// fed periodically with a fresh position and time to ensure
 /// correct transmission rate and data freshness.
-#[derive(Debug)]
 pub struct Socket<'a> {
     /// BTP layer.
     inner: BtpBSocket<'a>,
@@ -70,6 +73,23 @@ pub struct Socket<'a> {
     /// Last instant at which a CAM with a low dynamic container
     /// was successfully transmitted to the lower layer.
     prev_low_dynamic_at: Instant,
+    /// Function to call when a CAM message is successfully received.
+    rx_callback: Option<Box<dyn FnMut(&[u8], &cam::CAM)>>,
+    /// Function to call when a CAM message is successfully transmitted to the lower layer.
+    /// Keep in mind some mechanisms, like congestion control, may silently drop the message
+    /// at a lower layer before any transmission occur.
+    tx_callback: Option<Box<dyn FnMut(&[u8], &cam::CAM)>>,
+}
+
+impl fmt::Debug for Socket<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Socket")
+            .field("inner", &self.inner)
+            .field("retransmit_at", &self.retransmit_at)
+            .field("retransmit_delay", &self.retransmit_delay)
+            .field("prev_low_dynamic_at", &self.prev_low_dynamic_at)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> Socket<'a> {
@@ -81,16 +101,36 @@ impl<'a> Socket<'a> {
             vec![0; CAM_RX_BUF_SIZE],
         );
 
-        let inner_tx_buffer =
-            PacketBuffer::new(vec![socket::btp::b::TxPacketMetadata::EMPTY], vec![0; 1024]);
+        let inner_tx_buffer = PacketBuffer::new(
+            vec![socket::btp::b::TxPacketMetadata::EMPTY],
+            vec![0; BTP_MAX_PL_SIZE],
+        );
         let inner = socket::btp::SocketB::new(inner_rx_buffer, inner_tx_buffer);
 
         Socket {
             inner,
             retransmit_at: Instant::ZERO,
-            retransmit_delay: CAM_RETRANSMIT_DELAY,
+            retransmit_delay: CAM_VEH_RETRANSMIT_DELAY,
             prev_low_dynamic_at: Instant::ZERO,
+            rx_callback: None,
+            tx_callback: None,
         }
+    }
+
+    /// Register a callback for a CAM reception event.
+    /// First callback parameter contains the CAM message serialized as UPER.
+    /// Second callback parameter contains the raw CAM message.
+    pub fn register_recv_callback(&mut self, rx_cb: impl FnMut(&[u8], &cam::CAM) + 'static) {
+        self.rx_callback = Some(Box::new(rx_cb));
+    }
+
+    /// Register a callback for a CAM transmission event.
+    /// First callback parameter contains the CAM message serialized as UPER.
+    /// Second callback parameter contains the raw CAM message.
+    /// Keep in mind some mechanisms, like congestion control, may silently drop the message
+    /// at a lower layer before any transmission occur.
+    pub fn register_send_callback(&mut self, tx_cb: impl FnMut(&[u8], &cam::CAM) + 'static) {
+        self.tx_callback = Some(Box::new(tx_cb));
     }
 
     /// Register a waker for receive operations.
@@ -216,14 +256,14 @@ impl<'a> Socket<'a> {
         );
 
         // T_GenCam_Dcc
-        srv.congestion_control.controller.inner().tx_interval();
+        let _gen_cam_dcc = srv.congestion_control.controller.inner().tx_interval();
 
         // TODO: Make retransmit delay dynamic for non-rsu station types.
         // ie: check position, speed and heading vs values in prev cam.
         if ego_station_type == StationType::RoadSideUnit {
             self.retransmit_delay = CAM_RSU_RETRANSMIT_DELAY;
         } else {
-            self.retransmit_delay = CAM_RETRANSMIT_DELAY;
+            self.retransmit_delay = CAM_VEH_RETRANSMIT_DELAY;
         }
 
         self.retransmit_at = now + self.retransmit_delay;
@@ -236,8 +276,7 @@ impl<'a> Socket<'a> {
         let meta = Request {
             transport: Transport::SingleHopBroadcast,
             max_lifetime: Duration::from_millis(1000),
-            //pCamTrafficClass in C2C vehicle profile.
-            traffic_class: GnTrafficClass::new(false, 2),
+            traffic_class: GnTrafficClass::new(false, 2), // pCamTrafficClass in C2C vehicle profile.
             ..Default::default()
         };
 
@@ -250,6 +289,11 @@ impl<'a> Socket<'a> {
             if self.has_low_dynamic_container(&cam) {
                 self.prev_low_dynamic_at = now;
             }
+
+            if let Some(tx_cb) = &mut self.tx_callback {
+                tx_cb(&raw_cam, &cam);
+            };
+
             res
         })
     }
@@ -343,7 +387,7 @@ impl<'a> Socket<'a> {
         let lf_container = match station_type {
             VeloceStationType::RoadSideUnit => None,
             _ if TAI2004::from_unix_instant(self.prev_low_dynamic_at) - timestamp
-                >= Duration::from_millis(500) =>
+                >= CAM_LF_RETRANSMIT_DELAY =>
             {
                 let ext_lights = BitString::from_slice(&[0u8]);
                 let mut path_history = SequenceOf::new();
@@ -371,6 +415,7 @@ impl<'a> Socket<'a> {
 
         let cam_params = CamParameters::new(basic_container, hf_container, lf_container, None);
 
+        // Generation Delta Time is calculated differently for a RSU station.
         let gen_time = if let VeloceStationType::RoadSideUnit = station_type {
             GenerationDeltaTime((timestamp.total_millis() & 0xffff) as u16)
         } else {
