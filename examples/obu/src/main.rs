@@ -1,10 +1,10 @@
 use std::io;
 use std::os::fd::AsRawFd;
 use std::rc::Rc;
-use std::time::{Instant as RInstant, SystemTime};
+use std::time::Instant as RInstant;
 
 use clap::Parser;
-use log::{debug, error, info, trace};
+use log::{/* debug,*/ error, info /* trace */};
 
 use mio::event::Source;
 use mio::unix::SourceFd;
@@ -18,11 +18,8 @@ use veloce::types::Pseudonym;
 use veloce::utils;
 use veloce::wire::{EthernetAddress, StationType};
 use veloce_gnss::Gpsd;
-use veloce_ipc::{
-    prelude::rkyv::ser::{serializers::AllocSerializer, Serializer},
-    IpcEvent, IpcEventType,
-};
-use veloce_ipc::{IpcSerializer, ZmqPublisher};
+use veloce_ipc::ZmqPublisher;
+use veloce_ipc::{IpcEvent, IpcEventType};
 
 #[derive(Parser, Default, Debug)]
 struct Arguments {
