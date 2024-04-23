@@ -14,6 +14,9 @@
 ///
 use core::{fmt, ops};
 
+#[cfg(feature = "asn1")]
+use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::TimestampIts;
+
 /// A representation of an absolute TAI time value.
 /// Clock zero date is 01-01-2004 at 00:00:00 UTC.
 /// Also, leap seconds must be considered when generating a
@@ -75,7 +78,13 @@ impl TAI2004 {
     /// Create a new `TAI2004` from an unix `Instant`
     pub fn from_unix_instant(unix: Instant) -> TAI2004 {
         let adjusted = unix - Self::DIFF_1970_2004 + Self::leap_seconds_since_2004();
-        Self::from_micros(adjusted.total_micros())
+        Self::from_micros_const(adjusted.total_micros())
+    }
+
+    /// Return as an Unix epoch `Instant`.
+    pub fn as_unix_instant(&self) -> Instant {
+        let unix = *self - Self::leap_seconds_since_2004() + Self::DIFF_1970_2004;
+        Instant::from_micros_const(unix.total_micros())
     }
 
     /// Create a new `TAI2004` from the current [std::time::SystemTime].
@@ -140,6 +149,21 @@ impl From<TAI2004> for ::std::time::SystemTime {
         let leap_adjusted = val.micros() as u64 + TAI2004::leap_seconds_since_2004().micros()
             - TAI2004::DIFF_1970_2004.micros();
         ::std::time::UNIX_EPOCH + ::std::time::Duration::from_micros(leap_adjusted)
+    }
+}
+
+#[cfg(feature = "asn1")]
+impl From<TimestampIts> for TAI2004 {
+    fn from(value: TimestampIts) -> Self {
+        // Safe to cast as TimestampIts is on 42 bits.
+        TAI2004::from_millis_const(value.0 as i64)
+    }
+}
+
+#[cfg(feature = "asn1")]
+impl Into<TimestampIts> for TAI2004 {
+    fn into(self) -> TimestampIts {
+        TimestampIts(self.total_millis() as u64)
     }
 }
 

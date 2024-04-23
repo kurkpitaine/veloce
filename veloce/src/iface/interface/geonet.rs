@@ -544,7 +544,7 @@ impl InterfaceInner {
 
         /* Step 7: Go to upper layer */
         let gn_repr = GeonetRepr::new_single_hop_broadcast(bh_repr, ch_repr, shb_repr);
-        self.pass_up(sockets, meta, &gn_repr, shb.payload());
+        self.pass_up(&svcs, sockets, meta, &gn_repr, shb.payload());
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming SHB packet. */
@@ -624,7 +624,7 @@ impl InterfaceInner {
 
         /* Step 7: Go to upper layer */
         let gn_repr = GeonetRepr::new_topo_scoped_broadcast(bh_repr, ch_repr, tsb_repr);
-        self.pass_up(sockets, meta, &gn_repr, tsb.payload());
+        self.pass_up(&svcs, sockets, meta, &gn_repr, tsb.payload());
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming TSB packet. */
@@ -925,7 +925,7 @@ impl InterfaceInner {
 
         /* Step 8: pass payload to upper protocol. */
         let gn_repr: GeonetRepr = GeonetRepr::new_unicast(bh_repr, ch_repr, uc_repr);
-        self.pass_up(sockets, meta, &gn_repr, payload);
+        self.pass_up(&svcs, sockets, meta, &gn_repr, payload);
     }
 
     /// Process a Geo Broadcast packet.
@@ -995,7 +995,7 @@ impl InterfaceInner {
         /* Step 7: pass payload to upper protocol if we are inside the destination area */
         if inside {
             let gn_repr = GeonetRepr::new_broadcast(bh_repr, ch_repr, gbc_repr);
-            self.pass_up(sockets, meta, &gn_repr, gbc.payload());
+            self.pass_up(&svcs, sockets, meta, &gn_repr, gbc.payload());
         }
 
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
@@ -1136,7 +1136,7 @@ impl InterfaceInner {
         /* Step 9: pass payload to upper protocol if we are inside the destination area */
         if inside {
             let gn_repr = GeonetRepr::new_anycast(bh_repr, ch_repr, gac_repr);
-            self.pass_up(sockets, meta, &gn_repr, gac.payload());
+            self.pass_up(&svcs, sockets, meta, &gn_repr, gac.payload());
         }
 
         /* Step 10a: decrement Remaining Hop limit */
@@ -2360,6 +2360,7 @@ impl InterfaceInner {
     /// Pass received Geonetworking payload to upper layer.
     fn pass_up(
         &mut self,
+        svcs: &InterfaceServices,
         sockets: &mut SocketSet,
         _meta: PacketMeta,
         repr: &GeonetRepr,
@@ -2383,10 +2384,10 @@ impl InterfaceInner {
 
         match ind.upper_proto {
             UpperProtocol::BtpA => {
-                self.process_btp_a(sockets, ind, handled_by_geonet_socket, repr, payload)
+                self.process_btp_a(svcs, sockets, ind, handled_by_geonet_socket, repr, payload)
             }
             UpperProtocol::BtpB => {
-                self.process_btp_b(sockets, ind, handled_by_geonet_socket, payload)
+                self.process_btp_b(svcs, sockets, ind, handled_by_geonet_socket, payload)
             }
             UpperProtocol::Any => {}
             UpperProtocol::Ipv6 => {} // _ if handled_by_geonet_socket => None,

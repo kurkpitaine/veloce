@@ -412,6 +412,7 @@ impl<'a> Socket<'a> {
     pub(crate) fn accepts(
         &self,
         _cx: &mut Context,
+        _srv: &ContextMeta,
         uc_repr: &GeonetUnicast,
         repr: &BtpARepr,
     ) -> bool {
@@ -429,16 +430,17 @@ impl<'a> Socket<'a> {
     }
 
     /// Process a newly received BTP-A segment.
-    /// Check if the socket must handle the segment with [accepts] before calling this function.
+    /// Check if the socket must handle the segment with [Socket::accepts] before calling this function.
     pub(crate) fn process(
         &mut self,
         cx: &mut Context,
+        srv: &ContextMeta,
         indication: Indication,
         uc_repr: &GeonetUnicast,
         repr: &BtpARepr,
         payload: &[u8],
     ) {
-        debug_assert!(self.accepts(cx, uc_repr, repr));
+        debug_assert!(self.accepts(cx, srv, uc_repr, repr));
 
         let size = payload.len();
 

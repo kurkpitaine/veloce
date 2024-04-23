@@ -94,6 +94,16 @@ impl AngleTrait for Angle {
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Pseudonym(pub u32);
 
+#[cfg(feature = "asn1")]
+use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::StationId;
+
+#[cfg(feature = "asn1")]
+impl From<StationId> for Pseudonym {
+    fn from(value: StationId) -> Self {
+        Self(value.0)
+    }
+}
+
 /// Radio signal power. Inner representation is stored as twice the value
 /// in dBm units, so it allows precision of 0.5 dBm.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Default)]

@@ -7,6 +7,7 @@ description = "Veloce OBU demo"
 
 [dependencies]
 veloce = { path = "../../veloce" }
+veloce-asn1 = { path = "../../veloce-asn1" }
 veloce-ipc = { path = "../../veloce-ipc" }
 veloce-gnss = { path = "../../veloce-gnss" }
 veloce-nxp-phy = { path = "../../veloce-nxp-phy" }

@@ -1,6 +1,6 @@
 // build.rs build script
 use rasn_compiler::prelude::*;
-use std::{env, path::PathBuf};
+use std::{env, fs, path::PathBuf};
 
 fn main() {
     // Write the bindings to the $OUT_DIR/bindings.rs file.
@@ -13,17 +13,18 @@ fn main() {
             vec![
                 PathBuf::from("asn/ETSI-ITS-CDD.asn"),
                 PathBuf::from("asn/CAM-PDU-Descriptions.asn"),
-                //PathBuf::from("asn/DENM-PDU-Descriptions.asn"),
+                PathBuf::from("asn/DENM-PDU-Descriptions.asn"),
             ]
             .iter(),
         )
-        // set an output path for the generated rust code
-        .set_output_path(out_path.join("bindings.rs"))
-        // optionally choose to support `no_std`
-        .compile()
+        .compile_to_string()
     {
-        Ok(warnings) => {
-            println!("ASN1 compiler warnings: {:?}", warnings);
+        Ok(res) => {
+            println!("ASN1 compiler warnings: {:?}", res.warnings);
+            let contents = res
+                .generated
+                .replace("DEFAULT_VALIDITY\n", "DeltaTimeSecond(600)\n");
+            fs::write(out_path.join("bindings.rs"), contents).unwrap();
         }
         Err(error) => {
             panic!("Cannot compile ASN1 descriptions: {:?}", error);

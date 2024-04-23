@@ -148,7 +148,9 @@ impl fmt::Display for StationType {
 }
 
 #[cfg(feature = "asn1")]
-use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::TrafficParticipantType;
+use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::{
+    StationType as CddStationType, TrafficParticipantType,
+};
 
 #[cfg(feature = "asn1")]
 impl From<TrafficParticipantType> for StationType {
@@ -195,6 +197,55 @@ impl Into<TrafficParticipantType> for StationType {
             StationType::Agricultural => TrafficParticipantType(14),
             StationType::RoadSideUnit => TrafficParticipantType(15),
             StationType::Unknown(u) => TrafficParticipantType(u as u8),
+        }
+    }
+}
+
+#[cfg(feature = "asn1")]
+impl From<CddStationType> for StationType {
+    fn from(value: CddStationType) -> Self {
+        match value.0 {
+            0 => StationType::Unknown(0),
+            1 => StationType::Pedestrian,
+            2 => StationType::Cyclist,
+            3 => StationType::Moped,
+            4 => StationType::Motorcycle,
+            5 => StationType::PassengerCar,
+            6 => StationType::Bus,
+            7 => StationType::LightTruck,
+            8 => StationType::HeavyTruck,
+            9 => StationType::Trailer,
+            10 => StationType::SpecialVehicle,
+            11 => StationType::Tram,
+            12 => StationType::LightVruVehicle,
+            13 => StationType::Animal,
+            14 => StationType::Agricultural,
+            15 => StationType::RoadSideUnit,
+            _ => StationType::Unknown(value.0.into()),
+        }
+    }
+}
+
+#[cfg(feature = "asn1")]
+impl Into<CddStationType> for StationType {
+    fn into(self) -> CddStationType {
+        match self {
+            StationType::Pedestrian => CddStationType(1),
+            StationType::Cyclist => CddStationType(2),
+            StationType::Moped => CddStationType(3),
+            StationType::Motorcycle => CddStationType(4),
+            StationType::PassengerCar => CddStationType(5),
+            StationType::Bus => CddStationType(6),
+            StationType::LightTruck => CddStationType(7),
+            StationType::HeavyTruck => CddStationType(8),
+            StationType::Trailer => CddStationType(9),
+            StationType::SpecialVehicle => CddStationType(10),
+            StationType::Tram => CddStationType(11),
+            StationType::LightVruVehicle => CddStationType(12),
+            StationType::Animal => CddStationType(13),
+            StationType::Agricultural => CddStationType(14),
+            StationType::RoadSideUnit => CddStationType(15),
+            StationType::Unknown(u) => CddStationType(u as u8),
         }
     }
 }

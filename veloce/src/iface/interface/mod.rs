@@ -525,6 +525,21 @@ impl Interface {
                         )
                     },
                 ),
+                #[cfg(feature = "socket-denm")]
+                Socket::Denm(socket) => socket.dispatch(
+                    &mut self.inner,
+                    srv,
+                    |inner, core, congestion, (dst_ll_addr, gn, pl)| {
+                        respond(
+                            inner,
+                            core,
+                            congestion,
+                            PacketMeta::default(),
+                            dst_ll_addr,
+                            GeonetPacket::new(gn, GeonetPayload::Raw(pl)),
+                        )
+                    },
+                ),
             };
 
             match result {

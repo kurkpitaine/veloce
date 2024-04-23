@@ -1,6 +1,4 @@
 use core::fmt;
-#[cfg(feature = "async")]
-use core::task::Waker;
 
 use crate::common::{PotiFix, PotiMode};
 use crate::config::BTP_MAX_PL_SIZE;
@@ -44,7 +42,7 @@ impl std::error::Error for CamError {}
 /// Maximum number of CAMs in receive buffer.
 const CAM_RX_BUF_NUM: usize = 5;
 /// Maximum size of data in receive buffer.
-const CAM_RX_BUF_SIZE: usize = 4096;
+const CAM_RX_BUF_SIZE: usize = CAM_RX_BUF_NUM * BTP_MAX_PL_SIZE;
 /// Retransmission delay for a mobile station type.
 const CAM_VEH_RETRANSMIT_DELAY: Duration = Duration::from_millis(100);
 /// Retransmission delay for an RSU station type.
@@ -57,8 +55,9 @@ const CAM_LF_RETRANSMIT_DELAY: Duration = Duration::from_millis(500);
 /// A CAM socket executes the Cooperative Awareness protocol,
 /// as described in ETSI TS 103 900 V2.1.1 (2023-11).
 ///
-/// The socket implement the CAM messages transmission, and provides
-/// a list of received CAM.
+/// The socket implement the CAM messages transmission, provides
+/// a list of received CAM accessible with [Socket::recv] and a
+/// callback registration mechanism for CAM Rx/Tx event.
 ///
 /// Transmission of CAMs is automatic. Therefore, the socket must be
 /// fed periodically with a fresh position and time to ensure
@@ -119,53 +118,18 @@ impl<'a> Socket<'a> {
 
     /// Register a callback for a CAM reception event.
     /// First callback parameter contains the CAM message serialized as UPER.
-    /// Second callback parameter contains the raw CAM message.
+    /// Second callback parameter contains the raw CAM message struct.
     pub fn register_recv_callback(&mut self, rx_cb: impl FnMut(&[u8], &cam::CAM) + 'static) {
         self.rx_callback = Some(Box::new(rx_cb));
     }
 
     /// Register a callback for a CAM transmission event.
     /// First callback parameter contains the CAM message serialized as UPER.
-    /// Second callback parameter contains the raw CAM message.
+    /// Second callback parameter contains the raw CAM message struct.
     /// Keep in mind some mechanisms, like congestion control, may silently drop the message
     /// at a lower layer before any transmission occur.
     pub fn register_send_callback(&mut self, tx_cb: impl FnMut(&[u8], &cam::CAM) + 'static) {
         self.tx_callback = Some(Box::new(tx_cb));
-    }
-
-    /// Register a waker for receive operations.
-    ///
-    /// The waker is woken on state changes that might affect the return value
-    /// of `recv` method calls, such as receiving data, or the socket closing.
-    ///
-    /// Notes:
-    ///
-    /// - Only one waker can be registered at a time. If another waker was previously registered,
-    ///   it is overwritten and will no longer be woken.
-    /// - The Waker is woken only once. Once woken, you must register it again to receive more wakes.
-    /// - "Spurious wakes" are allowed: a wake doesn't guarantee the result of `recv` has
-    ///   necessarily changed.
-    #[cfg(feature = "async")]
-    pub fn register_recv_waker(&mut self, waker: &Waker) {
-        self.inner.register_recv_waker(waker)
-    }
-
-    /// Register a waker for send operations.
-    ///
-    /// The waker is woken on state changes that might affect the return value
-    /// of `send` method calls, such as space becoming available in the transmit
-    /// buffer, or the socket closing.
-    ///
-    /// Notes:
-    ///
-    /// - Only one waker can be registered at a time. If another waker was previously registered,
-    ///   it is overwritten and will no longer be woken.
-    /// - The Waker is woken only once. Once woken, you must register it again to receive more wakes.
-    /// - "Spurious wakes" are allowed: a wake doesn't guarantee the result of `send` has
-    ///   necessarily changed.
-    #[cfg(feature = "async")]
-    pub fn register_send_waker(&mut self, waker: &Waker) {
-        self.inner.register_send_waker(waker)
     }
 
     /// Check whether the receive buffer is not empty.
@@ -176,8 +140,13 @@ impl<'a> Socket<'a> {
 
     /// Query wether the CAM socket accepts the segment.
     #[must_use]
-    pub(crate) fn accepts(&self, cx: &mut Context, repr: &wire::BtpBRepr) -> bool {
-        self.inner.accepts(cx, repr)
+    pub(crate) fn accepts(
+        &self,
+        cx: &mut Context,
+        srv: &ContextMeta,
+        repr: &wire::BtpBRepr,
+    ) -> bool {
+        self.inner.accepts(cx, srv, repr)
     }
 
     /// Dequeue a packet, and return a pointer to the payload.
@@ -191,9 +160,15 @@ impl<'a> Socket<'a> {
     }
 
     /// Process a newly received CAM.
-    /// Check if the socket must handle the segment with [accepts] before calling this function.
-    pub(crate) fn process(&mut self, cx: &mut Context, indication: Indication, payload: &[u8]) {
-        self.inner.process(cx, indication, payload)
+    /// Check if the socket must handle the segment with [Socket::accepts] before calling this function.
+    pub(crate) fn process(
+        &mut self,
+        cx: &mut Context,
+        srv: &ContextMeta,
+        indication: Indication,
+        payload: &[u8],
+    ) {
+        self.inner.process(cx, srv, indication, payload)
     }
 
     pub(crate) fn dispatch<F, E>(
@@ -210,11 +185,6 @@ impl<'a> Socket<'a> {
             (EthernetAddress, GeonetRepr, &[u8]),
         ) -> Result<(), E>,
     {
-        let now = srv.core.now;
-        if self.retransmit_at > now {
-            return Ok(());
-        }
-
         if !self.inner.is_open() {
             match self.inner.bind(ports::CAM) {
                 Ok(_) => net_trace!("CAM socket bind"),
@@ -223,6 +193,11 @@ impl<'a> Socket<'a> {
                     return Ok(());
                 }
             }
+        }
+
+        let now = srv.core.now;
+        if self.retransmit_at > now {
+            return Ok(());
         }
 
         let ego_station_type = srv.core.station_type();
@@ -268,6 +243,7 @@ impl<'a> Socket<'a> {
 
         self.retransmit_at = now + self.retransmit_delay;
 
+        // TODO: FixMe
         let Ok(raw_cam) = rasn::uper::encode(&cam) else {
             net_trace!("CAM content invalid");
             return Ok(());
@@ -280,6 +256,7 @@ impl<'a> Socket<'a> {
             ..Default::default()
         };
 
+        // TODO: FixMe
         let Ok(_) = self.inner.send_slice(&raw_cam, meta) else {
             net_trace!("CAM slice cannot be sent");
             return Ok(());

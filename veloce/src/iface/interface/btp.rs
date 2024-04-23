@@ -5,12 +5,13 @@ use crate::{
     wire::{BtpAHeader, BtpARepr, BtpBHeader, BtpBRepr, GeonetRepr},
 };
 
-use super::{check, InterfaceInner};
+use super::{check, InterfaceInner, InterfaceServices};
 
 impl InterfaceInner {
     /// Processes a BTP-A packet.
     pub(super) fn process_btp_a(
         &mut self,
+        srv: &InterfaceServices,
         sockets: &mut SocketSet,
         ind: Indication,
         _handled_by_geonet_socket: bool,
@@ -41,8 +42,8 @@ impl InterfaceInner {
             .items_mut()
             .filter_map(|i| btp::SocketA::downcast_mut(&mut i.socket))
         {
-            if btp_socket.accepts(self, &uc_repr, &btp_a_repr) {
-                btp_socket.process(self, btp_ind, &uc_repr, &btp_a_repr, payload);
+            if btp_socket.accepts(self, &srv, &uc_repr, &btp_a_repr) {
+                btp_socket.process(self, &srv, btp_ind, &uc_repr, &btp_a_repr, payload);
                 return;
             }
         }
@@ -51,6 +52,7 @@ impl InterfaceInner {
     /// Processes a BTP-B packet.
     pub(super) fn process_btp_b(
         &mut self,
+        srv: &InterfaceServices,
         sockets: &mut SocketSet,
         ind: Indication,
         _handled_by_geonet_socket: bool,
@@ -75,8 +77,8 @@ impl InterfaceInner {
             .items_mut()
             .filter_map(|i| btp::SocketB::downcast_mut(&mut i.socket))
         {
-            if btp_socket.accepts(self, &btp_b_repr) {
-                btp_socket.process(self, btp_ind, payload);
+            if btp_socket.accepts(self, srv, &btp_b_repr) {
+                btp_socket.process(self, srv, btp_ind, payload);
                 return;
             }
         }
@@ -86,8 +88,19 @@ impl InterfaceInner {
             .items_mut()
             .filter_map(|i| cam::Socket::downcast_mut(&mut i.socket))
         {
-            if cam_socket.accepts(self, &btp_b_repr) {
-                cam_socket.process(self, btp_ind, payload);
+            if cam_socket.accepts(self, srv, &btp_b_repr) {
+                cam_socket.process(self, srv, btp_ind, payload);
+                return;
+            }
+        }
+
+        #[cfg(feature = "socket-denm")]
+        for denm_socket in sockets
+            .items_mut()
+            .filter_map(|i| denm::Socket::downcast_mut(&mut i.socket))
+        {
+            if denm_socket.accepts(self, srv, &btp_b_repr) {
+                denm_socket.process(self, srv, btp_ind, payload);
                 return;
             }
         }

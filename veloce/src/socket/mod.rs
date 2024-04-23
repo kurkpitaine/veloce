@@ -23,6 +23,9 @@ pub mod btp;
 #[cfg(feature = "socket-cam")]
 pub mod cam;
 
+#[cfg(feature = "socket-denm")]
+pub mod denm;
+
 #[cfg(feature = "async")]
 mod waker;
 
@@ -46,7 +49,7 @@ pub(crate) enum PollAt {
 ///
 /// This enumeration abstracts the various types of sockets based on the IP protocol.
 /// To downcast a `Socket` value to a concrete socket, use the [AnySocket] trait,
-/// e.g. to get `udp::Socket`, call `udp::Socket::downcast(socket)`.
+/// e.g. to get `cam::Socket`, call `cam::Socket::downcast(socket)`.
 ///
 /// It is usually more convenient to use [SocketSet::get] instead.
 ///
@@ -62,6 +65,8 @@ pub enum Socket<'a> {
     BtpB(btp::SocketB<'a>),
     #[cfg(feature = "socket-cam")]
     Cam(cam::Socket<'a>),
+    #[cfg(feature = "socket-denm")]
+    Denm(denm::Socket<'a>),
 }
 
 impl<'a> Socket<'a> {
@@ -75,6 +80,8 @@ impl<'a> Socket<'a> {
             Socket::BtpB(s) => s.poll_at(cx),
             #[cfg(feature = "socket-cam")]
             Socket::Cam(s) => s.poll_at(cx),
+            #[cfg(feature = "socket-denm")]
+            Socket::Denm(s) => s.poll_at(cx),
         }
     }
 }
@@ -124,6 +131,8 @@ from_socket!(btp::SocketA<'a>, BtpA);
 from_socket!(btp::SocketB<'a>, BtpB);
 #[cfg(feature = "socket-cam")]
 from_socket!(cam::Socket<'a>, Cam);
+#[cfg(feature = "socket-denm")]
+from_socket!(denm::Socket<'a>, Denm);
 
 /// Error returned by [`Socket::send`]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

@@ -51,6 +51,7 @@ conformance = []
 "socket-btp-b" = ["socket", "proto-geonet"]
 
 "socket-cam" = ["alloc", "socket", "proto-cam", "asn1"]
+"socket-denm" = ["alloc", "socket", "proto-denm", "asn1"]
 
 "packetmeta-id" = []
 "packetmeta-power" = []
@@ -72,6 +73,7 @@ default = [
    "socket-btp-a",
    "socket-btp-b",
    "socket-cam",
+   "socket-denm",
    "packetmeta-id",
    "packetmeta-power",
    "async",

@@ -333,7 +333,12 @@ impl<'a> Socket<'a> {
     }
 
     /// Query wether this BTP-B socket accepts the segment.
-    pub(crate) fn accepts(&self, _cx: &mut Context, repr: &wire::BtpBRepr) -> bool {
+    pub(crate) fn accepts(
+        &self,
+        _cx: &mut Context,
+        _srv: &ContextMeta,
+        repr: &wire::BtpBRepr,
+    ) -> bool {
         if self.port != repr.dst_port {
             return false;
         }
@@ -342,8 +347,14 @@ impl<'a> Socket<'a> {
     }
 
     /// Process a newly received BTP-B segment.
-    /// Check if the socket must handle the segment with [accepts] before calling this function.
-    pub(crate) fn process(&mut self, _cx: &mut Context, indication: Indication, payload: &[u8]) {
+    /// Check if the socket must handle the segment with [Socket::accepts] before calling this function.
+    pub(crate) fn process(
+        &mut self,
+        _cx: &mut Context,
+        _srv: &ContextMeta,
+        indication: Indication,
+        payload: &[u8],
+    ) {
         net_trace!("btp-b: receiving {} octets", payload.len());
 
         match self.rx_buffer.enqueue(payload.len(), indication) {

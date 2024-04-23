@@ -50,4 +50,12 @@ pub mod ports {
     pub const IMZM: u16 = 2019;
     /// Diagnostic Status service BTP port number.
     pub const DSM: u16 = 2020;
+    /// P2P Certificate Revocation List service BTP port number.
+    pub const P2P_CRLM: u16 = 2021;
+    /// P2P Distribution Certificate Trust List service BTP port number.
+    pub const P2P_DCTL: u16 = 2022;
+    /// Misbehavior Reporting Service BTP port number.
+    pub const MRSM: u16 = 2023;
+    /// P2P Full Certificate Trust List Distribution service BTP port number.
+    pub const P2P_CTLM: u16 = 2024;
 }
