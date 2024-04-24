@@ -16,12 +16,52 @@ use crate::wire::{EthernetAddress, GeonetRepr};
 use managed::ManagedSlice;
 use veloce_asn1::defs::d_e_n_m__p_d_u__description as denm;
 use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d as cdd;
-use veloce_asn1::prelude::rasn::{
-    self,
-    error::{DecodeError, EncodeError},
-};
+use veloce_asn1::prelude::rasn::{self, error::EncodeError};
 
-use super::btp::{Indication, RecvError, Request};
+use super::btp::{Indication, Request};
+
+/// Return value for the [Socket::poll] function.
+pub struct PollEvent(Option<PollDispatchEvent>, Option<PollProcessEvent>);
+
+/// Return value for the [Socket::poll] function.
+/// Repetitions are filtered by the socket.
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PollDispatchEvent {
+    /// DENM socket sent a previously unknown DENM.
+    SentNew(ActionId),
+    /// DENM socket sent an update for a known DENM.
+    SentUpdate(ActionId),
+    /// DENM socket sent a cancellation for a known DENM.
+    SentCancel(ActionId),
+    /// DENM socket sent a negation for a known DENM.
+    SentNegation(ActionId),
+}
+
+/// Return value for the [Socket::poll] function.
+/// Repetitions are filtered by the socket.
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PollProcessEvent {
+    /// DENM socket received a previously unknown DENM.
+    RecvNew(PollProcessInfo),
+    /// DENM socket received an update for a known DENM.
+    RecvUpdate(PollProcessInfo),
+    /// DENM socket received a cancellation for a known DENM.
+    RecvCancel(PollProcessInfo),
+    /// DENM socket received a negation for a known DENM.
+    RecvNegation(PollProcessInfo),
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[allow(unused)] // unused depending on which sockets are enabled
+pub struct PollProcessInfo {
+    /// Action Id of the DENM.
+    action_id: ActionId,
+    /// Full DENM message.
+    msg: denm::DENM,
+}
 
 /// Error returned by [`Socket::trigger`], [`Socket::update`] and [`Socket::cancel`].
 #[derive(Debug)]
@@ -74,28 +114,9 @@ impl core::fmt::Display for ApiError {
     }
 }
 
-/// Error returned by [`Socket::recv`]
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum DenmError {
-    Buffer(RecvError),
-    Asn1(DecodeError),
-}
-
-impl core::fmt::Display for DenmError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            DenmError::Buffer(b) => write!(f, "Buffer: {}", b),
-            DenmError::Asn1(d) => write!(f, "Asn1: {}", d),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for DenmError {}
-
 /// Unique identifier of the DENM, aka Action ID.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ActionId {
     /// Station ID part.
     station_id: u32,
@@ -304,9 +325,9 @@ const DENM_RX_BUF_SIZE: usize = DENM_RX_BUF_NUM * BTP_MAX_PL_SIZE;
 /// A DENM socket executes the Decentralized Event Notification Message protocol,
 /// as described in ETSI TS 103 831 V2.1.1 (2022-11).
 ///
-/// The socket implement the DENM messages transmission, provides
-/// a list of received DENM accessible with [Socket::recv] and a
-/// callback registration mechanism for DENM Rx/Tx event.
+/// The socket sends/receive DENM autonomously.
+/// You must query the last processing event with `.poll()` after every call to
+/// `Interface::poll()
 pub struct Socket<'a> {
     /// BTP layer.
     inner: BtpBSocket<'a>,
@@ -316,22 +337,28 @@ pub struct Socket<'a> {
     orig_msg_table: ManagedSlice<'a, Option<OriginatedDenm>>,
     /// Receiving Message Table.
     recv_msg_table: ManagedSlice<'a, Option<ReceivedDenm>>,
-    /// Function to call when a DENM message is successfully received.
+    /// Function to call when a DENM message is successfully received by the DENM socket,
+    /// ie: whose content is valid and not expired, including repeated messages.
     rx_callback: Option<Box<dyn FnMut(&[u8], &denm::DENM)>>,
-    /// Function to call when a DENM message is successfully transmitted to the lower layer.
-    /// Keep in mind some mechanisms, like congestion control, may silently drop the message
-    /// at a lower layer before any transmission occur.
+    /// Function to call when a DENM message is successfully transmitted to the lower layer,
+    /// including repeated messages. Keep in mind some mechanisms, like congestion control,
+    /// may silently drop the message at a lower layer before any transmission occur.
     tx_callback: Option<Box<dyn FnMut(&[u8], &denm::DENM)>>,
+    /// Dispatch event to return when polling this socket.
+    dispatch_event: Option<PollDispatchEvent>,
+    /// Process event to return when polling this socket.
+    process_event: Option<PollProcessEvent>,
 }
 
 impl fmt::Debug for Socket<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Socket")
             .field("inner", &self.inner)
-            //.field("pseudonym", &self.pseudonym)
             .field("seq_num", &self.seq_num)
             .field("orig_msg_table", &self.orig_msg_table)
             .field("recv_msg_table", &self.recv_msg_table)
+            .field("dispatch_event", &self.dispatch_event)
+            .field("process_event", &self.process_event)
             .finish_non_exhaustive()
     }
 }
@@ -357,12 +384,13 @@ impl<'a> Socket<'a> {
 
         Socket {
             inner,
-            //pseudonym: Pseudonym(0),
             seq_num: 0,
             orig_msg_table: orig_table_storage.into(),
             recv_msg_table: recv_table_storage.into(),
             rx_callback: None,
             tx_callback: None,
+            dispatch_event: None,
+            process_event: None,
         }
     }
 
@@ -382,12 +410,6 @@ impl<'a> Socket<'a> {
         self.tx_callback = Some(Box::new(tx_cb));
     }
 
-    /*     /// Check whether the receive buffer is not empty.
-    #[inline]
-    pub fn can_recv(&self) -> bool {
-        self.inner.can_recv()
-    } */
-
     /// Trigger a DENM for transmission.
     pub fn trigger(
         &mut self,
@@ -395,7 +417,10 @@ impl<'a> Socket<'a> {
         event: EventParameters,
     ) -> Result<EventHandle, ApiError> {
         let idx = self.find_free_orig_table().ok_or(ApiError::NoFreeSlot)?;
-        self.api_inner(core, idx, event, TerminationType::None)
+        let handle = self.api_inner(core, idx, event, TerminationType::None)?;
+
+        self.dispatch_event = Some(PollDispatchEvent::SentNew(handle.action_id));
+        Ok(handle)
     }
 
     /// Update a DENM transmission.
@@ -420,7 +445,10 @@ impl<'a> Socket<'a> {
             return Err(ApiError::Expired);
         }
 
-        self.api_inner(core, handle.idx, event, TerminationType::None)
+        let handle = self.api_inner(core, handle.idx, event, TerminationType::None)?;
+
+        self.dispatch_event = Some(PollDispatchEvent::SentUpdate(handle.action_id));
+        Ok(handle)
     }
 
     /// Cancel a DENM transmission.
@@ -445,7 +473,10 @@ impl<'a> Socket<'a> {
             return Err(ApiError::Expired);
         }
 
-        self.api_inner(core, handle.idx, event, TerminationType::Cancel)
+        let handle = self.api_inner(core, handle.idx, event, TerminationType::Cancel)?;
+
+        self.dispatch_event = Some(PollDispatchEvent::SentCancel(handle.action_id));
+        Ok(handle)
     }
 
     /// Negate a DENM transmission.
@@ -480,12 +511,15 @@ impl<'a> Socket<'a> {
 
         // Create handle for event
         let idx = self.find_free_orig_table().ok_or(ApiError::NoFreeSlot)?;
-        self.api_inner(
+        let handle = self.api_inner(
             core,
             idx,
             event,
             TerminationType::Negation((action_id, ref_time)),
-        )
+        )?;
+
+        self.dispatch_event = Some(PollDispatchEvent::SentNegation(handle.action_id));
+        Ok(handle)
     }
 
     fn api_inner(
@@ -632,16 +666,6 @@ impl<'a> Socket<'a> {
         self.inner.accepts(cx, srv, repr)
     }
 
-    /// Dequeue a packet, and return a pointer to the payload.
-    ///
-    /// This function returns `Err(DenmError::Buffer(Exhausted))` if the receive buffer is empty.
-    fn recv_inner(&mut self) -> Result<denm::DENM, DenmError> {
-        let (buf, _ind) = self.inner.recv().map_err(|e| DenmError::Buffer(e))?;
-        let decoded = rasn::uper::decode::<denm::DENM>(buf).map_err(|e| DenmError::Asn1(e))?;
-
-        Ok(decoded)
-    }
-
     /// Process a newly received DENM.
     /// Check if the socket must handle the segment with [Socket::accepts] before calling this function.
     pub(crate) fn process(
@@ -651,13 +675,23 @@ impl<'a> Socket<'a> {
         indication: Indication,
         payload: &[u8],
     ) {
+        // Make sure there is no event in case of failure in processing.
+        self.process_event = None;
         self.inner.process(cx, srv, indication, payload);
 
         if !self.inner.can_recv() {
             return;
         }
 
-        let decoded = match self.recv_inner() {
+        let (buf, _ind) = match self.inner.recv() {
+            Ok(d) => d,
+            Err(e) => {
+                net_debug!("Cannot process DENM: {}", e);
+                return;
+            }
+        };
+
+        let decoded = match rasn::uper::decode::<denm::DENM>(buf) {
             Ok(d) => d,
             Err(e) => {
                 net_debug!("Cannot process DENM: {}", e);
@@ -666,6 +700,7 @@ impl<'a> Socket<'a> {
         };
 
         let now = srv.core.now;
+        let termination = decoded.denm.management.termination.clone();
         let detection_time = TAI2004::from(decoded.denm.management.detection_time.clone());
         let reference_time = TAI2004::from(decoded.denm.management.reference_time.clone());
         let expires_at = detection_time.as_unix_instant()
@@ -687,6 +722,15 @@ impl<'a> Socket<'a> {
             .iter()
             .position(|item| item.as_ref().is_some_and(|e| e.action_id == action_id));
 
+        if let Some(rx_cb) = &mut self.rx_callback {
+            rx_cb(buf, &decoded);
+        };
+
+        let info = PollProcessInfo {
+            action_id,
+            msg: decoded,
+        };
+
         match handle_opt {
             Some(idx) => {
                 // Safety: we checked above idx contains Some(ReceivedDenm{}).
@@ -704,17 +748,18 @@ impl<'a> Socket<'a> {
                 entry.expires_at = expires_at;
                 entry.reference_time = reference_time;
                 entry.detection_time = detection_time;
-                entry.state = if decoded.denm.management.termination.is_some() {
+                entry.state = if let Some(term) = termination {
+                    self.process_event = Some(match term {
+                        denm::Termination::isCancellation => PollProcessEvent::RecvCancel(info),
+                        denm::Termination::isNegation => PollProcessEvent::RecvNegation(info),
+                    });
                     EventState::Cancelled
                 } else {
+                    self.process_event = Some(PollProcessEvent::RecvUpdate(info));
                     EventState::Active
                 };
-
-                if let Some(rx_cb) = &mut self.rx_callback {
-                    rx_cb(payload, &decoded);
-                };
             }
-            None if decoded.denm.management.termination.is_none() => {
+            None if termination.is_none() => {
                 let Some(slot) = self.find_free_recv_table() else {
                     net_debug!(
                         "Cannot process DENM {} - no free slot in received message table",
@@ -732,9 +777,7 @@ impl<'a> Socket<'a> {
                     reference_time,
                 });
 
-                if let Some(rx_cb) = &mut self.rx_callback {
-                    rx_cb(payload, &decoded);
-                };
+                self.process_event = Some(PollProcessEvent::RecvNew(info));
             }
             _ => {
                 net_debug!("Cannot process DENM {} - terminated", action_id);
@@ -778,7 +821,7 @@ impl<'a> Socket<'a> {
 
             let event = &mut d.inner;
 
-            if event.expires_at <= now {
+            if event.expires_at < now {
                 // Event is expired. Set state to Expired for slot recycling.
                 net_trace!("DENM {} expired", event.action_id);
                 d.state = EventState::Expired;
@@ -806,7 +849,6 @@ impl<'a> Socket<'a> {
                     }
                 };
 
-                // event.action_id.station_id = pseudonym.0;
                 event.encoded = encoded;
             }
 
@@ -854,9 +896,22 @@ impl<'a> Socket<'a> {
         }
 
         // Nothing to dispatch
+        self.dispatch_event = None;
         Ok(())
     }
 
+    /// Query the socket for events.
+    pub fn poll(&mut self, timestamp: Instant) -> PollEvent {
+        for elem in self.recv_msg_table.iter_mut().flatten() {
+            if elem.expires_at < timestamp {
+                elem.state = EventState::Expired;
+            }
+        }
+
+        PollEvent(self.dispatch_event.take(), self.process_event.take())
+    }
+
+    /// Return the instant at which the socket should be polled at.
     pub(crate) fn poll_at(&self, _cx: &mut Context) -> PollAt {
         self.orig_msg_table
             .iter()
