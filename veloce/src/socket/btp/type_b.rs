@@ -210,7 +210,7 @@ impl<'a> Socket<'a> {
             .map_err(|_| SendError::BufferFull)?;
 
         // Serialize BTP header into buffer.
-        // We need to serialize it early because it might be buffer
+        // We need to serialize it early because it might be buffered
         // on the Geonetworking layer.
         let btp_repr = BtpBRepr {
             dst_port: self.port,

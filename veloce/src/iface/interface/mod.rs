@@ -109,7 +109,7 @@ pub struct Interface {
     pub(crate) cb_forwarding_buffer: CbfBuffer,
     /// Rate control (aka DCC)
     #[cfg(feature = "proto-geonet")]
-    congestion_control: Congestion,
+    pub(crate) congestion_control: Congestion,
 }
 
 /// The device independent part of an access interface.

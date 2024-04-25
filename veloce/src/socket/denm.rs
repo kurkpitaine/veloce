@@ -20,12 +20,28 @@ use veloce_asn1::prelude::rasn::{self, error::EncodeError};
 
 use super::btp::{Indication, Request};
 
+/// Default validity duration for a DENM message.
+const DEFAULT_VALIDITY: Duration = Duration::from_secs(600);
+
 /// Return value for the [Socket::poll] function.
+#[derive(Debug, PartialEq)]
 pub struct PollEvent(Option<PollDispatchEvent>, Option<PollProcessEvent>);
+
+impl PollEvent {
+    /// Get a reference on the outbound event, if any.
+    pub fn poll_out_evt(&self) -> &Option<PollDispatchEvent> {
+        &self.0
+    }
+
+    /// Get a reference on the inbound event, if any.
+    pub fn poll_in_evt(&self) -> &Option<PollProcessEvent> {
+        &self.1
+    }
+}
 
 /// Return value for the [Socket::poll] function.
 /// Repetitions are filtered by the socket.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PollDispatchEvent {
     /// DENM socket sent a previously unknown DENM.
@@ -40,7 +56,7 @@ pub enum PollDispatchEvent {
 
 /// Return value for the [Socket::poll] function.
 /// Repetitions are filtered by the socket.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PollProcessEvent {
     /// DENM socket received a previously unknown DENM.
@@ -53,7 +69,7 @@ pub enum PollProcessEvent {
     RecvNegation(PollProcessInfo),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[allow(unused)] // unused depending on which sockets are enabled
 pub struct PollProcessInfo {
@@ -241,7 +257,8 @@ impl TerminationType {
 }
 
 /// A handle to an in-progress DENM transmission.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct EventHandle {
     /// Index of the DENM in the message table.
     idx: usize,
@@ -258,7 +275,7 @@ impl EventHandle {
 
 /// Awareness area of the DENM.
 /// See ETSI TS 103 831 V2.1.1 chapters 6.1.3.1 and 6.1.3.2 for details.
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct EventAwareness {
     /// Awareness distance.
     /// Should be set to [None] if event relevance zone is point based or linear.
@@ -272,7 +289,7 @@ pub struct EventAwareness {
 }
 
 /// Parameters regarding a DENM transmission.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EventParameters {
     /// Event detection time. Should be less or equal to now TAI time.
     detection_time: TAI2004,
@@ -305,7 +322,7 @@ pub struct EventParameters {
 }
 
 /// Parameters for DENM retransmission.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct RepetitionParameters {
     /// Duration of the repetition.
     /// Shall not be greater than [EventParameters::validity_duration].
@@ -536,14 +553,14 @@ impl<'a> Socket<'a> {
         }
 
         // Calculate expiration time.
-        let validity_duration = event.validity_duration.unwrap_or(Duration::from_secs(600));
+        let validity_duration = event.validity_duration.unwrap_or(DEFAULT_VALIDITY);
 
         if !(0..=86400).contains(&validity_duration.secs()) {
             return Err(ApiError::InvalidValidityDuration);
         }
 
         let expires_at = event.detection_time + validity_duration;
-        if expires_at > now_tai {
+        if expires_at < now_tai {
             return Err(ApiError::Expired);
         }
 
@@ -699,6 +716,8 @@ impl<'a> Socket<'a> {
             }
         };
 
+        net_trace!("decoded: {:?}", decoded);
+
         let now = srv.core.now;
         let termination = decoded.denm.management.termination.clone();
         let detection_time = TAI2004::from(decoded.denm.management.detection_time.clone());
@@ -711,8 +730,8 @@ impl<'a> Socket<'a> {
             net_debug!(
                 "Cannot process DENM {} - expired: {} < {}",
                 action_id,
-                now,
-                expires_at
+                expires_at,
+                now
             );
             return;
         }
@@ -978,5 +997,763 @@ impl<'a> Socket<'a> {
                 Some(index)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use uom::si::angle::degree;
+    use uom::si::f32::Angle;
+    use uom::si::length::meter;
+
+    use super::*;
+
+    // =========================================================================================//
+    // Helper functions
+
+    struct TestSocket {
+        pub socket: Socket<'static>,
+        pub iface: Interface,
+        pub core: GnCore,
+    }
+
+    fn recv(
+        s: &mut TestSocket,
+        timestamp: Instant,
+        (indication, denm_repr): (Indication, denm::DENM),
+    ) {
+        s.core.now = timestamp;
+
+        net_trace!("recv: {:?}", denm_repr);
+
+        let payload = rasn::uper::encode(&denm_repr).unwrap();
+
+        let srv = ContextMeta {
+            core: &mut s.core,
+            ls: &mut s.iface.location_service,
+            congestion_control: &mut s.iface.congestion_control,
+            ls_buffer: &mut s.iface.ls_buffer,
+            uc_forwarding_buffer: &mut s.iface.uc_forwarding_buffer,
+            bc_forwarding_buffer: &mut s.iface.bc_forwarding_buffer,
+            cb_forwarding_buffer: &mut s.iface.cb_forwarding_buffer,
+        };
+
+        s.socket
+            .process(&mut s.iface.inner, &srv, indication, &payload)
+    }
+
+    fn send(s: &mut TestSocket, timestamp: Instant) -> Option<denm::DENM> {
+        s.core.now = timestamp;
+
+        let mut res = None;
+
+        let srv = ContextMeta {
+            core: &mut s.core,
+            ls: &mut s.iface.location_service,
+            congestion_control: &mut s.iface.congestion_control,
+            ls_buffer: &mut s.iface.ls_buffer,
+            uc_forwarding_buffer: &mut s.iface.uc_forwarding_buffer,
+            bc_forwarding_buffer: &mut s.iface.bc_forwarding_buffer,
+            cb_forwarding_buffer: &mut s.iface.cb_forwarding_buffer,
+        };
+
+        while s.socket.poll_at(&mut s.iface.inner) <= PollAt::Time(timestamp) {
+            s.socket
+                .dispatch(
+                    &mut s.iface.inner,
+                    srv,
+                    |_, _core, _, (_eth_repr, gn_repr, buf)| {
+                        // Geonet parameters verification.
+                        let GeonetRepr::Broadcast(gn_inner) = gn_repr else {
+                            panic!("Should be geo-broadcast");
+                        };
+
+                        assert_eq!(
+                            gn_inner.common_header.header_type,
+                            GeonetPacketType::GeoBroadcastCircle
+                        );
+                        assert_eq!(
+                            gn_inner.extended_header.distance_a,
+                            Distance::new::<meter>(100.0)
+                        );
+                        assert_eq!(
+                            gn_inner.extended_header.distance_b,
+                            Distance::new::<meter>(0.0)
+                        );
+
+                        assert_eq!(
+                            gn_inner.extended_header.latitude,
+                            Latitude::new::<degree>(48.2764384)
+                        );
+                        assert_eq!(
+                            gn_inner.extended_header.longitude,
+                            Latitude::new::<degree>(-3.5519532)
+                        );
+
+                        // BTP parameters verification.
+                        let btp_hdr = btp::type_b::Header::new_unchecked(buf);
+                        let btp_repr = btp::type_b::Repr::parse(&btp_hdr).unwrap();
+
+                        assert_eq!(btp_repr.dst_port, btp::ports::DENM);
+                        assert_eq!(btp_repr.dst_port_info, 0);
+
+                        // Deserialize emitted DENM.
+                        let decoded: denm::DENM =
+                            rasn::uper::decode(&buf[btp::type_b::HEADER_LEN..]).unwrap();
+
+                        res = Some(decoded);
+
+                        Ok::<_, ()>(())
+                    },
+                )
+                .ok();
+
+            break;
+        }
+
+        res
+    }
+
+    fn check_fields(
+        pseudo: Pseudonym,
+        params: &EventParameters,
+        action_id: &ActionId,
+        msg: &denm::DENM,
+    ) {
+        // DENM Content check.
+        assert_eq!(msg.header.station_id.0, pseudo.0);
+        assert_eq!(msg.header.message_id, cdd::MessageId(1));
+        assert_eq!(msg.header.protocol_version, cdd::OrdinalNumber1B(2));
+
+        // Container check
+        assert_eq!(msg.denm.location, params.location_container);
+        assert_eq!(msg.denm.situation, params.situation_container);
+        assert_eq!(msg.denm.alacarte, params.alacarte_container);
+
+        // Action Id matching.
+        assert_eq!(
+            msg.denm.management.action_id.originating_station_id.0,
+            action_id.station_id
+        );
+        assert_eq!(
+            msg.denm.management.action_id.sequence_number.0,
+            action_id.seq_num
+        );
+
+        // Detection time
+        assert_eq!(
+            msg.denm.management.detection_time,
+            params.detection_time.into()
+        );
+
+        // Validity duration
+        assert_eq!(
+            msg.denm.management.validity_duration,
+            params
+                .validity_duration
+                .map_or(cdd::DeltaTimeSecond(600), |vd| cdd::DeltaTimeSecond(
+                    vd.secs() as u32
+                ))
+        );
+
+        // Event position
+        assert_eq!(msg.denm.management.event_position, params.position);
+
+        // Keep alive
+        assert_eq!(
+            msg.denm.management.transmission_interval,
+            params
+                .keep_alive
+                .map(|kl| cdd::DeltaTimeMilliSecondPositive(kl.total_millis() as u16))
+        );
+
+        // Awareness distance.
+        assert_eq!(
+            msg.denm.management.awareness_distance,
+            params.awareness.distance
+        );
+
+        // Awareness traffic direction.
+        assert_eq!(
+            msg.denm.management.awareness_traffic_direction,
+            params.awareness.traffic_direction
+        );
+    }
+
+    // =========================================================================================//
+    // Constants
+    use crate::common::geo_area::{self, Circle, GeoPosition};
+    use crate::common::{
+        PotiConfidence, PotiFix, PotiMode, PotiMotion, PotiPosition, PotiPositionConfidence,
+    };
+    use crate::iface::Interface;
+    use crate::types::{Distance, Latitude, Longitude};
+
+    fn station_pos_fix(timestamp: Instant) -> PotiFix {
+        PotiFix {
+            mode: PotiMode::Fix2d,
+            timestamp: TAI2004::from_unix_instant(timestamp),
+            position: PotiPosition {
+                latitude: Some(Latitude::new::<degree>(48.2764384)),
+                longitude: Some(Longitude::new::<degree>(-3.5519532)),
+                altitude: None,
+            },
+            motion: PotiMotion {
+                speed: None,
+                vertical_speed: None,
+                heading: None,
+            },
+            confidence: PotiConfidence {
+                position: PotiPositionConfidence {
+                    semi_major: None,
+                    semi_minor: None,
+                    semi_major_orientation: None,
+                },
+                altitude: None,
+                speed: None,
+                heading: None,
+            },
+        }
+    }
+
+    fn geo_area() -> GeoArea {
+        GeoArea {
+            shape: geo_area::Shape::Circle(Circle {
+                radius: Distance::new::<meter>(100.0),
+            }),
+            position: GeoPosition {
+                latitude: Latitude::new::<degree>(48.2764384),
+                longitude: Longitude::new::<degree>(-3.5519532),
+            },
+            angle: Angle::new::<degree>(0.0),
+        }
+    }
+
+    fn evt_pos() -> cdd::ReferencePosition {
+        cdd::ReferencePosition {
+            latitude: cdd::Latitude(482764384),
+            longitude: cdd::Longitude(-35519532),
+            position_confidence_ellipse: cdd::PosConfidenceEllipse {
+                semi_major_confidence: cdd::SemiAxisLength(4095),
+                semi_minor_confidence: cdd::SemiAxisLength(4095),
+                semi_major_orientation: cdd::HeadingValue(3601),
+            },
+            altitude: cdd::Altitude {
+                altitude_value: cdd::AltitudeValue(800001),
+                altitude_confidence: cdd::AltitudeConfidence::unavailable,
+            },
+        }
+    }
+
+    fn situation_container() -> denm::SituationContainer {
+        denm::SituationContainer::new(
+            cdd::InformationQuality(7),
+            cdd::CauseCodeV2::new(cdd::CauseCodeChoice::accident2(cdd::AccidentSubCauseCode(
+                0,
+            ))),
+            None,
+            None,
+        )
+    }
+
+    fn new_ind() -> Indication {
+        Indication {
+            transport: Transport::Broadcast(geo_area()),
+            ali_id: (),
+            its_aid: (),
+            cert_id: (),
+            rem_lifetime: Duration::from_secs(1),
+            rem_hop_limit: 9,
+            traffic_class: GnTrafficClass::new(false, 10),
+        }
+    }
+
+    fn evt_params(timestamp: Instant) -> EventParameters {
+        EventParameters {
+            detection_time: TAI2004::from_unix_instant(timestamp),
+            validity_duration: Some(Duration::from_secs(300)),
+            position: evt_pos(),
+            awareness: EventAwareness {
+                distance: None,
+                traffic_direction: Some(cdd::TrafficDirection::allTrafficDirections),
+            },
+            geo_area: geo_area(),
+            repetition: Some(RepetitionParameters {
+                duration: Duration::from_secs(300),
+                interval: Duration::from_millis(500),
+            }),
+            keep_alive: None,
+            traffic_class: GnTrafficClass(10),
+            situation_container: None,
+            location_container: None,
+            alacarte_container: None,
+        }
+    }
+
+    fn denm_evt(timestamp: Instant) -> denm::DENM {
+        let now_tai = TAI2004::from_unix_instant(timestamp);
+        let management = denm::ManagementContainer::new(
+            cdd::ActionId {
+                originating_station_id: cdd::StationId(2912),
+                sequence_number: cdd::SequenceNumber(0),
+            },
+            now_tai.into(),
+            now_tai.into(),
+            None,
+            evt_pos(),
+            None,
+            None,
+            cdd::DeltaTimeSecond(DEFAULT_VALIDITY.secs() as u32),
+            None,
+            cdd::StationType(15),
+        );
+
+        denm::DENM {
+            header: cdd::ItsPduHeader {
+                protocol_version: cdd::OrdinalNumber1B(2),
+                message_id: cdd::MessageId(1),
+                station_id: cdd::StationId(2912),
+            },
+            denm: denm::DenmPayload {
+                management,
+                situation: None,
+                location: None,
+                alacarte: None,
+            },
+        }
+    }
+
+    use crate::phy::Medium;
+    use crate::tests::setup;
+    use crate::wire::{btp, GeonetPacketType};
+
+    fn socket(medium: Medium) -> TestSocket {
+        let now = Instant::now();
+        let (core, iface, _, _) = setup(medium);
+        let mut s = Socket::new(vec![], vec![]);
+        let poll_ev = s.poll(now);
+        assert!(poll_ev.0.is_none());
+        assert!(poll_ev.1.is_none());
+
+        TestSocket {
+            socket: s,
+            iface,
+            core,
+        }
+    }
+
+    #[test]
+    fn test_api_invalid_params() {
+        let mut s = socket(Medium::Ethernet);
+
+        let now = Instant::now();
+        s.core.now = now;
+
+        // Invalid detection time
+        let params = evt_params(now + Duration::from_secs(1));
+        assert!(matches!(
+            s.socket.trigger(&s.core, params),
+            Err(ApiError::InvalidDetectionTime)
+        ));
+
+        // Invalid validity duration
+        let mut params = evt_params(now - Duration::from_secs(1));
+        params.validity_duration = Some(Duration::from_secs(86401));
+        assert!(matches!(
+            s.socket.trigger(&s.core, params),
+            Err(ApiError::InvalidValidityDuration)
+        ));
+
+        // Expired event
+        let params = evt_params(Instant::ZERO);
+        assert!(matches!(
+            s.socket.trigger(&s.core, params),
+            Err(ApiError::Expired)
+        ));
+
+        // Invalid repetition duration
+        let mut params = evt_params(now - Duration::from_secs(1));
+        params.repetition = Some(RepetitionParameters {
+            duration: params
+                .validity_duration
+                .map_or(Duration::from_secs(10000), |d| d + Duration::from_secs(1)),
+            interval: Duration::from_millis(500),
+        });
+        assert!(matches!(
+            s.socket.trigger(&s.core, params),
+            Err(ApiError::InvalidRepetitionDuration)
+        ));
+
+        // Invalid repetition interval
+        let mut params = evt_params(now - Duration::from_secs(1));
+        params.repetition = Some(RepetitionParameters {
+            duration: params.validity_duration.unwrap_or(DEFAULT_VALIDITY),
+            interval: Duration::from_secs(10000),
+        });
+        assert!(matches!(
+            s.socket.trigger(&s.core, params),
+            Err(ApiError::InvalidRepetitionInterval)
+        ));
+
+        // Invalid keep-alive transmission interval
+        let mut params = evt_params(now - Duration::from_secs(1));
+        params.keep_alive = Some(Duration::from_secs(10001));
+        assert!(matches!(
+            s.socket.trigger(&s.core, params),
+            Err(ApiError::InvalidKeepAliveTransmissionInterval)
+        ));
+
+        let mut params = evt_params(now - Duration::from_secs(1));
+        params.keep_alive =
+            Some(params.validity_duration.unwrap_or(DEFAULT_VALIDITY) + Duration::from_secs(1));
+        assert!(matches!(
+            s.socket.trigger(&s.core, params),
+            Err(ApiError::InvalidKeepAliveTransmissionInterval)
+        ));
+    }
+
+    #[test]
+    fn test_trigger() {
+        let mut s = socket(Medium::Ethernet);
+
+        let mut now = Instant::now();
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        let mut params = evt_params(now);
+        params.repetition = None;
+        let handle = s.socket.trigger(&s.core, params.clone()).unwrap();
+
+        assert_eq!(handle.action_id.station_id, s.core.pseudonym.0);
+        assert_eq!(handle.action_id.seq_num, 0);
+
+        // Something should have been sent.
+        let msg = send(&mut s, now).unwrap();
+
+        // Check fields of the sent DENM.
+        check_fields(s.core.pseudonym, &params, &handle.action_id, &msg);
+
+        // Poll the socket for event.
+        let evt = s.socket.poll(now);
+        assert!(evt.poll_in_evt().is_none());
+
+        let PollDispatchEvent::SentNew(evt_out_id) = evt.poll_out_evt().as_ref().unwrap() else {
+            panic!("Poll event should be PollDispatchEvent::SentNew");
+        };
+
+        assert_eq!(handle.action_id, *evt_out_id);
+
+        // Jump at the expiration of the event to check there is no retransmission.
+        now += params.validity_duration.unwrap_or(DEFAULT_VALIDITY);
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        assert!(send(&mut s, now).is_none());
+    }
+
+    #[test]
+    fn test_repetition() {
+        let mut s = socket(Medium::Ethernet);
+
+        let mut now = Instant::now();
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        let params = evt_params(now);
+        let handle = s.socket.trigger(&s.core, params.clone()).unwrap();
+
+        let repet = params.repetition.unwrap();
+        let repet_ends_at = now + repet.duration;
+        let mut first_tx = true;
+
+        while now <= repet_ends_at {
+            // Something should have been sent.
+            let msg = send(&mut s, now).unwrap();
+
+            // Check fields of the sent DENM.
+            check_fields(s.core.pseudonym, &params, &handle.action_id, &msg);
+
+            // Poll the socket for event.
+            let evt = s.socket.poll(now);
+            assert!(evt.poll_in_evt().is_none());
+
+            // No event should have been returned for the retransmissions.
+            if first_tx {
+                assert!(evt.poll_out_evt().is_some());
+                first_tx = false;
+            } else {
+                assert!(evt.poll_out_evt().is_none());
+            }
+
+            now += repet.interval;
+            s.core.now = now;
+            s.core.set_position(station_pos_fix(now));
+        }
+
+        // Should not have any retransmission now
+        assert!(send(&mut s, now).is_none());
+    }
+
+    #[test]
+    fn test_update() {
+        let mut s = socket(Medium::Ethernet);
+
+        let mut now = Instant::now();
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        let mut params = evt_params(now);
+        params.repetition = None;
+        let handle = s.socket.trigger(&s.core, params).unwrap();
+
+        // Something should have been sent.
+        let _msg = send(&mut s, now).unwrap();
+
+        // Poll the socket for event.
+        let evt = s.socket.poll(now);
+        assert!(evt.poll_in_evt().is_none());
+        assert!(evt.poll_out_evt().is_some());
+
+        // Jump 10 secs in the future and update the DENM.
+        now += Duration::from_secs(10);
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        let mut params = evt_params(now);
+        params.repetition = None;
+        params.situation_container = Some(situation_container());
+        let handle = s.socket.update(&s.core, handle, params.clone()).unwrap();
+
+        // Something should have been sent.
+        let msg = send(&mut s, now).unwrap();
+
+        // Check fields of the updated DENM.
+        check_fields(s.core.pseudonym, &params, &handle.action_id, &msg);
+
+        // Poll the socket for event.
+        let evt = s.socket.poll(now);
+        assert!(evt.poll_in_evt().is_none());
+
+        let PollDispatchEvent::SentUpdate(evt_out_id) = evt.poll_out_evt().as_ref().unwrap() else {
+            panic!("Poll event should be PollDispatchEvent::SentUpdate");
+        };
+
+        assert_eq!(handle.action_id, *evt_out_id);
+
+        // Jump at the expiration of the event to check there is no retransmission.
+        now += params.validity_duration.unwrap_or(DEFAULT_VALIDITY);
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        assert!(send(&mut s, now).is_none());
+
+        // Try to update a non-existent event
+        let mut fake_handle = EventHandle {
+            idx: 255,
+            action_id: handle.action_id,
+        };
+        assert!(matches!(
+            s.socket.update(&s.core, fake_handle, params.clone()),
+            Err(ApiError::NotFound)
+        ));
+
+        fake_handle.idx = handle.idx;
+        fake_handle.action_id.station_id = 2912;
+        assert!(matches!(
+            s.socket.update(&s.core, fake_handle, params.clone()),
+            Err(ApiError::NotFound)
+        ));
+
+        // Jump past the expiration of the event to check api rejects us.
+        now += Duration::from_secs(1);
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        assert!(send(&mut s, now).is_none());
+        assert!(matches!(
+            s.socket.update(&s.core, handle, params.clone()),
+            Err(ApiError::Expired)
+        ));
+    }
+
+    #[test]
+    fn test_cancel() {
+        let mut s = socket(Medium::Ethernet);
+
+        let mut now = Instant::now();
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        let mut params = evt_params(now);
+        params.repetition = None;
+        let handle = s.socket.trigger(&s.core, params).unwrap();
+
+        // Something should have been sent.
+        let _msg = send(&mut s, now).unwrap();
+
+        // Poll the socket for event.
+        let evt = s.socket.poll(now);
+        assert!(evt.poll_in_evt().is_none());
+        assert!(evt.poll_out_evt().is_some());
+
+        // Jump 10 secs in the future and cancel the DENM.
+        now += Duration::from_secs(10);
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        let mut params = evt_params(now);
+        params.repetition = None;
+        let handle = s.socket.cancel(&s.core, handle, params.clone()).unwrap();
+
+        // Something should have been sent.
+        let msg = send(&mut s, now).unwrap();
+
+        // Check fields of the cancelled DENM.
+        check_fields(s.core.pseudonym, &params, &handle.action_id, &msg);
+
+        // Poll the socket for event.
+        let evt = s.socket.poll(now);
+        assert!(evt.poll_in_evt().is_none());
+
+        let PollDispatchEvent::SentCancel(evt_out_id) = evt.poll_out_evt().as_ref().unwrap() else {
+            panic!("Poll event should be PollDispatchEvent::SentCancel");
+        };
+
+        assert_eq!(handle.action_id, *evt_out_id);
+
+        // Jump at the expiration of the event to check there is no retransmission.
+        now += params.validity_duration.unwrap_or(DEFAULT_VALIDITY);
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        assert!(send(&mut s, now).is_none());
+
+        // Try to cancel a non-existent event
+        let mut fake_handle = EventHandle {
+            idx: 255,
+            action_id: handle.action_id,
+        };
+        assert!(matches!(
+            s.socket.cancel(&s.core, fake_handle, params.clone()),
+            Err(ApiError::NotFound)
+        ));
+
+        fake_handle.idx = handle.idx;
+        fake_handle.action_id.station_id = 2912;
+        assert!(matches!(
+            s.socket.cancel(&s.core, fake_handle, params.clone()),
+            Err(ApiError::NotFound)
+        ));
+
+        // Try to cancel a second time to check api rejects us.
+        assert!(send(&mut s, now).is_none());
+        assert!(matches!(
+            s.socket.cancel(&s.core, handle, params.clone()),
+            Err(ApiError::Expired)
+        ));
+    }
+
+    #[test]
+    fn test_receive() {
+        let mut s = socket(Medium::Ethernet);
+
+        let mut now = Instant::now();
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        let denm_evt = denm_evt(now);
+
+        recv(&mut s, now, (new_ind(), denm_evt.clone()));
+
+        // Poll the socket for event.
+        let evt = s.socket.poll(now);
+        assert!(evt.poll_out_evt().is_none());
+
+        let PollProcessEvent::RecvNew(evt_in_info) = evt.poll_in_evt().as_ref().unwrap() else {
+            panic!("Poll event should be PollProcessEvent::RecvNew");
+        };
+
+        // Check what we received matches.
+        assert_eq!(evt_in_info.msg, denm_evt);
+        assert_eq!(
+            evt_in_info.action_id.station_id,
+            denm_evt.denm.management.action_id.originating_station_id.0
+        );
+        assert_eq!(
+            evt_in_info.action_id.seq_num,
+            denm_evt.denm.management.action_id.sequence_number.0
+        );
+
+        // Check repetitions are filtered.
+        now += Duration::from_secs(1);
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        recv(&mut s, now, (new_ind(), denm_evt.clone()));
+
+        // Poll the socket for event.
+        let evt = s.socket.poll(now);
+        assert!(evt.poll_out_evt().is_none());
+        assert!(evt.poll_in_evt().is_none());
+
+        // Check update.
+        now += Duration::from_secs(1);
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        let mut denm_evt = denm_evt.clone();
+        denm_evt.denm.management.detection_time.0 += 1500;
+        denm_evt.denm.management.reference_time.0 += 1500;
+
+        recv(&mut s, now, (new_ind(), denm_evt.clone()));
+
+        // Poll the socket for event.
+        let evt = s.socket.poll(now);
+        assert!(evt.poll_out_evt().is_none());
+
+        let PollProcessEvent::RecvUpdate(evt_in_info) = evt.poll_in_evt().as_ref().unwrap() else {
+            panic!("Poll event should be PollProcessEvent::RecvUpdate");
+        };
+
+        // Check what we received matches.
+        assert_eq!(evt_in_info.msg, denm_evt);
+        assert_eq!(
+            evt_in_info.action_id.station_id,
+            denm_evt.denm.management.action_id.originating_station_id.0
+        );
+        assert_eq!(
+            evt_in_info.action_id.seq_num,
+            denm_evt.denm.management.action_id.sequence_number.0
+        );
+
+        // Check cancellation.
+        now += Duration::from_secs(1);
+        s.core.now = now;
+        s.core.set_position(station_pos_fix(now));
+
+        denm_evt.denm.management.detection_time.0 += 500;
+        denm_evt.denm.management.reference_time.0 += 500;
+        denm_evt.denm.management.termination = Some(denm::Termination::isCancellation);
+
+        recv(&mut s, now, (new_ind(), denm_evt.clone()));
+
+        // Poll the socket for event.
+        let evt = s.socket.poll(now);
+        assert!(evt.poll_out_evt().is_none());
+
+        let PollProcessEvent::RecvCancel(evt_in_info) = evt.poll_in_evt().as_ref().unwrap() else {
+            panic!("Poll event should be PollProcessEvent::RecvCancel");
+        };
+
+        // Check what we received matches.
+        assert_eq!(evt_in_info.msg, denm_evt);
+        assert_eq!(
+            evt_in_info.action_id.station_id,
+            denm_evt.denm.management.action_id.originating_station_id.0
+        );
+        assert_eq!(
+            evt_in_info.action_id.seq_num,
+            denm_evt.denm.management.action_id.sequence_number.0
+        );
     }
 }
