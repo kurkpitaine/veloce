@@ -1,17 +1,17 @@
-DENM-PDU-Description {itu-t (0) identified-organization (4) etsi (0) itsDomain (5) wg1 (1) denmPduRelease2 (103831) major-version-2 (2) minor-version-1 (1)} 
+DENM-PDU-Descriptions {itu-t (0) identified-organization (4) etsi (0) itsDomain (5) wg1 (1) denmPduRelease2 (103831) major-version-2 (2) minor-version-1 (1)}
 
 DEFINITIONS AUTOMATIC TAGS ::=
 
 BEGIN
 
-IMPORTS 
- 
-ActionId, ActionIdList, CauseCodeV2, ClosedLanes, DangerousGoodsExtended, DeltaReferencePosition, DeltaTimeMilliSecondPositive, DeltaTimeSecond, 
-EnergyStorageType, EventZone, HeightLonCarr, InformationQuality, ItsPduHeader, LanePosition, LightBarSirenInUse, ItineraryPath, NumberOfOccupants, 
-PosLonCarr, PosCentMass, PositionOfPillars, PositioningSolutionType, PosFrontAx, PositionOfOccupants, RequestResponseIndication, ReferencePosition, 
-RestrictedTypes, RoadType, StandardLength3b, StationType, Speed, SpeedLimit, StationarySince, TimestampIts, Traces, 
-TrafficDirection, TrafficRule, TurningRadius, Temperature, VehicleMass, VehicleIdentification, Wgs84Angle, WheelBaseVehicle 
-   
+IMPORTS
+
+ActionId, ActionIdList, CauseCodeV2, ClosedLanes, DangerousGoodsExtended, DeltaReferencePosition, DeltaTimeMilliSecondPositive, DeltaTimeSecond,
+EnergyStorageType, EventZone, HeightLonCarr, InformationQuality, ItsPduHeader, LanePosition, LightBarSirenInUse, ItineraryPath, NumberOfOccupants,
+PosLonCarr, PosCentMass, PositionOfPillars, PositioningSolutionType, PosFrontAx, PositionOfOccupants, RequestResponseIndication, ReferencePosition,
+RestrictedTypes, RoadType, StandardLength3b, StationType, Speed, SpeedLimit, StationarySince, TimestampIts, Traces,
+TrafficDirection, TrafficRule, TurningRadius, Temperature, VehicleMass, VehicleIdentification, Wgs84Angle, WheelBaseVehicle
+
 FROM ETSI-ITS-CDD {itu-t (0) identified-organization (4) etsi (0) itsDomain (5) wg1 (1) ts (102894) cdd (2) major-version-3 (3) minor-version-1 (1)}
 ;
 
@@ -36,7 +36,7 @@ ManagementContainer ::= SEQUENCE {
 	eventPosition             ReferencePosition,
 	awarenessDistance         StandardLength3b OPTIONAL,
 	awarenessTrafficDirection TrafficDirection OPTIONAL,
-	validityDuration          DeltaTimeSecond DEFAULT defaultValidity, 
+	validityDuration          DeltaTimeSecond DEFAULT defaultValidity,
 	transmissionInterval      DeltaTimeMilliSecondPositive OPTIONAL,
 	stationType               StationType,
 	...
@@ -86,7 +86,7 @@ RoadWorksContainerExtended ::= SEQUENCE {
  }
 
 StationaryVehicleContainer ::= SEQUENCE {
-	stationarySince        StationarySince OPTIONAL, 
+	stationarySince        StationarySince OPTIONAL,
 	stationaryCause        CauseCodeV2 OPTIONAL,
 	carryingDangerousGoods DangerousGoodsExtended OPTIONAL,
 	numberOfOccupants      NumberOfOccupants OPTIONAL,

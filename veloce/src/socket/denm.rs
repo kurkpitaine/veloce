@@ -14,7 +14,7 @@ use crate::storage::PacketBuffer;
 use crate::wire::{EthernetAddress, GeonetRepr};
 
 use managed::ManagedSlice;
-use veloce_asn1::defs::d_e_n_m__p_d_u__description as denm;
+use veloce_asn1::defs::d_e_n_m__p_d_u__descriptions as denm;
 use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d as cdd;
 use veloce_asn1::prelude::rasn::{self, error::EncodeError};
 
@@ -715,8 +715,6 @@ impl<'a> Socket<'a> {
                 return;
             }
         };
-
-        net_trace!("decoded: {:?}", decoded);
 
         let now = srv.core.now;
         let termination = decoded.denm.management.termination.clone();

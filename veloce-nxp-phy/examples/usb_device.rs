@@ -1,5 +1,5 @@
 use clap::Parser;
-use log::{debug, error, info, trace};
+use log::{debug, trace};
 
 use veloce::iface::{Config, Interface, SocketSet};
 use veloce::network::{GnAddrConfigMode, GnCore, GnCoreGonfig};
@@ -48,7 +48,7 @@ fn main() {
 
     // Add it to a SocketSet
     let mut sockets = SocketSet::new(vec![]);
-    let cam_handle: veloce::iface::SocketHandle = sockets.add(cam_socket);
+    let _cam_handle: veloce::iface::SocketHandle = sockets.add(cam_socket);
 
     loop {
         // Update timestamp.
@@ -57,16 +57,6 @@ fn main() {
 
         trace!("iface poll");
         iface.poll(&mut router, &mut device, &mut sockets);
-        let socket = sockets.get_mut::<socket::cam::Socket>(cam_handle);
-
-        if socket.can_recv() {
-            match socket.recv() {
-                Ok(msg) => {
-                    info!("Received CAM msg: {:?}", msg);
-                }
-                Err(e) => error!("Error cam.recv() : {}", e),
-            }
-        }
 
         let iface_timeout = iface.poll_delay(timestamp, &sockets);
 

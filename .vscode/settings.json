@@ -3,4 +3,5 @@
       "examples/obu/Cargo.toml",
       "./veloce/Cargo.toml"
    ],
+   "elixirLS.projectDir": "veloce-chemistry"
 }

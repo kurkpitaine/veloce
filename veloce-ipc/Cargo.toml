@@ -8,6 +8,8 @@ description = "Veloce IPC for messaging between apps."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bytecheck = { version = "0.7" }
-rkyv = { version = "0.7", features = ["strict", "validation"] }
+prost = "0.12"
 zmq = "0.10"
+
+[build-dependencies]
+prost-build = "0.12"

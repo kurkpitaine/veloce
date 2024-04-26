@@ -132,12 +132,6 @@ impl<'a> Socket<'a> {
         self.tx_callback = Some(Box::new(tx_cb));
     }
 
-    /// Check whether the receive buffer is not empty.
-    #[inline]
-    pub fn can_recv(&self) -> bool {
-        self.inner.can_recv()
-    }
-
     /// Query wether the CAM socket accepts the segment.
     #[must_use]
     pub(crate) fn accepts(
@@ -149,16 +143,6 @@ impl<'a> Socket<'a> {
         self.inner.accepts(cx, srv, repr)
     }
 
-    /// Dequeue a packet, and return a pointer to the payload.
-    ///
-    /// This function returns `Err(CamError::Buffer(Exhausted))` if the receive buffer is empty.
-    pub fn recv(&mut self) -> Result<cam::CAM, CamError> {
-        let (buf, _ind) = self.inner.recv().map_err(|e| CamError::Buffer(e))?;
-        let cam = rasn::uper::decode::<cam::CAM>(buf).map_err(|e| CamError::Asn1(e))?;
-
-        Ok(cam)
-    }
-
     /// Process a newly received CAM.
     /// Check if the socket must handle the segment with [Socket::accepts] before calling this function.
     pub(crate) fn process(
@@ -168,7 +152,31 @@ impl<'a> Socket<'a> {
         indication: Indication,
         payload: &[u8],
     ) {
-        self.inner.process(cx, srv, indication, payload)
+        self.inner.process(cx, srv, indication, payload);
+
+        if !self.inner.can_recv() {
+            return;
+        }
+
+        let (buf, _ind) = match self.inner.recv() {
+            Ok(d) => d,
+            Err(e) => {
+                net_debug!("Cannot process CAM: {}", e);
+                return;
+            }
+        };
+
+        let decoded = match rasn::uper::decode::<cam::CAM>(buf) {
+            Ok(d) => d,
+            Err(e) => {
+                net_debug!("Cannot process CAM: {}", e);
+                return;
+            }
+        };
+
+        if let Some(rx_cb) = &mut self.rx_callback {
+            rx_cb(buf, &decoded);
+        };
     }
 
     pub(crate) fn dispatch<F, E>(

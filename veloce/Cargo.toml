@@ -16,6 +16,7 @@ libc = { version = "0.2", optional = true }
 log = { version = "0.4.20", default-features = false, optional = true }
 managed = { version = "0.8", default-features = false, features = ["map"] }
 uom = { version = "0.35", features = ["autoconvert", "f32"] }
+#rkyv = { version = "0.7", features = ["strict", "validation"], optional = true }
 veloce-asn1 = { path = "../veloce-asn1", optional = true }
 
 [dev-dependencies]
@@ -28,6 +29,7 @@ std = ["managed/std", "alloc"]
 alloc = ["managed/alloc", "defmt?/alloc"]
 defmt = ["dep:defmt", "heapless/defmt-03"]
 asn1 = ["dep:veloce-asn1"]
+#ipc = ["dep:rkyv"]
 conformance = []
 
 "medium-ethernet" = []
@@ -62,6 +64,7 @@ default = [
    "std",
    "log",
    "asn1",
+#   "ipc",
    "medium-ethernet",
    "medium-ieee80211p",
    "medium-pc5",

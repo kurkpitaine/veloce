@@ -1,7 +1,6 @@
 use std::io;
 use std::os::fd::AsRawFd;
 use std::rc::Rc;
-use std::time::Instant as RInstant;
 
 use clap::Parser;
 use log::{/* debug,*/ error, info /* trace */};
@@ -35,7 +34,6 @@ fn main() {
     utils::setup_logging(args.log_level.as_str());
 
     // Configure IPC
-    let start_time = RInstant::now();
     let ipc_pub = Rc::new(ZmqPublisher::new("127.0.0.1:45556".to_string()).unwrap());
 
     // Mio setup
@@ -63,28 +61,33 @@ fn main() {
     let mut iface = Interface::new(config, device.inner_mut());
     iface.set_congestion_control(CongestionControl::LimericDualAlpha);
 
+    let mut sockets = SocketSet::new(vec![]);
+
     // Create CAM socket
     let mut cam_socket = socket::cam::Socket::new();
 
     // Register the tx callback.
     let ipc_tx = ipc_pub.clone();
     cam_socket.register_send_callback(move |uper, _| {
-        let evt = IpcEvent::new(IpcEventType::CamTx(uper.to_vec()), start_time);
-        let bytes = evt.to_bytes().unwrap();
+        let evt = IpcEvent::new(IpcEventType::CamTx(uper.to_vec()));
+        let bytes = evt.serialize_to_vec();
         ipc_tx.send(&bytes).unwrap();
     });
 
     // Register the rx callback.
     let ipc_rx = ipc_pub.clone();
     cam_socket.register_recv_callback(move |uper, _| {
-        let evt = IpcEvent::new(IpcEventType::CamRx(uper.to_vec()), start_time);
-        let bytes = evt.to_bytes().unwrap();
+        let evt = IpcEvent::new(IpcEventType::CamRx(uper.to_vec()));
+        let bytes = evt.serialize_to_vec();
         ipc_rx.send(&bytes).unwrap();
     });
 
     // Add it to a SocketSet
-    let mut sockets = SocketSet::new(vec![]);
-    let cam_handle: veloce::iface::SocketHandle = sockets.add(cam_socket);
+    let _cam_handle: veloce::iface::SocketHandle = sockets.add(cam_socket);
+
+    // Create DENM socket
+    let denm_socket = socket::denm::Socket::new(vec![], vec![]);
+    let denm_handle: veloce::iface::SocketHandle = sockets.add(denm_socket);
 
     // Create GPSD client
     let mut gpsd = Gpsd::new(
@@ -124,16 +127,9 @@ fn main() {
 
         // trace!("iface poll");
         iface.poll(&mut router, device.inner_mut(), &mut sockets);
-        let socket = sockets.get_mut::<socket::cam::Socket>(cam_handle);
 
-        if socket.can_recv() {
-            match socket.recv() {
-                Ok(msg) => {
-                    info!("Received CAM msg: {:?}", msg);
-                }
-                Err(e) => error!("Error cam.recv() : {}", e),
-            }
-        }
+        let denm_socket = sockets.get_mut::<socket::denm::Socket>(denm_handle);
+        denm_socket.poll(now);
 
         let iface_timeout = iface.poll_delay(now, &sockets);
         // trace!("timeout: {:?}", iface_timeout);
