@@ -279,7 +279,7 @@ impl LocationTable {
             .collect()
     }
 
-    /// Query wether the Location Table contains at least one entry where
+    /// Query whether the Location Table contains at least one entry where
     /// the ìs_neighbour` flag is set.
     pub fn has_neighbour(&self) -> bool {
         self.storage.iter().find(|(_, v)| v.is_neighbour).is_some()

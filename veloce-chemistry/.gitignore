@@ -30,3 +30,6 @@ chemistry-*.tar
 
 # Ignore generated ASN1 files
 /src/*
+
+# Ignore compiled protobuf files
+/lib/proto/*

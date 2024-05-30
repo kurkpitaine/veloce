@@ -204,7 +204,7 @@ impl HardwareAddress {
         }
     }
 
-    /// Query wether the address is an unicast address.
+    /// Query whether the address is an unicast address.
     pub fn is_unicast(&self) -> bool {
         match self {
             #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]
@@ -214,7 +214,7 @@ impl HardwareAddress {
         }
     }
 
-    /// Query wether the address is a broadcast address.
+    /// Query whether the address is a broadcast address.
     pub fn is_broadcast(&self) -> bool {
         match self {
             #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]

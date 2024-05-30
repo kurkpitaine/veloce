@@ -672,7 +672,7 @@ impl<'a> Socket<'a> {
         Ok(EventHandle { idx, action_id })
     }
 
-    /// Query wether the DENM socket accepts the segment.
+    /// Query whether the DENM socket accepts the segment.
     #[must_use]
     pub(crate) fn accepts(
         &self,
@@ -869,9 +869,10 @@ impl<'a> Socket<'a> {
                 event.encoded = encoded;
             }
 
-            if event.retransmit_at.is_some_and(|at| at > now) {
-                // Wait for next transmission.
-                continue;
+            match event.retransmit_at {
+                Some(at) if at > now => continue,
+                Some(_) => {}
+                None => continue,
             }
 
             // According to C2C on packet lifetime:
@@ -993,6 +994,260 @@ impl<'a> Socket<'a> {
                 queries.push(None);
                 let index = queries.len() - 1;
                 Some(index)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "ipc")]
+mod ipc {
+    use crate::{
+        common::geo_area::{Circle, Ellipse, GeoPosition, Rectangle, Shape},
+        types::{Distance, Latitude, Longitude},
+    };
+
+    use super::*;
+    use uom::si::{angle::degree, f32::Angle, length::meter};
+    use veloce_ipc::denm::{self as ipc_denm};
+
+    /// Error type returned by the IPC interface.
+    pub enum IpcError {
+        /// Some content is wrong or missing.
+        Malformed,
+        /// Awareness distance is invalid.
+        InvalidAwarenessDistance,
+        /// Awareness traffic direction is invalid.
+        InvalidAwarenessTrafficDirection,
+        /// Situation container is invalid. Cannot decode it.
+        InvalidSituationContainer,
+        /// Location container is invalid. Cannot decode it.
+        InvalidLocationContainer,
+        /// A la carte container is invalid. Cannot decode it.
+        InvalidAlacarteContainer,
+    }
+
+    impl TryFrom<ipc_denm::ApiParameters> for EventParameters {
+        type Error = IpcError;
+
+        fn try_from(value: ipc_denm::ApiParameters) -> Result<Self, Self::Error> {
+            let detec_instant = Instant::from_millis_const(value.detection_time as i64);
+
+            // Situation container
+            let situation_container = if let Some(situation_container_uper) =
+                value.situation_container
+            {
+                let dec = rasn::uper::decode::<denm::SituationContainer>(&situation_container_uper)
+                    .map_err(|_| IpcError::InvalidSituationContainer)?;
+                Some(dec)
+            } else {
+                None
+            };
+
+            // Location container
+            let location_container = if let Some(location_container_uper) = value.location_container
+            {
+                let dec = rasn::uper::decode::<denm::LocationContainer>(&location_container_uper)
+                    .map_err(|_| IpcError::InvalidLocationContainer)?;
+                Some(dec)
+            } else {
+                None
+            };
+
+            // A la carte container
+            let alacarte_container = if let Some(alacarte_container_uper) = value.alacarte_container
+            {
+                let dec = rasn::uper::decode::<denm::AlacarteContainer>(&alacarte_container_uper)
+                    .map_err(|_| IpcError::InvalidAlacarteContainer)?;
+                Some(dec)
+            } else {
+                None
+            };
+
+            let geo_area = value.geo_area.ok_or(IpcError::Malformed)?;
+
+            let position = value.position.ok_or(IpcError::Malformed)?;
+            let pos_confidence = position
+                .position_confidence_ellipse
+                .ok_or(IpcError::Malformed)?;
+            let alt = position.altitude.ok_or(IpcError::Malformed)?;
+
+            let altitude = cdd::Altitude {
+                altitude_value: alt.altitude.map_or(cdd::AltitudeValue(800001), |a| {
+                    cdd::AltitudeValue(a.max(-100000).min(800000))
+                }),
+                altitude_confidence: alt.confidence.map_or(
+                    cdd::AltitudeConfidence::unavailable,
+                    |alt| match alt {
+                        val if val > 20000 => cdd::AltitudeConfidence::outOfRange,
+                        val if val > 10000 => cdd::AltitudeConfidence::alt_200_00,
+                        val if val > 5000 => cdd::AltitudeConfidence::alt_100_00,
+                        val if val > 2000 => cdd::AltitudeConfidence::alt_050_00,
+                        val if val > 1000 => cdd::AltitudeConfidence::alt_020_00,
+                        val if val > 500 => cdd::AltitudeConfidence::alt_010_00,
+                        val if val > 200 => cdd::AltitudeConfidence::alt_005_00,
+                        val if val > 100 => cdd::AltitudeConfidence::alt_002_00,
+                        val if val > 50 => cdd::AltitudeConfidence::alt_001_00,
+                        val if val > 20 => cdd::AltitudeConfidence::alt_000_50,
+                        val if val > 10 => cdd::AltitudeConfidence::alt_000_20,
+                        val if val > 5 => cdd::AltitudeConfidence::alt_000_10,
+                        val if val > 2 => cdd::AltitudeConfidence::alt_000_05,
+                        val if val > 1 => cdd::AltitudeConfidence::alt_000_02,
+                        _ => cdd::AltitudeConfidence::alt_000_01,
+                    },
+                ),
+            };
+
+            let position_confidence_ellipse = cdd::PosConfidenceEllipse {
+                semi_major_confidence: pos_confidence
+                    .semi_major_confidence
+                    .map_or(cdd::SemiAxisLength(4095), |m| {
+                        cdd::SemiAxisLength(m.min(4094) as u16)
+                    }),
+                semi_minor_confidence: pos_confidence
+                    .semi_minor_confidence
+                    .map_or(cdd::SemiAxisLength(4095), |m| {
+                        cdd::SemiAxisLength(m.min(4094) as u16)
+                    }),
+                semi_major_orientation: pos_confidence
+                    .semi_major_orientation
+                    .map_or(cdd::HeadingValue(3601), |m| {
+                        cdd::HeadingValue((m % 3600) as u16)
+                    }),
+            };
+
+            let position = cdd::ReferencePosition {
+                latitude: cdd::Latitude((position.latitude * 10_000_000.0) as i32),
+                longitude: cdd::Longitude((position.longitude * 10_000_000.0) as i32),
+                position_confidence_ellipse,
+                altitude,
+            };
+
+            let awareness_distance = if let Some(ad) = value.awareness_distance {
+                match ipc_denm::EtsiStandardLength3b::try_from(ad)
+                    .map_err(|_| IpcError::InvalidAwarenessDistance)?
+                {
+                    ipc_denm::EtsiStandardLength3b::LessThan50m => {
+                        Some(cdd::StandardLength3b::lessThan50m)
+                    }
+                    ipc_denm::EtsiStandardLength3b::LessThan100m => {
+                        Some(cdd::StandardLength3b::lessThan100m)
+                    }
+                    ipc_denm::EtsiStandardLength3b::LessThan200m => {
+                        Some(cdd::StandardLength3b::lessThan200m)
+                    }
+                    ipc_denm::EtsiStandardLength3b::LessThan500m => {
+                        Some(cdd::StandardLength3b::lessThan500m)
+                    }
+                    ipc_denm::EtsiStandardLength3b::LessThan1000m => {
+                        Some(cdd::StandardLength3b::lessThan1000m)
+                    }
+                    ipc_denm::EtsiStandardLength3b::LessThan5km => {
+                        Some(cdd::StandardLength3b::lessThan5km)
+                    }
+                    ipc_denm::EtsiStandardLength3b::LessThan10km => {
+                        Some(cdd::StandardLength3b::lessThan10km)
+                    }
+                    ipc_denm::EtsiStandardLength3b::Over10km => {
+                        Some(cdd::StandardLength3b::over10km)
+                    }
+                }
+            } else {
+                None
+            };
+
+            let awareness_traffic_direction = if let Some(td) = value.awareness_traffic_direction {
+                match ipc_denm::EtsiTrafficDirection::try_from(td).map_err(|_| IpcError::InvalidAwarenessTrafficDirection)? {
+                    ipc_denm::EtsiTrafficDirection::AllTrafficDirections => Some(cdd::TrafficDirection::allTrafficDirections),
+                    ipc_denm::EtsiTrafficDirection::SameAsReferenceDirectionUpstreamOfReferencePosition => Some(cdd::TrafficDirection::sameAsReferenceDirection_upstreamOfReferencePosition),
+                    ipc_denm::EtsiTrafficDirection::SameAsReferenceDirectionDownstreamOfReferencePosition => Some(cdd::TrafficDirection::sameAsReferenceDirection_downstreamOfReferencePosition),
+                    ipc_denm::EtsiTrafficDirection::OppositeToReferenceDirection => Some(cdd::TrafficDirection::allTrafficDirections),
+                }
+            } else {
+                None
+            };
+
+            let awareness = EventAwareness {
+                distance: awareness_distance,
+                traffic_direction: awareness_traffic_direction,
+            };
+
+            let repetition = value.repetition.map(|r| RepetitionParameters {
+                duration: Duration::from_millis(r.duration.into()),
+                interval: Duration::from_millis(r.interval.into()),
+            });
+
+            Ok(Self {
+                detection_time: TAI2004::from_unix_instant(detec_instant),
+                validity_duration: value
+                    .validity_duration
+                    .map(|d| Duration::from_secs(d.into())),
+                position,
+                awareness,
+                geo_area: GeoArea::try_from(geo_area)?,
+                repetition,
+                keep_alive: value.keep_alive.map(|k| Duration::from_millis(k.into())),
+                traffic_class: GnTrafficClass::from_byte(&(value.traffic_class as u8)),
+                situation_container,
+                location_container,
+                alacarte_container,
+            })
+        }
+    }
+
+    impl TryFrom<ipc_denm::GeoArea> for GeoArea {
+        type Error = IpcError;
+
+        fn try_from(value: ipc_denm::GeoArea) -> Result<Self, Self::Error> {
+            let shp = value.shape.ok_or(IpcError::Malformed)?;
+            let shape = match shp {
+                ipc_denm::geo_area::Shape::Circle(c) => Shape::Circle(Circle {
+                    radius: Distance::new::<meter>(c.radius as f32),
+                }),
+                ipc_denm::geo_area::Shape::Rectangle(r) => Shape::Rectangle(Rectangle {
+                    a: Distance::new::<meter>(r.distance_a as f32),
+                    b: Distance::new::<meter>(r.distance_b as f32),
+                }),
+                ipc_denm::geo_area::Shape::Ellipse(e) => Shape::Ellipse(Ellipse {
+                    a: Distance::new::<meter>(e.distance_a as f32),
+                    b: Distance::new::<meter>(e.distance_b as f32),
+                }),
+            };
+
+            Ok(GeoArea {
+                shape,
+                position: GeoPosition {
+                    latitude: Latitude::new::<degree>(value.latitude as f32),
+                    longitude: Longitude::new::<degree>(value.longitude as f32),
+                },
+                angle: Angle::new::<degree>(value.angle as f32),
+            })
+        }
+    }
+
+    impl TryFrom<ipc_denm::Handle> for EventHandle {
+        type Error = IpcError;
+
+        fn try_from(value: ipc_denm::Handle) -> Result<Self, Self::Error> {
+            let action_id = value.action_id.ok_or(IpcError::Malformed)?;
+
+            Ok(Self {
+                idx: value.idx as usize,
+                action_id: ActionId {
+                    station_id: action_id.station_id,
+                    seq_num: action_id.sequence_number as u16,
+                },
+            })
+        }
+    }
+
+    impl Into<ipc_denm::Handle> for EventHandle {
+        fn into(self) -> ipc_denm::Handle {
+            ipc_denm::Handle {
+                idx: self.idx as u64,
+                action_id: Some(ipc_denm::ActionId {
+                    station_id: self.action_id.station_id,
+                    sequence_number: self.action_id.seq_num.into(),
+                }),
             }
         }
     }

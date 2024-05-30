@@ -3,6 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Contains all the events emitted and received with the IPC.
 pub mod event;
+pub mod denm;
 
 impl event::Event {
     pub fn new(r#type: event::event::EventType) -> Self {

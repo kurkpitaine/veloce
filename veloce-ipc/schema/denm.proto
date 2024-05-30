@@ -1,0 +1,270 @@
+syntax = "proto3";
+package denm;
+
+message Dispatch {
+   // Action Id of the dispatched DENM.
+   ActionId action_id = 1;
+}
+
+message Process {
+   // Action Id of the processed DENM.
+   ActionId action_id = 1;
+   // Processed DENM message, encoded as Asn.1 UPER.
+   bytes message = 2;
+}
+
+message ApiTrigger {
+   // Unique identifier of the trigger request, will be returned in
+   // the result message. Should be set by the caller, preferably
+   // to a random value to avoid identifier clash.
+   uint32 id = 1;
+   // Parameters of the DENM to trigger.
+   ApiParameters parameters = 2;
+}
+
+message ApiUpdate {
+   // Unique identifier of the trigger request, will be returned in
+   // the result message. Should be set by the caller, preferably
+   // to a random value to avoid identifier clash.
+   uint32 id = 1;
+   // Handle of the DENM in the stack.
+   Handle handle = 2;
+   // Parameters of the DENM to update.
+   ApiParameters parameters = 3;
+}
+
+message ApiCancel {
+   // Unique identifier of the trigger request, will be returned in
+   // the result message. Should be set by the caller, preferably
+   // to a random value to avoid identifier clash.
+   uint32 id = 1;
+   // Handle of the DENM in the stack.
+   Handle handle = 2;
+   // Parameters of the DENM to cancel.
+   ApiParameters parameters = 3;
+}
+
+message ApiNegate {
+   // Unique identifier of the trigger request, will be returned in
+   // the result message. Should be set by the caller, preferably
+   // to a random value to avoid identifier clash.
+   uint32 id = 1;
+   // Action Id of the DENM to negate.
+   ActionId action_id = 2;
+   // Parameters of the DENM to cancel.
+   ApiParameters parameters = 3;
+}
+
+message ApiResult {
+   // Id of the result, matches the request Id.
+   uint32 id = 1;
+   // Operation result code.
+   ApiResultCode result = 2;
+   // Error message.
+   optional string message = 3;
+   // Handle to a DENM in stack.
+   optional Handle handle = 4;
+
+}
+
+message Handle {
+   // Id of the DENM in the stack.
+   uint64 idx = 1;
+   // ActionId of the DENM.
+   ActionId action_id = 2;
+}
+
+message ActionId {
+   // Station Id.
+   uint32 station_id = 1;
+   // Sequence number.
+   uint32 sequence_number = 2;
+}
+
+enum ApiResultCode {
+   // Result is success.
+   Ok = 0;
+   // Some content is wrong or missing.
+   Malformed = 1;
+   // Awareness distance is invalid.
+   InvalidAwarenessDistance = 2;
+   // Awareness traffic direction is invalid.
+   InvalidAwarenessTrafficDirection = 3;
+   // Situation container is invalid. Cannot decode it.
+   InvalidSituationContainer = 4;
+   // Location container is invalid. Cannot decode it.
+   InvalidLocationContainer = 5;
+   // A la carte container is invalid. Cannot decode it.
+   InvalidAlacarteContainer = 6;
+   // No available slot in the originating message table.
+   NoFreeSlot = 10;
+   // Event is already expired.
+   Expired = 11;
+   // Detection time value is invalid.
+   InvalidDetectionTime = 12;
+   // Validity duration value is invalid.
+   InvalidValidityDuration = 13;
+   // Repetition duration value is invalid.
+   InvalidRepetitionDuration = 14;
+   // Repetition interval value is invalid.
+   InvalidRepetitionInterval = 15;
+   // Keep-alive transmission interval value is invalid.
+   InvalidKeepAliveTransmissionInterval = 16;
+   // Content has wrong value(s). UPER serialization constraint
+   // check has failed.
+   InvalidContent = 17;
+   // Handle is invalid, ie: DENM does not exist in Originating
+   // message table.
+   NotFound = 18;
+   // Action Id exists in originating message table.
+   ActionIdInOrigMsgtable = 19;
+}
+
+/// Parameters for a DENM request.
+message ApiParameters {
+   // Event detection time, as unix epoch in milliseconds.
+   // Should be less or equal to now system time.
+   uint64 detection_time = 1;
+   // Event validity duration, as seconds.
+   // Value should be in 0..=86400 seconds range.
+   // If not set, will be set to 600 seconds.
+   optional uint32 validity_duration = 2;
+   // Event position.
+   EtsiReferencePosition position = 3;
+   // Awareness distance.
+   // Should not be present if event relevance zone is point based or linear.
+   // If relevance zone is circular, should be present to the radius of the circular
+   // awareness area in which the receiving ITS-S may encounter the event.
+   optional EtsiStandardLength3b awareness_distance = 4;
+   // Awareness traffic direction, ie: the traffic direction along which the
+   // receiving ITS-S may encounter the event.
+   optional EtsiTrafficDirection awareness_traffic_direction = 5;
+   // Geonetworking destination area.
+   GeoArea geo_area = 6;
+   // Repetition parameters. If not present, the DENM will be transmitted
+   // exactly one time.
+   optional ApiRepetition repetition = 7;
+   // Keep Alive Forwarding. Contains the `transmissionInterval` value,
+   // ie: a retransmission period as milliseconds in the emitted DENM.
+   // Should be present to enable Keep Alive Forwarding if the
+   // application requires, and in range 1..=10000 milliseconds.
+   optional uint32 keep_alive = 8;
+   // Geonetworking traffic class, 0..=255.
+   uint32 traffic_class = 9;
+   // Situation container of the DENM. Ignored in case of cancel or negation.
+   // Encoded as Asn.1 UPER.
+   optional bytes situation_container = 10;
+   // Location container of the DENM. Ignored in case of cancel or negation.
+   // Encoded as Asn.1 UPER.
+   optional bytes location_container = 11;
+   // "A la carte" container of the DENM. Ignored in case of cancel or negation.
+   // Encoded as Asn.1 UPER.
+   optional bytes alacarte_container = 12;
+}
+
+message ApiRepetition {
+   // Duration of the repetition in milliseconds.
+   // Shall not be greater than the validity duration.
+   uint32 duration = 1;
+   // Time interval between two consecutive transmissions in milliseconds.
+   // Shall not be greater than the validity duration.
+   uint32 interval = 2;
+}
+
+
+message EtsiReferencePosition {
+   // Latitude of the position, in degrees.
+   double latitude = 1;
+   // Longitude of the position, in degrees.
+   double longitude = 2;
+   // Confidence ellipse of the position.
+   EtsiPosConfidenceEllipse position_confidence_ellipse = 3;
+   // Altitude of the position.
+   EtsiAltitudeWithConfidence altitude = 4;
+
+}
+
+message GeoArea {
+   // Latitude of the area center, in degrees.
+   double latitude = 1;
+   // Longitude of the area center, in degrees.
+   double longitude = 2;
+   // Geometrical shape of the area.
+   oneof shape {
+      // Circle shape type.
+      CircleShape circle = 3;
+      // Rectangle shape type.
+      RectangleShape rectangle = 4;
+      // Ellipse shape type.
+      EllipseShape ellipse = 5;
+   };
+   // 1ngle (orientation) of the area.
+   uint32 angle = 6;
+}
+
+message CircleShape {
+   // Circle radius, in meters.
+   uint32 radius = 1;
+}
+
+message RectangleShape {
+   // Center to long side length, in meters.
+   uint32 distance_a = 1;
+   // Center to short side length, in meters.
+   uint32 distance_b = 2;
+}
+
+message EllipseShape {
+   // Center to long side length, in meters.
+   uint32 distance_a = 1;
+   // Center to short side length, in meters.
+   uint32 distance_b = 2;
+}
+
+message EtsiPosConfidenceEllipse {
+   // Half of length of the ellipse major axis, in centimeters.
+   optional uint32 semi_major_confidence = 1;
+   // Half of length of the ellipse minor axis, in centimeters.
+   optional uint32 semi_minor_confidence = 2;
+   // Orientation angle of the ellipse major axis, in decidegrees.
+   optional uint32 semi_major_orientation = 3;
+}
+
+message EtsiAltitudeWithConfidence {
+   // Altitude value, in centimeters.
+   optional int32 altitude = 1;
+   // Altitude confidence, in centimeters.
+   optional uint32 confidence = 2;
+}
+
+enum EtsiStandardLength3b {
+   // For distances below 50 m.
+   lessThan50m = 0;
+   // For distances below 100 m.
+   lessThan100m = 1;
+   // For distances below 200 m.
+   lessThan200m = 2;
+   // For distances below 500 m.
+   lessThan500m = 3;
+   // For distances below 1000 m.
+   lessThan1000m = 4;
+   // For distances below 5 km.
+   lessThan5km = 5;
+   // For distances below 10 km.
+   lessThan10km = 6;
+   // For distances over 10 km.
+   over10km = 7;
+}
+
+enum EtsiTrafficDirection {
+   // For all directions of traffic.
+   allTrafficDirections = 0;
+   // For the direction of traffic according to the reference direction,
+   // and the portion of traffic upstream of the reference position.
+   sameAsReferenceDirection_upstreamOfReferencePosition = 1;
+   // For the direction of traffic according to the reference direction,
+   // and the portion of traffic downstream of the reference position
+   sameAsReferenceDirection_downstreamOfReferencePosition = 2;
+   // For the direction of traffic opposite to the reference direction.
+   oppositeToReferenceDirection = 3;
+}

@@ -23,6 +23,9 @@ pub mod types;
 pub mod utils;
 pub mod wire;
 
+#[cfg(feature = "proto-security")]
+pub mod security;
+
 #[cfg(all(
     test,
     any(

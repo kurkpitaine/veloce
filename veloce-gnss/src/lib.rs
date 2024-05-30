@@ -191,7 +191,7 @@ pub struct Fix {
 }
 
 impl Fix {
-    /// Return wether this [Fix] has time and position values, ie:
+    /// Return whether this [Fix] has time and position values, ie:
     /// `time`, `latitude` and `longitude` values set.
     pub fn time_and_position_values(&self) -> Option<(DateTime<Utc>, Angle, Angle)> {
         match (self.time, self.latitude, self.longitude) {
@@ -200,7 +200,7 @@ impl Fix {
         }
     }
 
-    /// Return wether this [Fix] has minimal position and kinematics values, ie:
+    /// Return whether this [Fix] has minimal position and kinematics values, ie:
     /// `time`, `latitude`, `longitude`, `speed` and `track` values set.
     pub fn time_position_and_kinematics_values(
         &self,

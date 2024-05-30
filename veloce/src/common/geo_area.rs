@@ -175,22 +175,22 @@ impl Shape {
         }
     }
 
-    /// Query wether `position` is inside shape.
+    /// Query whether `position` is inside shape.
     pub fn inside_shape(&self, position: CartesianPosition) -> bool {
         self.geometric_function(position) > Ratio::new::<ratio>(0.0)
     }
 
-    /// Query wether `position` is outside shape.
+    /// Query whether `position` is outside shape.
     pub fn outside_shape(&self, position: CartesianPosition) -> bool {
         self.geometric_function(position) < Ratio::new::<ratio>(0.0)
     }
 
-    /// Query wether `position` is at shape border.
+    /// Query whether `position` is at shape border.
     pub fn at_shape_border(&self, position: CartesianPosition) -> bool {
         self.geometric_function(position) == Ratio::new::<ratio>(0.0)
     }
 
-    /// Query wether `position` is at shape center.
+    /// Query whether `position` is at shape center.
     pub fn at_shape_center(&self, position: CartesianPosition) -> bool {
         self.geometric_function(position) == Ratio::new::<ratio>(1.0)
     }
@@ -294,7 +294,7 @@ impl GeoArea {
         }
     }
 
-    /// Query wether `position` is inside or at border of the [GeoArea].
+    /// Query whether `position` is inside or at border of the [GeoArea].
     pub fn inside_or_at_border(&self, position: GeoPosition) -> bool {
         let local = to_cartesian(self.position, position);
         let rotated = rotate(local, self.angle);

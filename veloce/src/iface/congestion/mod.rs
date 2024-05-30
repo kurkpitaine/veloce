@@ -22,7 +22,7 @@ pub(crate) trait RateController {
     fn run(&mut self, timestamp: Instant);
     /// Return the instant the Rate Control algorithm should be run at.
     fn run_at(&self) -> Instant;
-    /// Return wether Rate Control algorithm allows for transmission.
+    /// Return whether Rate Control algorithm allows for transmission.
     fn can_tx(&self, timestamp: Instant) -> bool;
     /// Get next instant where transmission is allowed,
     /// for corresponding priority queue. If `prio` is none, it
@@ -180,7 +180,7 @@ impl Congestion {
         location_table: &LocationTable,
         timestamp: Instant,
     ) {
-        if self.compute_global_cbr_at < timestamp {
+        if self.compute_global_cbr_at > timestamp {
             return;
         }
 

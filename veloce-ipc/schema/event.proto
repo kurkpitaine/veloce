@@ -1,0 +1,35 @@
+syntax = "proto3";
+package event;
+
+import "denm.proto";
+
+message Event {
+   // Unix timestamp at which this event was generated.
+   uint64 timestamp = 1;
+   oneof event_type {
+      /// Received CAM message, encoded as Asn.1 UPER.
+      bytes cam_rx = 10;
+      /// Transmitted CAM message, encoded as Asn.1 UPER.
+      bytes cam_tx = 11;
+      /// Received DENM message, encoded as Asn.1 UPER.
+      bytes denm_rx = 12;
+      /// Transmitted DENM message, encoded as Asn.1 UPER.
+      bytes denm_tx = 13;
+      // DENM dispatched event, Stack sent a
+      // new/updated/cancelled/negated DENM.
+      denm.Dispatch denm_dispatch = 100;
+      // DENM processed event. Stack received a
+      // new/updated/cancelled/negated DENM.
+      denm.Process denm_process = 101;
+      // Request to trigger a new DENM.
+      denm.ApiTrigger denm_trigger = 102;
+      // Request to update a new DENM.
+      denm.ApiUpdate denm_update = 103;
+      // Request to cancel a new DENM.
+      denm.ApiCancel denm_cancel = 104;
+      // Request to negate a new DENM.
+      denm.ApiNegate denm_negate = 105;
+      // Result of a DENM API call.
+      denm.ApiResult denm_result = 106;
+   }
+}

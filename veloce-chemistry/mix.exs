@@ -8,9 +8,16 @@ defmodule Chemistry.MixProject do
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      compilers: [:asn1] ++ Mix.compilers(),
+      compilers: [:asn1, :proto] ++ Mix.compilers(),
       asn1_paths: "../veloce-asn1/asn",
-      asn1_options: [:maps, :uper]
+      asn1_options: [:uper, :verbose],
+      protoc_opts: [
+        paths: ["../veloce-ipc/schema"],
+        dest: "lib/proto",
+        package_prefix: "Proto",
+        gen_descriptors: true,
+        include_docs: true
+      ]
     ]
   end
 
@@ -24,8 +31,9 @@ defmodule Chemistry.MixProject do
   defp deps do
     [
       {:protobuf, "~> 0.12.0"},
+      {:protobuf_compiler, git: "https://github.com/OffgridElectric/protobuf_compiler.git", runtime: false},
       {:chumak, "~> 1.4"},
-      {:asn1_compiler, "~> 0.1.1"}
+      {:asn1_compiler, "~> 0.1.1", runtime: false}
     ]
   end
 end

@@ -332,7 +332,7 @@ impl<'a> Socket<'a> {
         Ok((length, indication))
     }
 
-    /// Query wether this BTP-B socket accepts the segment.
+    /// Query whether this BTP-B socket accepts the segment.
     pub(crate) fn accepts(
         &self,
         _cx: &mut Context,

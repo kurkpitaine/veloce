@@ -132,7 +132,7 @@ impl<'a> Socket<'a> {
         self.tx_callback = Some(Box::new(tx_cb));
     }
 
-    /// Query wether the CAM socket accepts the segment.
+    /// Query whether the CAM socket accepts the segment.
     #[must_use]
     pub(crate) fn accepts(
         &self,

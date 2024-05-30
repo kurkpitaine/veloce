@@ -11,8 +11,12 @@ description = "Veloce ASN1 formats"
 doctest = false
 
 [dependencies]
-rasn = "0.14"
-lazy_static = "1.4.0" # This should not be a dependency.
+#rasn = "0.14"
+rasn = { path = "../../rasn" }
+lazy_static = "1.4.0"          # This should not be a dependency.
 
 [build-dependencies]
 rasn-compiler = { git = "https://github.com/librasn/compiler" }
+
+[[example]]
+name = "decenc"

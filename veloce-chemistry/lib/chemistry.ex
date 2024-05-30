@@ -1,13 +1,23 @@
 defmodule Chemistry do
-  alias Event.Event
+  alias Proto.Denm.ApiRepetition
+  alias Proto.Denm.ApiTrigger
+  alias Proto.Denm.CircleShape
+  alias Proto.Denm.GeoArea
+  alias Proto.Denm.EtsiReferencePosition
+  alias Proto.Denm.EtsiPosConfidenceEllipse
+  alias Proto.Denm.EtsiAltitudeWithConfidence
+  alias Proto.Denm.EtsiStandardLength3b
+  alias Proto.Denm.EtsiTrafficDirection
+  alias Proto.Denm.ApiParameters
+  alias Proto.Event.Event
 
   def start(_type, _args) do
-    {:ok, sock} = :chumak.socket(:sub)
+    {:ok, sock} = :chumak.socket(:req)
 
     topic = <<>>
     :chumak.subscribe(sock, topic)
 
-    case :chumak.connect(sock, :tcp, ~c"localhost", 45556) do
+    case :chumak.connect(sock, :tcp, ~c"localhost", 45557) do
       {:ok, _BindPid} ->
         IO.puts("Binding OK with Pid: #{inspect(sock)}")
 
@@ -19,17 +29,80 @@ defmodule Chemistry do
   end
 
   def loop(socket) do
-    {:ok, data} = :chumak.recv(socket)
-    # IO.puts("Received: #{inspect(data)}")
+    params = denm_trigger()
+    :ok = :chumak.send(socket, params)
 
+    IO.puts("Sent: #{inspect(params)}")
+
+    {:ok, data} = :chumak.recv(socket)
+
+    IO.puts("Received: #{inspect(data)}")
     %Event{timestamp: _tst, event_type: evt} = Event.decode(data)
 
     case evt do
-      {:cam_tx, uper} ->
-        cam = :"CAM-PDU-Descriptions".decode(:CAM, uper)
-        IO.puts("#{inspect(cam)}")
+      {:denm_result, hdl} ->
+        IO.puts("#{inspect(hdl)}")
     end
 
+    Process.sleep(20000)
     loop(socket)
+  end
+
+  def denm_trigger() do
+    situation_container =
+      {:SituationContainer, 7, {:CauseCodeV2, {:humanPresenceOnTheRoad12, :childrenOnRoadway}},
+       :asn1_NOVALUE, :asn1_NOVALUE}
+
+    {:ok, uper} = :"DENM-PDU-Descriptions".encode(:SituationContainer, situation_container)
+
+    latitude = 48.2770467
+    longitude = -3.5530699
+
+    params = %ApiParameters{
+      detection_time: :os.system_time(:millisecond),
+      validity_duration: 3600,
+      position: %EtsiReferencePosition{
+        latitude: latitude,
+        longitude: longitude,
+        position_confidence_ellipse: %EtsiPosConfidenceEllipse{
+          semi_major_confidence: 732,
+          semi_minor_confidence: 234,
+          semi_major_orientation: 240
+        },
+        altitude: %EtsiAltitudeWithConfidence{
+          altitude: 14020
+        }
+      },
+      awareness_distance: :lessThan200m,
+      awareness_traffic_direction: :allTrafficDirections,
+      geo_area: %GeoArea{
+        latitude: latitude,
+        longitude: longitude,
+        shape:
+          {:circle,
+           %CircleShape{
+             radius: 1000
+           }},
+        angle: 0.0
+      },
+      repetition: %ApiRepetition{
+        duration: 10 * 1000,
+        interval: 500
+      },
+      traffic_class: 0x10,
+      situation_container: uper
+    }
+
+    trigger = %ApiTrigger{
+      id: System.unique_integer([:positive]),
+      parameters: params
+    }
+
+    evt = %Event{
+      timestamp: :os.system_time(:millisecond),
+      event_type: {:denm_trigger, trigger}
+    }
+
+    Event.encode(evt)
   end
 end

@@ -408,7 +408,7 @@ impl<'a> Socket<'a> {
         Ok((length, remote_endpoint, indication))
     }
 
-    /// Query wether this BTP-A socket accepts the segment.
+    /// Query whether this BTP-A socket accepts the segment.
     pub(crate) fn accepts(
         &self,
         _cx: &mut Context,

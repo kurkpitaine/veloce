@@ -77,7 +77,7 @@ impl USB {
             })
     }
 
-    /// Return wether the USB device has received something.
+    /// Return whether the USB device has received something.
     pub fn can_recv_wait(&self) -> bool {
         self.rx_len > 0
     }
