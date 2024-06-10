@@ -2,6 +2,7 @@ use crate::time::Instant;
 
 use super::{
     backend::Backend, certificate_cache::CertificateCache, secured_message::SecuredMessageError,
+    trust_store::Store as TrustStore,
 };
 
 pub(crate) mod decap;
@@ -33,7 +34,6 @@ pub enum SecurityServiceError {
     /// Signer certificate not found, ie: certificate is not present
     /// in local cache.
     SignerCertificateNotFound,
-
     /// Message is not encrypted.
     UnencryptedMessage,
     /// Message decryption has failed.
@@ -43,8 +43,12 @@ pub enum SecurityServiceError {
 pub struct SecurityService {
     /// Instant at which to include the certificate in a CAM message signature.
     next_cert_in_cam_at: Instant,
-    /// Certificate cache.
+    /// AT Certificates cache.
     cache: CertificateCache,
+    /// Trust store for chain of trust.
+    store: TrustStore,
     /// Cryptography backend.
     backend: dyn Backend,
 }
+
+impl SecurityService {}

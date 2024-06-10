@@ -1,9 +1,7 @@
 //! A trust chain contains a PKI signing certificates, ie: RCA, EA and AA certificates.
 //! Also, it contains the Certificate Revocation List.
 
-use super::certificate::{
-    AuthorizationAuthorityCertificate, EnrollmentAuthorityCertificate, HashedId8, RootCertificate,
-};
+use super::{certificate::{AuthorizationAuthorityCertificate, EnrollmentAuthorityCertificate, RootCertificate}, HashedId8};
 
 /// A certificate trust chain.
 pub struct TrustChain {
@@ -18,7 +16,7 @@ pub struct TrustChain {
 }
 
 impl TrustChain {
-    /// Create a [TrustChain].
+    /// Create a [TrustChain] with `root_cert` as root of trust.
     pub fn new(root_cert: RootCertificate) -> Self {
         Self {
             root_cert,

@@ -1,4 +1,5 @@
 {
+   "rust-analyzer.files.excludeDirs": ["veloce-chemistry"],
    "rust-analyzer.linkedProjects": [
       "examples/obu/Cargo.toml",
       "./veloce/Cargo.toml"

@@ -1,6 +1,6 @@
 use crate::security::{EcdsaKeyType, KeyPair, PublicKey};
 
-use super::{signature::EcdsaSignature, VerificationKey};
+use super::{signature::EcdsaSignature, EcdsaKey, EciesKey};
 
 #[cfg(feature = "std")]
 pub mod openssl;
@@ -21,17 +21,19 @@ pub enum BackendError {
     InvalidKey,
     /// Backend internal error.
     InternalError,
+    /// Unsupported point compression type.
+    UnsupportedCompression,
     /// Point not on curve.
     NotOnCurve,
     /// Signature and key type mismatch.
-    AlgorithmMismatch
+    AlgorithmMismatch,
 }
 
 pub type BackendResult<T> = Result<T, BackendError>;
 
 /// Cryptography operations backend.
 #[allow(unused_variables)]
-pub(super) trait Backend {
+pub trait Backend {
     /// Generate a key pair for a given `key_type`, and return a [KeyPair] containing the
     /// secret and the public key.
     ///
@@ -51,7 +53,7 @@ pub(super) trait Backend {
     fn verify_signature(
         &self,
         signature: EcdsaSignature,
-        verification_key: VerificationKey,
+        verification_key: EcdsaKey,
         data: &[u8],
     ) -> BackendResult<bool>;
 
@@ -60,4 +62,10 @@ pub(super) trait Backend {
 
     /// Computes the SHA384 hash for a given `data` slice.
     fn sha384(&self, data: &[u8]) -> [u8; 48];
+
+    /// Compress an ECIES key coordinates to the Y0 or Y1 format.
+    fn compress_ecies_key(&self, key: EciesKey) -> BackendResult<EciesKey>;
+
+    /// Compress an ECDSA key coordinates to the Y0 or Y1 format.
+    fn compress_ecdsa_key(&self, key: EcdsaKey) -> BackendResult<EcdsaKey>;
 }

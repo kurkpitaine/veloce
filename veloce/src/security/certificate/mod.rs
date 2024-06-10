@@ -1,61 +1,34 @@
-use core::fmt;
-
-use byteorder::{ByteOrder, NetworkEndian};
 use veloce_asn1::{
     defs::etsi_103097_v211::{
         ieee1609Dot2::{self, Certificate as EtsiCertificate, VerificationKeyIndicator},
         ieee1609Dot2Base_types::{
-            self, EccP256CurvePoint, EccP384CurvePoint, PublicVerificationKey, Signature,
+            self, EccP256CurvePoint, EccP384CurvePoint, PublicVerificationKey,
         },
     },
     prelude::rasn,
 };
 
-use crate::time::{Duration, TAI2004};
+use crate::{
+    security::EciesKey,
+    time::{Duration, Instant, TAI2004},
+};
 
+use super::{
+    backend::Backend,
+    signature::{EcdsaSignature, EcdsaSignatureError, EcdsaSignatureInner},
+    EccPoint, EcdsaKey, EcdsaKeyError, EciesKeyError, HashAlgorithm, HashedId8, Issuer,
+};
+
+mod at;
 mod root;
 mod subordinate;
 mod tlm;
 
-use super::{signature::EcdsaSignatureError, VerificationKeyError};
-
-pub use {root::RootCertificate, tlm::TrustListManagerCertificate};
-
-/// Enrollment Authority certificate.
-pub type EnrollmentAuthorityCertificate = subordinate::SubordinateCertificate;
-/// Authorization Authority certificate.
-pub type AuthorizationAuthorityCertificate = subordinate::SubordinateCertificate;
-
-/// HashedId8, also known as certificate digest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct HashedId8(u64);
-
-impl HashedId8 {
-    /// Constructs from a bytes slice.
-    ///
-    /// # Panics
-    /// This method panics when `bytes.len() < 8`.
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        Self(NetworkEndian::read_u64(bytes))
-    }
-
-    /// Constructs from an u64.
-    pub const fn from_u64(val: u64) -> Self {
-        Self(val)
-    }
-
-    /// Returns HashedId8 as an u64.
-    pub const fn as_u64(&self) -> u64 {
-        self.0
-    }
-}
-
-impl fmt::Display for HashedId8 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:0x}", self.0)
-    }
-}
+pub use at::AuthorizationTicketCertificate;
+pub use root::RootCertificate;
+pub use subordinate::AuthorizationAuthorityCertificate;
+pub use subordinate::EnrollmentAuthorityCertificate;
+pub use tlm::TrustListManagerCertificate;
 
 /// Certificate validity period.
 #[derive(Debug, Clone, PartialEq)]
@@ -65,9 +38,14 @@ pub struct ValidityPeriod {
     pub end: TAI2004,
 }
 
-#[derive(Debug)]
+pub type CertificateResult<T> = core::result::Result<T, CertificateError>;
+
 /// Certificate errors.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum CertificateError {
+    /// Asn.1 COER encoding error.
+    Asn1,
     /// Malformed, ie: a mandatory field
     /// is absent or a present field should be absent.
     Malformed,
@@ -75,102 +53,84 @@ pub enum CertificateError {
     NoPermissions,
     /// Certificate does not contain allowed permissions.
     IllegalPermissions,
+    /// Certificate signer is unknown, and therefore the certificate
+    /// cannot be checked.
+    UnknownSigner,
     /// Certificate Id type is unexpected.
     UnexpectedId,
     /// Certificate temporal validity is expired.
     Expired,
+    /// Certificate signature issuer type is unexpected.
+    UnexpectedIssuer,
+    /// Certificate signature issuer type is unsupported.
+    UnsupportedIssuer,
     /// Signature error.
     Signature(EcdsaSignatureError),
     /// Verification key error.
-    VerificationKey(VerificationKeyError),
+    VerificationKey(EcdsaKeyError),
+    /// Encryption key error.
+    EncryptionKey(EciesKeyError),
+    /// Backend error.
+    Backend,
     /// A custom error that does not fall under any other Certificate error kind.
     Other,
 }
 
-/// Wrapper around an Etsi certificate.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Certificate(EtsiCertificate);
+pub enum Certificate {
+    /// Root certificate type.
+    Root(RootCertificate),
+    /// EA certificate type.
+    EnrollmentAuthority(EnrollmentAuthorityCertificate),
+    /// AA certificate type.
+    AuthorizationAuthority(AuthorizationAuthorityCertificate),
+    /* /// AT certificate type.
+    AuthorizationTicket(CertWrapper<>),
+    /// EC certificate type.
+    EnrollmentCredential(CertWrapper<>),
+    /// TLM certificate type.s
+    TrustedListManager(CertWrapper<>), */
+}
 
 impl Certificate {
-    /// Constructs from a raw ETSI Certificate.
-    /// This method verifies if the certificate is valid relative to Asn.1 constraints.
-    pub fn from_etsi_certificate(cert: EtsiCertificate) -> Result<Self, CertificateError> {
-        Self::verify_etsi_certificate(&cert)?;
-
-        Ok(Self(cert))
-    }
-
-    /// Get a reference on the inner raw certificate.
-    pub fn inner(&self) -> &EtsiCertificate {
-        &self.0
-    }
-
-    /// Returns the temporal validity period of the certificate.
-    pub fn validity_period(&self) -> ValidityPeriod {
-        use ieee1609Dot2Base_types::Duration as IeeeDuration;
-
-        let tbs = &self.0 .0.to_be_signed;
-
-        // Time in certificate is TAI seconds.
-        let start = TAI2004::from_secs(tbs.validity_period.start.0 .0);
-
-        let validity_duration = match &tbs.validity_period.duration {
-            IeeeDuration::microseconds(us) => Duration::from_micros(us.0.into()),
-            IeeeDuration::milliseconds(ms) => Duration::from_millis(ms.0.into()),
-            IeeeDuration::seconds(s) => Duration::from_secs(s.0.into()),
-            IeeeDuration::minutes(m) => Duration::from_secs(u64::from(m.0) * 60),
-            IeeeDuration::hours(h) => Duration::from_secs(u64::from(h.0) * 3600),
-            IeeeDuration::sixtyHours(sh) => Duration::from_secs(u64::from(sh.0) * 216_000),
-            IeeeDuration::years(y) => Duration::from_secs(u64::from(y.0) * 31_556_952), // One gregorian year is 31556952 seconds.
-        };
-
-        ValidityPeriod {
-            start,
-            end: start + validity_duration,
-        }
-    }
-
-    /// Get a reference on the inner certificate signature.
+    /// Get a reference on the inner [RootCertificate].
     ///
     /// # Panics
-    ///
-    /// This method panics if the inner certificate is not signed.
-    /// One must ensure the certificate is valid using [Self::verify_certificate]
-    /// and is of type [ieee1609Dot2::CertificateType::explicit].
-    pub fn signature_or_panic(&self) -> &Signature {
-        match &self.0 .0.signature {
-            Some(signature) => signature,
-            _ => panic!("Certificate does not contain signature."),
+    /// This method panics of the inner certificate is not of Root type.
+    pub fn root_or_panic(&self) -> &RootCertificate {
+        match &self {
+            Certificate::Root(c) => c,
+            _ => panic!("Certificate is not of Root type."),
         }
     }
 
-    /// Get a reference on the inner public verification key.
+    /// Get a reference on the inner [EnrollmentAuthorityCertificate].
     ///
     /// # Panics
-    ///
-    /// This method panics if the inner certificate Verification Key Indicator
-    /// is not a verification key.
-    /// One must ensure the certificate is valid using [Self::verify_certificate]
-    /// and is of type [ieee1609Dot2::CertificateType::explicit].
-    pub fn public_verification_key_or_panic(&self) -> &PublicVerificationKey {
-        match &self.0 .0.to_be_signed.verify_key_indicator {
-            VerificationKeyIndicator::verificationKey(key) => key,
-            _ => panic!("Verification Key Indicator is not a verification key."),
+    /// This method panics of the inner certificate is not of EA type.
+    pub fn ea_or_panic(&self) -> &EnrollmentAuthorityCertificate {
+        match &self {
+            Certificate::EnrollmentAuthority(c) => c,
+            _ => panic!("Certificate is not of EA type."),
         }
     }
 
-    /// Get the inner certificate `to_be_signed` content encoded as Asn.1 COER.
-    pub fn to_be_signed_as_coer(&self) -> Result<Vec<u8>, ()> {
-        Ok(rasn::coer::encode(&self.0 .0.to_be_signed).map_err(|_| ())?)
+    /// Get a reference on the inner [AuthorizationAuthorityCertificate].
+    ///
+    /// # Panics
+    /// This method panics of the inner certificate is not of AA type.
+    pub fn aa_or_panic(&self) -> &AuthorizationAuthorityCertificate {
+        match &self {
+            Certificate::AuthorizationAuthority(c) => c,
+            _ => panic!("Certificate is not of AA type."),
+        }
     }
 
-    #[inline]
     /// Verifies the Asn.1 constraints on an EtsiTs103097Certificate.
-    pub fn verify_etsi_certificate(cert: &EtsiCertificate) -> Result<(), CertificateError> {
+    #[inline]
+    pub fn verify_etsi_constraints(cert: &EtsiCertificate) -> CertificateResult<()> {
         use ieee1609Dot2::CertificateId;
-
-        Self::verify_certificate(cert)?;
 
         let tbs = &cert.0.to_be_signed;
         match tbs.id {
@@ -187,9 +147,9 @@ impl Certificate {
         Ok(())
     }
 
-    #[inline]
     /// Verifies the Asn.1 constraints on an IEEE 1609.2 Certificate.
-    fn verify_certificate(cert: &EtsiCertificate) -> Result<(), CertificateError> {
+    #[inline]
+    pub fn verify_ieee_constraints(cert: &EtsiCertificate) -> CertificateResult<()> {
         use ieee1609Dot2::CertificateType;
 
         match cert.0.r_type {
@@ -258,5 +218,211 @@ impl Certificate {
         }
 
         Ok(())
+    }
+}
+
+pub trait CertificateTrait {
+    /// Get a reference on the inner certificate.
+    fn inner(&self) -> &EtsiCertificate;
+
+    /// Get a reference on the raw certificate bytes, encoded as Asn.1 COER.
+    fn raw_bytes(&self) -> &[u8];
+
+    /// Get the inner certificate `to_be_signed` content bytes, encoded as Asn.1 COER.
+    fn to_be_signed_bytes(&self) -> CertificateResult<Vec<u8>> {
+        Ok(rasn::coer::encode(&self.inner().0.to_be_signed).map_err(|_| CertificateError::Asn1)?)
+    }
+
+    /// Returns the [Issuer] identifier of the certificate.
+    fn issuer_identifier(&self) -> CertificateResult<Issuer> {
+        Issuer::try_from(&self.inner().0.issuer).map_err(|_| CertificateError::UnsupportedIssuer)
+    }
+
+    /// Returns the temporal validity period of the certificate.
+    fn validity_period(&self) -> ValidityPeriod {
+        use ieee1609Dot2Base_types::Duration as IeeeDuration;
+        let tbs = &self.inner().0.to_be_signed;
+
+        // Time in certificate is TAI seconds.
+        let start = TAI2004::from_secs(tbs.validity_period.start.0 .0);
+
+        let validity_duration = match &tbs.validity_period.duration {
+            IeeeDuration::microseconds(us) => Duration::from_micros(us.0.into()),
+            IeeeDuration::milliseconds(ms) => Duration::from_millis(ms.0.into()),
+            IeeeDuration::seconds(s) => Duration::from_secs(s.0.into()),
+            IeeeDuration::minutes(m) => Duration::from_secs(u64::from(m.0) * 60),
+            IeeeDuration::hours(h) => Duration::from_secs(u64::from(h.0) * 3600),
+            IeeeDuration::sixtyHours(sh) => Duration::from_secs(u64::from(sh.0) * 216_000),
+            IeeeDuration::years(y) => Duration::from_secs(u64::from(y.0) * 31_556_952), // One gregorian year is 31556952 seconds.
+        };
+
+        ValidityPeriod {
+            start,
+            end: start + validity_duration,
+        }
+    }
+
+    /// Canonicalize `certificate`, as defined in IEEE 1609.2 paragraph 6.4.3
+    /// - Encoding considerations.
+    fn canonicalize<B>(
+        mut certificate: EtsiCertificate,
+        backend: &B,
+    ) -> CertificateResult<EtsiCertificate>
+    where
+        B: Backend + ?Sized,
+    {
+        // All keys should be in compressed form.
+        let tbs = &mut certificate.0.to_be_signed;
+        if let Some(enc_key) = &mut tbs.encryption_key {
+            let key =
+                EciesKey::try_from(&enc_key.public_key).map_err(CertificateError::EncryptionKey)?;
+            enc_key.public_key = backend
+                .compress_ecies_key(key)
+                .map_err(|_| CertificateError::Backend)?
+                .try_into()
+                .map_err(CertificateError::EncryptionKey)?;
+        }
+
+        match &tbs.verify_key_indicator {
+            VerificationKeyIndicator::verificationKey(p) => {
+                let key = EcdsaKey::try_from(p).map_err(CertificateError::VerificationKey)?;
+                tbs.verify_key_indicator = VerificationKeyIndicator::verificationKey(
+                    backend
+                        .compress_ecdsa_key(key)
+                        .map_err(|_| CertificateError::Backend)?
+                        .try_into()
+                        .map_err(CertificateError::VerificationKey)?,
+                );
+            }
+            // Dunno what to do, IEEE 1609.2 and TS 103 097 does not describe anything...
+            VerificationKeyIndicator::reconstructionValue(_p) => {}
+            _ => {}
+        };
+
+        let canonicalize_sig = |sig: EcdsaSignatureInner| {
+            let s = sig.s;
+            let r = match sig.r {
+                EccPoint::XCoordinateOnly(p) => EccPoint::XCoordinateOnly(p),
+                EccPoint::CompressedY0(p) => EccPoint::XCoordinateOnly(p),
+                EccPoint::CompressedY1(p) => EccPoint::XCoordinateOnly(p),
+                EccPoint::Uncompressed(p) => EccPoint::XCoordinateOnly(p.x),
+            };
+
+            EcdsaSignatureInner { r, s }
+        };
+
+        if let Some(signature) = &certificate.0.signature {
+            let ecdsa_sig =
+                EcdsaSignature::try_from(signature).map_err(CertificateError::Signature)?;
+            let sig = match ecdsa_sig {
+                EcdsaSignature::NistP256r1(s) => EcdsaSignature::NistP256r1(canonicalize_sig(s)),
+                EcdsaSignature::NistP384r1(s) => EcdsaSignature::NistP384r1(canonicalize_sig(s)),
+                EcdsaSignature::BrainpoolP256r1(s) => {
+                    EcdsaSignature::BrainpoolP256r1(canonicalize_sig(s))
+                }
+                EcdsaSignature::BrainpoolP384r1(s) => {
+                    EcdsaSignature::BrainpoolP384r1(canonicalize_sig(s))
+                }
+            };
+
+            certificate.0.signature = Some(sig.try_into().map_err(CertificateError::Signature)?);
+        }
+
+        Ok(certificate)
+    }
+
+    /// Verifies the Asn.1 constraints on the enclosed certificate.
+    fn verify_constraints(cert: &EtsiCertificate) -> CertificateResult<()>;
+}
+
+pub trait ExplicitCertificate: CertificateTrait {
+    /// Checks the certificate validity and signature.
+    fn check<F, B, C>(&self, timestamp: Instant, backend: &B, f: F) -> CertificateResult<bool>
+    where
+        B: Backend + ?Sized,
+        C: ExplicitCertificate,
+        F: FnOnce(HashedId8) -> Option<C>,
+    {
+        // Check validity period.
+        if self.validity_period().end <= TAI2004::from_unix_instant(timestamp) {
+            return Err(CertificateError::Expired);
+        }
+
+        // Get signature.
+        let sig = self.signature()?;
+
+        // Get issuer identifier.
+        let signer = self.issuer_identifier()?;
+
+        let signer_id = match signer {
+            Issuer::SelfSigned(_) => return Err(CertificateError::UnexpectedIssuer),
+            Issuer::SHA256Digest(h) | Issuer::SHA384Digest(h) => h,
+        };
+
+        // Get matching signer certificate.
+        let signer_cert = f(signer_id).ok_or(CertificateError::UnknownSigner)?;
+
+        // Get public verification key.
+        let signer_pubkey = signer_cert.public_verification_key()?;
+        let signer_data = signer_cert.raw_bytes();
+
+        // Get content to verify.
+        // Certificate has already been canonicalized by Self::from_etsi_certificate().
+        let tbs = self
+            .to_be_signed_bytes()
+            .map_err(|_| CertificateError::Other)?;
+
+        let hash = match sig.hash_algorithm() {
+            HashAlgorithm::SHA256 => [backend.sha256(&tbs), backend.sha256(signer_data)].concat(),
+            HashAlgorithm::SHA384 => [backend.sha384(&tbs), backend.sha384(signer_data)].concat(),
+        };
+
+        let res = backend
+            .verify_signature(sig, signer_pubkey, &hash)
+            .map_err(|_| CertificateError::Backend)?;
+
+        Ok(res)
+    }
+
+    /// Computes the Hashed-id8 of the certificate.
+    fn hashed_id8<B>(&self, backend: &B) -> CertificateResult<HashedId8>
+    where
+        B: Backend + ?Sized,
+    {
+        let k = self.public_verification_key()?;
+
+        // Hashing algorithm is determined by verification key.
+        let hash = match k {
+            EcdsaKey::NistP256r1(_) | EcdsaKey::BrainpoolP256r1(_) => {
+                let h = backend.sha256(self.raw_bytes());
+                HashedId8::from_bytes(&h[24..])
+            }
+            EcdsaKey::NistP384r1(_) | EcdsaKey::BrainpoolP384r1(_) => {
+                let h = backend.sha384(self.raw_bytes());
+                HashedId8::from_bytes(&h[40..])
+            }
+        };
+
+        Ok(hash)
+    }
+
+    /// Get a reference on the inner public verification key.
+    fn public_verification_key(&self) -> CertificateResult<EcdsaKey> {
+        let k = match &self.inner().0.to_be_signed.verify_key_indicator {
+            VerificationKeyIndicator::verificationKey(key) => key,
+            _ => return Err(CertificateError::Malformed),
+        };
+
+        EcdsaKey::try_from(k).map_err(CertificateError::VerificationKey)
+    }
+
+    /// Get a reference on the inner certificate signature.
+    fn signature(&self) -> CertificateResult<EcdsaSignature> {
+        let s = match &self.inner().0.signature {
+            Some(signature) => signature,
+            _ => return Err(CertificateError::Malformed),
+        };
+
+        EcdsaSignature::try_from(s).map_err(CertificateError::Signature)
     }
 }

@@ -1,7 +1,9 @@
 use crate::{
     security::{
-        certificate::{Certificate, HashedId8},
+        backend::Backend,
+        certificate::AuthorizationTicketCertificate,
         secured_message::{SecuredMessage, SignerIdentifier},
+        HashedId8,
     },
     time::Instant,
 };
@@ -35,7 +37,7 @@ impl SecurityService {
 
         let certificate = match signer {
             SignerIdentifier::Digest(hash) => {
-                let digest = HashedId8::from_bytes(&hash.0);
+                let digest = HashedId8::from_bytes(hash.0.as_slice());
                 match self.cache.lookup(&digest, timestamp) {
                     Some(cert) => cert,
                     None => {
@@ -53,7 +55,7 @@ impl SecurityService {
                 /* let digest = cert.0.
                 self.cache.fill(digest, certificate, timestamp)
                 Certificate::from_etsi_at(cert) */
-                Certificate::from_etsi_certificate(cert)
+                AuthorizationTicketCertificate::from_etsi_cert(cert, &self.backend)
                     .map_err(|_| SecurityServiceError::InvalidCertificate)?
             }
         };

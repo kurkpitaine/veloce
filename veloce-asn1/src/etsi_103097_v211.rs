@@ -181,12 +181,11 @@ pub mod ieee1609Dot2 {
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
     #[rasn(automatic_tags)]
     pub struct AesCcmCiphertext {
-        #[rasn(size("12"))]
-        pub nonce: OctetString,
+        pub nonce: FixedOctetString<12>,
         pub ccm_ciphertext: Opaque,
     }
     impl AesCcmCiphertext {
-        pub fn new(nonce: OctetString, ccm_ciphertext: Opaque) -> Self {
+        pub fn new(nonce: FixedOctetString<12>, ccm_ciphertext: Opaque) -> Self {
             Self {
                 nonce,
                 ccm_ciphertext,
@@ -492,8 +491,8 @@ pub mod ieee1609Dot2 {
     #[doc = " * field."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
-    #[rasn(delegate, size("8"))]
-    pub struct EndEntityType(pub BitString);
+    #[rasn(delegate)]
+    pub struct EndEntityType(pub FixedBitString<1>);
     #[doc = "*"]
     #[doc = " * @class ExplicitCertificate"]
     #[doc = " *"]
@@ -520,12 +519,11 @@ pub mod ieee1609Dot2 {
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum HashedData {
-        #[rasn(size("32"))]
-        sha256HashedData(OctetString),
-        #[rasn(extension_addition, size("48"))]
-        sha384HashedData(OctetString),
-        #[rasn(extension_addition, size("32"))]
-        reserved(OctetString),
+        sha256HashedData(FixedOctetString<32>),
+        #[rasn(extension_addition)]
+        sha384HashedData(FixedOctetString<48>),
+        #[rasn(extension_addition)]
+        reserved(FixedOctetString<32>),
     }
     #[doc = "*"]
     #[doc = " * @class HeaderInfo"]
@@ -1044,7 +1042,7 @@ pub mod ieee1609Dot2 {
         Integer::from(0)
     }
     fn psid_group_permissions_ee_type_default() -> EndEntityType {
-        EndEntityType(BitString::from_slice(&[1u8]))
+        EndEntityType(FixedBitString::<1>::new([1u8]))
     }
     #[doc = "*"]
     #[doc = " * @class RecipientInfo"]
@@ -1501,8 +1499,8 @@ pub mod ieee1609Dot2 {
         pub can_request_rollover: Option<()>,
         pub encryption_key: Option<PublicEncryptionKey>,
         pub verify_key_indicator: VerificationKeyIndicator,
-        #[rasn(extension_addition, size("8"))]
-        pub flags: Option<BitString>,
+        #[rasn(extension_addition)]
+        pub flags: Option<FixedBitString<1>>,
     }
     impl ToBeSignedCertificate {
         pub fn new(
@@ -1518,7 +1516,7 @@ pub mod ieee1609Dot2 {
             can_request_rollover: Option<()>,
             encryption_key: Option<PublicEncryptionKey>,
             verify_key_indicator: VerificationKeyIndicator,
-            flags: Option<BitString>,
+            flags: Option<FixedBitString<1>>,
         ) -> Self {
             Self {
                 id,
@@ -1870,13 +1868,11 @@ pub mod ieee1609Dot2Base_types {
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
     #[rasn(automatic_tags)]
     pub struct EccP256CurvePointUncompressedP256 {
-        #[rasn(size("32"))]
-        pub x: OctetString,
-        #[rasn(size("32"))]
-        pub y: OctetString,
+        pub x: FixedOctetString<32>,
+        pub y: FixedOctetString<32>,
     }
     impl EccP256CurvePointUncompressedP256 {
-        pub fn new(x: OctetString, y: OctetString) -> Self {
+        pub fn new(x: FixedOctetString<32>, y: FixedOctetString<32>) -> Self {
             Self { x, y }
         }
     }
@@ -1901,26 +1897,21 @@ pub mod ieee1609Dot2Base_types {
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
     #[rasn(choice, automatic_tags)]
     pub enum EccP256CurvePoint {
-        #[rasn(size("32"))]
-        x_only(OctetString),
+        x_only(FixedOctetString<32>),
         fill(()),
-        #[rasn(size("32"))]
-        compressed_y_0(OctetString),
-        #[rasn(size("32"))]
-        compressed_y_1(OctetString),
+        compressed_y_0(FixedOctetString<32>),
+        compressed_y_1(FixedOctetString<32>),
         uncompressedP256(EccP256CurvePointUncompressedP256),
     }
     #[doc = " Inner type "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
     #[rasn(automatic_tags)]
     pub struct EccP384CurvePointUncompressedP384 {
-        #[rasn(size("48"))]
-        pub x: OctetString,
-        #[rasn(size("48"))]
-        pub y: OctetString,
+        pub x: FixedOctetString<48>,
+        pub y: FixedOctetString<48>,
     }
     impl EccP384CurvePointUncompressedP384 {
-        pub fn new(x: OctetString, y: OctetString) -> Self {
+        pub fn new(x: FixedOctetString<48>, y: FixedOctetString<48>) -> Self {
             Self { x, y }
         }
     }
@@ -1945,13 +1936,10 @@ pub mod ieee1609Dot2Base_types {
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
     #[rasn(choice, automatic_tags)]
     pub enum EccP384CurvePoint {
-        #[rasn(size("48"))]
-        x_only(OctetString),
+        x_only(FixedOctetString<48>),
         fill(()),
-        #[rasn(size("48"))]
-        compressed_y_0(OctetString),
-        #[rasn(size("48"))]
-        compressed_y_1(OctetString),
+        compressed_y_0(FixedOctetString<48>),
+        compressed_y_1(FixedOctetString<48>),
         uncompressedP384(EccP384CurvePointUncompressedP384),
     }
     #[doc = "* "]
@@ -2004,11 +1992,10 @@ pub mod ieee1609Dot2Base_types {
     #[rasn(automatic_tags)]
     pub struct EcdsaP256Signature {
         pub r_sig: EccP256CurvePoint,
-        #[rasn(size("32"))]
-        pub s_sig: OctetString,
+        pub s_sig: FixedOctetString<32>,
     }
     impl EcdsaP256Signature {
-        pub fn new(r_sig: EccP256CurvePoint, s_sig: OctetString) -> Self {
+        pub fn new(r_sig: EccP256CurvePoint, s_sig: FixedOctetString<32>) -> Self {
             Self { r_sig, s_sig }
         }
     }
@@ -2053,11 +2040,10 @@ pub mod ieee1609Dot2Base_types {
     #[rasn(automatic_tags)]
     pub struct EcdsaP384Signature {
         pub r_sig: EccP384CurvePoint,
-        #[rasn(size("48"))]
-        pub s_sig: OctetString,
+        pub s_sig: FixedOctetString<48>,
     }
     impl EcdsaP384Signature {
-        pub fn new(r_sig: EccP384CurvePoint, s_sig: OctetString) -> Self {
+        pub fn new(r_sig: EccP384CurvePoint, s_sig: FixedOctetString<48>) -> Self {
             Self { r_sig, s_sig }
         }
     }
@@ -2085,13 +2071,11 @@ pub mod ieee1609Dot2Base_types {
     #[rasn(automatic_tags)]
     pub struct EciesP256EncryptedKey {
         pub v: EccP256CurvePoint,
-        #[rasn(size("16"))]
-        pub c: OctetString,
-        #[rasn(size("16"))]
-        pub t: OctetString,
+        pub c: FixedOctetString<16>,
+        pub t: FixedOctetString<16>,
     }
     impl EciesP256EncryptedKey {
-        pub fn new(v: EccP256CurvePoint, c: OctetString, t: OctetString) -> Self {
+        pub fn new(v: EccP256CurvePoint, c: FixedOctetString<16>, t: FixedOctetString<16>) -> Self {
             Self { v, c, t }
         }
     }
@@ -2182,13 +2166,11 @@ pub mod ieee1609Dot2Base_types {
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
     #[rasn(automatic_tags)]
     pub struct GroupLinkageValue {
-        #[rasn(size("4"))]
-        pub j_value: OctetString,
-        #[rasn(size("9"))]
-        pub value: OctetString,
+        pub j_value: FixedOctetString<4>,
+        pub value: FixedOctetString<9>,
     }
     impl GroupLinkageValue {
-        pub fn new(j_value: OctetString, value: OctetString) -> Self {
+        pub fn new(j_value: FixedOctetString<4>, value: FixedOctetString<9>) -> Self {
             Self { j_value, value }
         }
     }
@@ -2237,8 +2219,8 @@ pub mod ieee1609Dot2Base_types {
     #[doc = " * <br>HashedId10 = 934ca495991b7852b855."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
-    #[rasn(delegate, size("10"))]
-    pub struct HashedId10(pub OctetString);
+    #[rasn(delegate)]
+    pub struct HashedId10(pub FixedOctetString<10>);
     #[doc = "* "]
     #[doc = " * @class HashedId3"]
     #[doc = " *"]
@@ -2260,8 +2242,8 @@ pub mod ieee1609Dot2Base_types {
     #[doc = " * <br>HashedId3 = 52b855."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
-    #[rasn(delegate, size("3"))]
-    pub struct HashedId3(pub OctetString);
+    #[rasn(delegate)]
+    pub struct HashedId3(pub FixedOctetString<3>);
     #[doc = "* "]
     #[doc = " * @class HashedId32"]
     #[doc = " *"]
@@ -2289,8 +2271,8 @@ pub mod ieee1609Dot2Base_types {
     #[doc = " * e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
-    #[rasn(delegate, size("32"))]
-    pub struct HashedId32(pub OctetString);
+    #[rasn(delegate)]
+    pub struct HashedId32(pub FixedOctetString<32>);
     #[doc = "* "]
     #[doc = " * @class HashedId8"]
     #[doc = " *"]
@@ -2317,8 +2299,8 @@ pub mod ieee1609Dot2Base_types {
     #[doc = " * <br>HashedId8 = a495991b7852b855."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
-    #[rasn(delegate, size("8"))]
-    pub struct HashedId8(pub OctetString);
+    #[rasn(delegate)]
+    pub struct HashedId8(pub FixedOctetString<8>);
     #[doc = "* "]
     #[doc = " * @class Hostname"]
     #[doc = " *"]
@@ -2385,8 +2367,8 @@ pub mod ieee1609Dot2Base_types {
     #[doc = " * specified in 5.1.3.4."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
-    #[rasn(delegate, size("2"))]
-    pub struct LaId(pub OctetString);
+    #[rasn(delegate)]
+    pub struct LaId(pub FixedOctetString<2>);
     #[doc = "* "]
     #[doc = " * @class Latitude"]
     #[doc = " *"]
@@ -2404,8 +2386,8 @@ pub mod ieee1609Dot2Base_types {
     #[doc = " * algorithms specified in 5.1.3.4."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
-    #[rasn(delegate, size("16"))]
-    pub struct LinkageSeed(pub OctetString);
+    #[rasn(delegate)]
+    pub struct LinkageSeed(pub FixedOctetString<16>);
     #[doc = "* "]
     #[doc = " * @class LinkageValue"]
     #[doc = " *"]
@@ -2413,8 +2395,8 @@ pub mod ieee1609Dot2Base_types {
     #[doc = " * of use."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
-    #[rasn(delegate, size("9"))]
-    pub struct LinkageValue(pub OctetString);
+    #[rasn(delegate)]
+    pub struct LinkageValue(pub FixedOctetString<9>);
     #[doc = "* "]
     #[doc = " * @class Longitude"]
     #[doc = " *"]
@@ -2923,8 +2905,9 @@ pub mod ieee1609Dot2Base_types {
     #[doc = " * versions of that document."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
-    #[rasn(delegate, size("1"))]
-    pub struct SubjectAssurance(pub OctetString);
+    #[rasn(delegate)]
+    pub struct SubjectAssurance(pub FixedOctetString<1>);
+
     #[doc = "* "]
     #[doc = " * @class SymmAlgorithm"]
     #[doc = " *"]
@@ -2949,8 +2932,7 @@ pub mod ieee1609Dot2Base_types {
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum SymmetricEncryptionKey {
-        #[rasn(size("16"))]
-        aes128Ccm(OctetString),
+        aes128Ccm(FixedOctetString<16>),
     }
     #[doc = "* "]
     #[doc = " * @class ThreeDLocation"]

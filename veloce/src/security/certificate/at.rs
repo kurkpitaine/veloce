@@ -6,30 +6,32 @@ use veloce_asn1::{
     prelude::rasn::{self, types::Integer},
 };
 
-use crate::{
-    security::{aid::AID, backend::Backend, HashAlgorithm},
-    time::{Instant, TAI2004},
-};
+use crate::security::{aid::AID, backend::Backend};
 
-use super::{Certificate, CertificateError, CertificateResult, CertificateTrait, ExplicitCertificate};
+use super::{
+    Certificate, CertificateError, CertificateResult, CertificateTrait, ExplicitCertificate,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct RootCertificate {
-    /// Raw COER encoded Root certificate.
+pub struct AuthorizationTicketCertificate {
+    /// Raw COER encoded Authorization Ticket.
     raw: Vec<u8>,
     /// Inner certificate.
     inner: EtsiCertificate,
 }
 
-impl RootCertificate {
-    /// Constructs a Root certificate from an [EtsiCertificate].
+impl AuthorizationTicketCertificate {
+    /// Constructs a Authorization Ticket from an [EtsiCertificate].
     /// This method verifies if the certificate is valid relative to a Root certificate Asn.1 constraints.
     /// Certificate is also canonicalized if necessary.
-    pub fn from_etsi_cert(
+    pub fn from_etsi_cert<B>(
         cert: EtsiCertificate,
-        backend: &impl Backend,
-    ) -> CertificateResult<RootCertificate> {
+        backend: &B,
+    ) -> CertificateResult<AuthorizationTicketCertificate>
+    where
+        B: Backend + ?Sized,
+    {
         Certificate::verify_ieee_constraints(&cert)?;
         Certificate::verify_etsi_constraints(&cert)?;
         Self::verify_constraints(&cert)?;
@@ -41,44 +43,9 @@ impl RootCertificate {
     }
 }
 
-impl ExplicitCertificate for RootCertificate {
-    fn check<F, B, C>(&self, timestamp: Instant, backend: &B, _f: F) -> CertificateResult<bool>
-    where
-        B: Backend + ?Sized,
-        C: ExplicitCertificate,
-        F: FnOnce(crate::security::HashedId8) -> Option<C>,
-    {
-        // Check validity period.
-        if self.validity_period().end <= TAI2004::from_unix_instant(timestamp) {
-            return Err(CertificateError::Expired);
-        }
+impl ExplicitCertificate for AuthorizationTicketCertificate {}
 
-        // Get signature.
-        let sig = self.signature()?;
-
-        // Get public key.
-        let pubkey = self.public_verification_key()?;
-
-        // Get content to verify.
-        // Certificate has already been canonicalized by Self::from_etsi_certificate().
-        let tbs = self
-            .to_be_signed_bytes()
-            .map_err(|_| CertificateError::Other)?;
-
-        let hash = match sig.hash_algorithm() {
-            HashAlgorithm::SHA256 => [backend.sha256(&tbs), backend.sha256(&[])].concat(),
-            HashAlgorithm::SHA384 => [backend.sha384(&tbs), backend.sha384(&[])].concat(),
-        };
-
-        let res = backend
-            .verify_signature(sig, pubkey, &hash)
-            .map_err(|_| CertificateError::Backend)?;
-
-        Ok(res)
-    }
-}
-
-impl CertificateTrait for RootCertificate {
+impl CertificateTrait for AuthorizationTicketCertificate {
     fn inner(&self) -> &EtsiCertificate {
         &self.inner
     }

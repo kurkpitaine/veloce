@@ -5,7 +5,7 @@
 use veloce_asn1::defs::etsi_103097_v211::{
     etsi_ts103097Module::{EtsiTs103097Data, EtsiTs103097DataSigned},
     ieee1609Dot2::{self, Certificate as EtsiCertificate},
-    ieee1609Dot2Base_types::{self, HashedId8},
+    ieee1609Dot2Base_types::HashedId8,
 };
 use veloce_asn1::prelude::rasn::{self, error::DecodeError};
 
@@ -186,7 +186,7 @@ impl SecuredMessage {
                         return Err(SecuredMessageError::InvalidNumberOfCerts);
                     }
 
-                    Certificate::verify_etsi_certificate(&seq_of_certs.0[0])
+                    Certificate::verify_etsi_constraints(&seq_of_certs.0[0])
                         .map_err(|_| SecuredMessageError::MalformedCertificate)?;
                 }
             }

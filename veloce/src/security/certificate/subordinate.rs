@@ -1,41 +1,88 @@
-use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2::{self, Certificate as EtsiCertificate};
+use core::marker::PhantomData;
 
-use super::{Certificate, CertificateError};
+use veloce_asn1::{
+    defs::etsi_103097_v211::ieee1609Dot2::{
+        self, Certificate as EtsiCertificate, IssuerIdentifier,
+    },
+    prelude::rasn,
+};
+
+use crate::security::backend::Backend;
+
+use super::{Certificate, CertificateError, CertificateResult, CertificateTrait, ExplicitCertificate};
+
+/// Marker struct for a subordinate EA certificate.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct EA;
+/// Marker struct for a subordinate AA certificate.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct AA;
+
+/// Enrollment Authority certificate type.
+pub type EnrollmentAuthorityCertificate = SubordinateCertificate<EA>;
+/// Authorization Authority certificate type.
+pub type AuthorizationAuthorityCertificate = SubordinateCertificate<AA>;
 
 /// Subordinate certificate type, for Enrollment Authority and
 /// Authorization Authority certificates.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct SubordinateCertificate(Certificate);
+pub struct SubordinateCertificate<T> {
+    /// Raw COER encoded Subordinate certificate.
+    raw: Vec<u8>,
+    /// Inner certificate.
+    inner: EtsiCertificate,
+    /// Phantom marker for subordinate type.
+    _type: PhantomData<T>,
+}
 
-impl SubordinateCertificate {
+impl<T> SubordinateCertificate<T> {
     /// Constructs from a raw ETSI Certificate.
-    /// This method verifies if the certificate is valid relative to a Subordinate certificate Asn.1 constraints.
-    pub fn from_etsi_certificate(cert: EtsiCertificate) -> Result<Self, CertificateError> {
-        let cert = Certificate::from_etsi_certificate(cert)?;
-        Self::verify(cert.inner())?;
+    /// This method must verify if the certificate is valid relative to a Subordinate certificate Asn.1 constraints.
+    /// Certificate has to be canonicalized if necessary.
+    pub fn from_etsi_cert(
+        cert: EtsiCertificate,
+        backend: &impl Backend,
+    ) -> CertificateResult<Self> {
+        Certificate::verify_ieee_constraints(&cert)?;
+        Certificate::verify_etsi_constraints(&cert)?;
+        Self::verify_constraints(&cert)?;
+        let inner = Self::canonicalize(cert, backend)?;
 
-        Ok(Self(cert))
+        let raw = rasn::coer::encode(&inner).map_err(|_| CertificateError::Asn1)?;
+
+        Ok(Self {
+            raw,
+            inner,
+            _type: PhantomData,
+        })
+    }
+}
+
+impl<T> ExplicitCertificate for SubordinateCertificate<T> {}
+
+impl<T> CertificateTrait for SubordinateCertificate<T> {
+    fn inner(&self) -> &EtsiCertificate {
+        &self.inner
     }
 
-    /// Get a reference on the inner raw certificate.
-    pub fn inner(&self) -> &EtsiCertificate {
-        self.0.inner()
+    fn raw_bytes(&self) -> &[u8] {
+        &self.raw
     }
 
-    #[inline]
-    /// Verify fields constraints for a EA/AA certificate.
-    fn verify(cert: &EtsiCertificate) -> Result<(), CertificateError> {
-        use ieee1609Dot2::{CertificateId, CertificateType, IssuerIdentifier};
+    fn verify_constraints(cert: &EtsiCertificate) -> CertificateResult<()> {
+        use ieee1609Dot2::{CertificateId, CertificateType};
 
-        // The certificate shall be of type explicit as specified in IEEE Std 1609.2™, clause 6.4.6.
+        // The certificate shall be of type explicit as specified in IEEE Std 1609.2, clause 6.4.6.
         match cert.0.r_type {
             CertificateType::explicit => {}
             _ => return Err(CertificateError::Malformed),
         };
 
         // The component issuer shall be set to sha256AndDigest or sha384AndDigest as defined in IEEE
-        // Std 1609.2™ [1] clause 6.4.7.
+        // Std 1609.2 clause 6.4.7.
         match cert.0.issuer {
             IssuerIdentifier::sha256AndDigest(_) | IssuerIdentifier::sha384AndDigest(_) => {}
             _ => return Err(CertificateError::Malformed),

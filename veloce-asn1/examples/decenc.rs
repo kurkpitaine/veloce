@@ -2,7 +2,7 @@ use veloce_asn1::defs::etsi_103097_v211::etsi_ts103097Module;
 use veloce_asn1::prelude::*;
 
 fn main() {
-    let input_eu_ectl = include_bytes!("assets/eu_ectl_6F1895D16BA90EAE");
+    let input_eu_ectl = include_bytes!("assets/eu_ectl_226BCD8A97B96630");
     let input_vw_ectl = include_bytes!("assets/vw_ectl_C8EAAB4C86EBCDD2");
     let input_vw_tlm = include_bytes!("assets/vw_tlm_C8EAAB4C86EBCDD2");
 

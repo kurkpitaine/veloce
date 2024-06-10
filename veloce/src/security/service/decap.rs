@@ -3,7 +3,7 @@
 //!
 
 use crate::{
-    security::{certificate::HashedId8, secured_message::SecuredMessage},
+    security::{secured_message::SecuredMessage, HashedId8},
     time::Instant,
 };
 

@@ -1,4 +1,6 @@
-use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2Base_types::Signature as EtsiSignature;
+use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2Base_types::{
+    EcdsaP256Signature, EcdsaP384Signature, Signature as EtsiSignature,
+};
 
 use super::{EccPoint, EccPointUnsupportedCoordinatesErr, HashAlgorithm};
 
@@ -9,6 +11,8 @@ pub enum EcdsaSignatureError {
     UnsupportedType,
     /// Signature point coordinates type is unsupported.
     UnsupportedCoordinates(EccPointUnsupportedCoordinatesErr),
+    /// Other type of error
+    Other,
 }
 
 /// An ECDSA signature.
@@ -73,6 +77,53 @@ impl TryFrom<&EtsiSignature> for EcdsaSignature {
                 })
             }
             _ => return Err(EcdsaSignatureError::UnsupportedType),
+        };
+
+        Ok(res)
+    }
+}
+
+impl TryInto<EtsiSignature> for EcdsaSignature {
+    type Error = EcdsaSignatureError;
+
+    fn try_into(self) -> Result<EtsiSignature, Self::Error> {
+        let res = match self {
+            EcdsaSignature::NistP256r1(i) => {
+                EtsiSignature::ecdsaNistP256Signature(EcdsaP256Signature {
+                    r_sig: i
+                        .r
+                        .try_into()
+                        .map_err(EcdsaSignatureError::UnsupportedCoordinates)?,
+                    s_sig: i.s.try_into().map_err(|_| EcdsaSignatureError::Other)?,
+                })
+            }
+            EcdsaSignature::NistP384r1(i) => {
+                EtsiSignature::ecdsaNistP384Signature(EcdsaP384Signature {
+                    r_sig: i
+                        .r
+                        .try_into()
+                        .map_err(EcdsaSignatureError::UnsupportedCoordinates)?,
+                    s_sig: i.s.try_into().map_err(|_| EcdsaSignatureError::Other)?,
+                })
+            }
+            EcdsaSignature::BrainpoolP256r1(i) => {
+                EtsiSignature::ecdsaBrainpoolP256r1Signature(EcdsaP256Signature {
+                    r_sig: i
+                        .r
+                        .try_into()
+                        .map_err(EcdsaSignatureError::UnsupportedCoordinates)?,
+                    s_sig: i.s.try_into().map_err(|_| EcdsaSignatureError::Other)?,
+                })
+            }
+            EcdsaSignature::BrainpoolP384r1(i) => {
+                EtsiSignature::ecdsaBrainpoolP384r1Signature(EcdsaP384Signature {
+                    r_sig: i
+                        .r
+                        .try_into()
+                        .map_err(EcdsaSignatureError::UnsupportedCoordinates)?,
+                    s_sig: i.s.try_into().map_err(|_| EcdsaSignatureError::Other)?,
+                })
+            }
         };
 
         Ok(res)

@@ -10,7 +10,8 @@ use std::collections::BTreeMap;
 use crate::config::SEC_CERT_CACHE_ENTRY_LIFETIME;
 use crate::time::Instant;
 
-use super::certificate::{Certificate, HashedId8};
+use super::certificate::AuthorizationTicketCertificate;
+use super::HashedId8;
 
 /// A cached certificate.
 ///
@@ -20,7 +21,7 @@ use super::certificate::{Certificate, HashedId8};
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct CachedCertificate {
     /// Complete certificate.
-    certificate: Certificate,
+    certificate: AuthorizationTicketCertificate,
     /// Expiration time.
     expires_at: Instant,
 }
@@ -38,7 +39,12 @@ impl CertificateCache {
         }
     }
 
-    pub fn fill(&mut self, digest: HashedId8, certificate: Certificate, timestamp: Instant) {
+    pub fn fill(
+        &mut self,
+        digest: HashedId8,
+        certificate: AuthorizationTicketCertificate,
+        timestamp: Instant,
+    ) {
         let expires_at = timestamp + SEC_CERT_CACHE_ENTRY_LIFETIME;
 
         let cached_cert = CachedCertificate {
@@ -72,7 +78,11 @@ impl CertificateCache {
 
     /// Search the certificate cache for a certificate identified
     /// with `digest`. Returns an option containing the certificate, if any.
-    pub(crate) fn lookup(&self, digest: &HashedId8, timestamp: Instant) -> Option<Certificate> {
+    pub(crate) fn lookup(
+        &self,
+        digest: &HashedId8,
+        timestamp: Instant,
+    ) -> Option<AuthorizationTicketCertificate> {
         self.storage.get(digest).and_then(|e| {
             if e.expires_at > timestamp {
                 Some(e.certificate.to_owned())

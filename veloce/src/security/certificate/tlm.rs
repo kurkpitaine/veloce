@@ -1,42 +1,60 @@
 use veloce_asn1::{
     defs::etsi_103097_v211::{
-        ieee1609Dot2::{self, Certificate as EtsiCertificate},
+        ieee1609Dot2::{self, Certificate as EtsiCertificate, IssuerIdentifier},
         ieee1609Dot2Base_types,
     },
-    prelude::rasn::types::Integer,
+    prelude::rasn::{self, types::Integer},
 };
 
 use crate::security::{
     aid::AID,
+    backend::Backend,
     ssp::ctl::{CtlSsp, TLM_CTL},
 };
 
-use super::{Certificate, CertificateError};
+use super::{
+    Certificate, CertificateError, CertificateResult, CertificateTrait, ExplicitCertificate,
+};
 
 /// Trust List Manager certificate type.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct TrustListManagerCertificate(Certificate);
+pub struct TrustListManagerCertificate {
+    /// Raw COER encoded TLM certificate.
+    raw: Vec<u8>,
+    /// Inner certificate.
+    inner: EtsiCertificate,
+}
 
 impl TrustListManagerCertificate {
-    /// Constructs from a raw ETSI Certificate.
-    /// This method verifies if the certificate is valid relative to a TLM certificate Asn.1 constraints.
-    pub fn from_etsi_certificate(cert: EtsiCertificate) -> Result<Self, CertificateError> {
-        let cert = Certificate::from_etsi_certificate(cert)?;
-        Self::verify(cert.inner())?;
+    pub fn from_etsi_cert(
+        cert: EtsiCertificate,
+        backend: &impl Backend,
+    ) -> CertificateResult<Self> {
+        Certificate::verify_ieee_constraints(&cert)?;
+        Certificate::verify_etsi_constraints(&cert)?;
+        Self::verify_constraints(&cert)?;
+        let inner = Self::canonicalize(cert, backend)?;
 
-        Ok(Self(cert))
+        let raw = rasn::coer::encode(&inner).map_err(|_| CertificateError::Asn1)?;
+
+        Ok(Self { raw, inner })
+    }
+}
+
+impl ExplicitCertificate for TrustListManagerCertificate {}
+
+impl CertificateTrait for TrustListManagerCertificate {
+    fn inner(&self) -> &EtsiCertificate {
+        &self.inner
     }
 
-    /// Get a reference on the inner raw certificate.
-    pub fn inner(&self) -> &EtsiCertificate {
-        self.0.inner()
+    fn raw_bytes(&self) -> &[u8] {
+        &self.raw
     }
 
-    #[inline]
-    /// Verify fields constraints for a TLM certificate.
-    fn verify(cert: &EtsiCertificate) -> Result<(), CertificateError> {
-        use ieee1609Dot2::{CertificateId, CertificateType, IssuerIdentifier};
+    fn verify_constraints(cert: &EtsiCertificate) -> CertificateResult<()> {
+        use ieee1609Dot2::{CertificateId, CertificateType};
         use ieee1609Dot2Base_types::{Psid, ServiceSpecificPermissions};
 
         // The certificate shall be of type explicit as specified in IEEE Std 1609.2™, clause 6.4.6.
