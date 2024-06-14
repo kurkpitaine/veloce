@@ -1,7 +1,7 @@
 //! Secured Certificate Request messages SSP definition.
 //! See ETSI TS 102 941 V2.2.1 section B.4.
 
-use super::{Ssp, SspError, SspResult, SSP_VERSION};
+use super::{SspContainer, SspError, SspResult, SSP_VERSION};
 
 mod field {
     /// SCR CA Certificate Request signing permission bit position.
@@ -46,12 +46,17 @@ const SCR_SSP_LEN: usize = 2;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Secured Certificate Request Service Specific Permissions.
-pub struct ScrSsp(Ssp<SCR_SSP_LEN>);
+pub struct ScrSsp(SspContainer<SCR_SSP_LEN>);
 
 impl ScrSsp {
+    /// Get the size of [ScrSsp] in buffer.
+    pub const fn buf_size() -> usize {
+        SCR_SSP_LEN
+    }
+
     /// Constructs a [ScrSsp] from the provided `permissions` value.
     pub const fn from_raw_permissions(permissions: u8) -> ScrSsp {
-        ScrSsp(Ssp::from_slice([SSP_VERSION, permissions]))
+        ScrSsp(SspContainer::from_slice([SSP_VERSION, permissions]))
     }
 
     /// Constructs a [ScrSsp] from bytes, ensuring length and
@@ -67,7 +72,7 @@ impl ScrSsp {
             return Err(SspError::Version);
         }
 
-        Ok(ScrSsp(Ssp::from_bytes(buf)))
+        Ok(ScrSsp(SspContainer::from_bytes(buf)))
     }
 
     /// Query whether the inner SSP contains the provided `permission`.

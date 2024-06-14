@@ -1,4 +1,4 @@
-use super::{Ssp, SspError, SspResult, SSP_VERSION};
+use super::{SspContainer, SspError, SspResult, SSP_VERSION};
 
 /// ECTL permissions.
 pub const TLM_CTL: CtlSsp = CtlSsp::from_raw_permissions(0xc8);
@@ -40,12 +40,17 @@ const CTL_SSP_LEN: usize = 2;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Certificate Trust List Service Specific Permissions.
-pub struct CtlSsp(Ssp<CTL_SSP_LEN>);
+pub struct CtlSsp(SspContainer<CTL_SSP_LEN>);
 
 impl CtlSsp {
+    /// Get the size of [CtlSsp] in buffer.
+    pub const fn buf_size() -> usize {
+        CTL_SSP_LEN
+    }
+
     /// Constructs a [CtlSsp] from the provided `permissions` value.
     pub const fn from_raw_permissions(permissions: u8) -> CtlSsp {
-        CtlSsp(Ssp::from_slice([SSP_VERSION, permissions]))
+        CtlSsp(SspContainer::from_slice([SSP_VERSION, permissions]))
     }
 
     /// Constructs a [CtlSsp] from bytes, ensuring length and
@@ -61,7 +66,7 @@ impl CtlSsp {
             return Err(SspError::Version);
         }
 
-        Ok(CtlSsp(Ssp::from_bytes(buf)))
+        Ok(CtlSsp(SspContainer::from_bytes(buf)))
     }
 
     /// Query whether the inner SSP contains the provided `permission`.

@@ -1,8 +1,8 @@
 use crate::time::Instant;
 
 use super::{
-    backend::Backend, certificate_cache::CertificateCache, secured_message::SecuredMessageError,
-    trust_store::Store as TrustStore,
+    backend::Backend, certificate::CertificateError, certificate_cache::CertificateCache,
+    secured_message::SecuredMessageError, trust_store::Store as TrustStore,
 };
 
 pub(crate) mod decap;
@@ -14,11 +14,10 @@ pub(crate) mod verify;
 pub enum SecurityServiceError {
     /// Security envelope has invalid content.
     InvalidContent(SecuredMessageError),
-
     /// Signature is invalid.
     FalseSignature,
     /// Certificate is invalid.
-    InvalidCertificate,
+    InvalidCertificate(CertificateError),
     /// Certificate is revoked.
     RevokedCertificate,
     /// Certificate chain is inconsistent.
@@ -31,7 +30,7 @@ pub enum SecurityServiceError {
     InvalidMobilityData,
     /// Message has no signature.
     UnsignedMessage,
-    /// Signer certificate not found, ie: certificate is not present
+    /// Signer certificate not found, ie: AT certificate is not present
     /// in local cache.
     SignerCertificateNotFound,
     /// Message is not encrypted.

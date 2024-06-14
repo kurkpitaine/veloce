@@ -7,8 +7,8 @@ use veloce_asn1::{
 };
 
 use crate::security::{
-    aid::AID,
     backend::Backend,
+    permission::AID,
     ssp::ctl::{CtlSsp, TLM_CTL},
 };
 
@@ -81,7 +81,7 @@ impl CertificateTrait for TrustListManagerCertificate {
 
         // Safety: we checked the vector is not empty.
         let permission = &app_permissions.0[0];
-        if permission.psid != Psid(Integer::from(AID::CTL as u64)) {
+        if permission.psid != Psid(Integer::from(u64::from(AID::CTL))) {
             return Err(CertificateError::IllegalPermissions);
         }
 

@@ -7,11 +7,13 @@ use veloce_asn1::{
 };
 
 use crate::{
-    security::{aid::AID, backend::Backend, HashAlgorithm},
+    security::{backend::Backend, permission::AID, HashAlgorithm},
     time::{Instant, TAI2004},
 };
 
-use super::{Certificate, CertificateError, CertificateResult, CertificateTrait, ExplicitCertificate};
+use super::{
+    Certificate, CertificateError, CertificateResult, CertificateTrait, ExplicitCertificate,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -124,8 +126,8 @@ impl CertificateTrait for RootCertificate {
             .0
             .iter()
             .filter_map(|e| {
-                if e.psid == Psid(Integer::from(AID::CRL as u64))
-                    || e.psid == Psid(Integer::from(AID::CTL as u64)) && e.ssp.is_some()
+                if e.psid == Psid(Integer::from(u64::from(AID::CRL)))
+                    || e.psid == Psid(Integer::from(u64::from(AID::CTL))) && e.ssp.is_some()
                 {
                     Some(e)
                 } else {

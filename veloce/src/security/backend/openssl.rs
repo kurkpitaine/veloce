@@ -68,7 +68,7 @@ impl OpensslBackend {
 
         let ec_point = match point {
             // Already compressed form.
-            EccPoint::XCoordinateOnly(c) => return Err(BackendError::UnsupportedCompression),
+            EccPoint::XCoordinateOnly(_) => return Err(BackendError::UnsupportedCompression),
             EccPoint::CompressedY0(_) | EccPoint::CompressedY1(_) => return Ok(point),
             EccPoint::Uncompressed(c) => {
                 let x = BigNum::from_slice(&c.x).map_err(BackendError::OpenSSL)?;

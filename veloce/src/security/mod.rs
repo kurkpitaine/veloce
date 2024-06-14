@@ -13,10 +13,10 @@ use veloce_asn1::{
     prelude::rasn::types::FixedOctetString,
 };
 
-pub mod aid;
 pub mod backend;
 pub mod certificate;
 mod certificate_cache;
+pub mod permission;
 pub mod secured_message;
 pub mod service;
 pub mod signature;

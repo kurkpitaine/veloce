@@ -23,7 +23,7 @@ pub mod scr;
 /// SSP result type.
 pub type SspResult<T> = core::result::Result<T, SspError>;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// SSP error type.
 pub enum SspError {
@@ -41,11 +41,11 @@ const SSP_VERSION: u8 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Generic Service Specific Permissions container.
-pub struct Ssp<const N: usize> {
+pub struct SspContainer<const N: usize> {
     inner: [u8; N],
 }
 
-impl<const N: usize> Ssp<N> {
+impl<const N: usize> SspContainer<N> {
     /// Constructs an SSP container with zero values.
     /// Sets the version byte to [SSP_VERSION].
     pub const fn new() -> Self {

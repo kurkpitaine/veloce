@@ -5,7 +5,7 @@ use veloce_asn1::{
             self, EccP256CurvePoint, EccP384CurvePoint, PublicVerificationKey,
         },
     },
-    prelude::rasn,
+    prelude::rasn::{self, types::FixedOctetString},
 };
 
 use crate::{
@@ -15,6 +15,7 @@ use crate::{
 
 use super::{
     backend::Backend,
+    permission::{Permission, PermissionError},
     signature::{EcdsaSignature, EcdsaSignatureError, EcdsaSignatureInner},
     EccPoint, EcdsaKey, EcdsaKeyError, EciesKeyError, HashAlgorithm, HashedId8, Issuer,
 };
@@ -38,6 +39,13 @@ pub struct ValidityPeriod {
     pub end: TAI2004,
 }
 
+impl ValidityPeriod {
+    /// Check if `self` contains `other` [ValidityPeriod].
+    pub fn contains(&self, other: &ValidityPeriod) -> bool {
+        self.start <= other.start && self.end >= other.end
+    }
+}
+
 pub type CertificateResult<T> = core::result::Result<T, CertificateError>;
 
 /// Certificate errors.
@@ -51,11 +59,17 @@ pub enum CertificateError {
     Malformed,
     /// Certificate does not have permissions.
     NoPermissions,
+    /// Permission error.
+    Permission(PermissionError),
     /// Certificate does not contain allowed permissions.
     IllegalPermissions,
     /// Certificate signer is unknown, and therefore the certificate
     /// cannot be checked.
-    UnknownSigner,
+    UnknownSigner(HashedId8),
+    /// Certificate has an inconsistent validity period with the signer.
+    InconsistentValidityPeriod,
+    /// Certificate has an inconsistent permissions with the signer.
+    InconsistentPermissions,
     /// Certificate Id type is unexpected.
     UnexpectedId,
     /// Certificate temporal validity is expired.
@@ -133,14 +147,35 @@ impl Certificate {
         use ieee1609Dot2::CertificateId;
 
         let tbs = &cert.0.to_be_signed;
+
+        // The component id of type CertificateId constrained to choice type name or none.
         match tbs.id {
-            CertificateId::linkageData(_) | CertificateId::binaryId(_) => {
-                return Err(CertificateError::Malformed)
-            }
-            _ => {}
+            CertificateId::name(_) | CertificateId::none(_) => {}
+            _ => return Err(CertificateError::Malformed),
         }
 
+        // The component cracaId set to 000000'H.
+        if tbs.craca_id.0 != FixedOctetString::<3>::from([0; 3]) {
+            return Err(CertificateError::Malformed);
+        }
+
+        // The component crlSeries set to 0'D.
+        if tbs.crl_series.0 .0 != 0 {
+            return Err(CertificateError::Malformed);
+        }
+
+        // At least one of the components appPermissions and certIssuePermissions shall be present.
+        if tbs.app_permissions.is_none() && tbs.cert_issue_permissions.is_none() {
+            return Err(CertificateError::Malformed);
+        }
+
+        // The component certRequestPermissions absent. The component canRequestRollover absent.
         if tbs.cert_request_permissions.is_some() || tbs.can_request_rollover.is_some() {
+            return Err(CertificateError::Malformed);
+        }
+
+        // The component signature of EtsiTs103097Certificate shall be of type Signature.
+        if cert.0.signature.is_none() {
             return Err(CertificateError::Malformed);
         }
 
@@ -336,6 +371,46 @@ pub trait CertificateTrait {
 }
 
 pub trait ExplicitCertificate: CertificateTrait {
+    /// Get the application permissions of the certificate.
+    fn application_permissions(&self) -> CertificateResult<Vec<Permission>> {
+        let inner = self.inner();
+        let mut permissions = Vec::new();
+
+        if let Some(seq) = &inner.0.to_be_signed.app_permissions {
+            for ps in &seq.0 {
+                let p = Permission::try_from(ps).map_err(CertificateError::Permission)?;
+                permissions.push(p);
+            }
+        }
+
+        Ok(permissions)
+    }
+
+    /// Get the issue permissions of the certificate.
+    fn issue_permissions(&self) -> CertificateResult<Vec<Permission>> {
+        use ieee1609Dot2::SubjectPermissions;
+
+        let inner = self.inner();
+        let mut permissions = Vec::new();
+
+        if let Some(seq) = &inner.0.to_be_signed.cert_issue_permissions {
+            for group in &seq.0 {
+                match &group.subject_permissions {
+                    SubjectPermissions::explicit(s) => {
+                        for psr in &s.0 {
+                            let p =
+                                Permission::try_from(psr).map_err(CertificateError::Permission)?;
+                            permissions.push(p);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(permissions)
+    }
+
     /// Checks the certificate validity and signature.
     fn check<F, B, C>(&self, timestamp: Instant, backend: &B, f: F) -> CertificateResult<bool>
     where
@@ -343,8 +418,10 @@ pub trait ExplicitCertificate: CertificateTrait {
         C: ExplicitCertificate,
         F: FnOnce(HashedId8) -> Option<C>,
     {
+        let validity_period = self.validity_period();
+
         // Check validity period.
-        if self.validity_period().end <= TAI2004::from_unix_instant(timestamp) {
+        if validity_period.end <= TAI2004::from_unix_instant(timestamp) {
             return Err(CertificateError::Expired);
         }
 
@@ -360,7 +437,25 @@ pub trait ExplicitCertificate: CertificateTrait {
         };
 
         // Get matching signer certificate.
-        let signer_cert = f(signer_id).ok_or(CertificateError::UnknownSigner)?;
+        let signer_cert = f(signer_id).ok_or(CertificateError::UnknownSigner(signer_id))?;
+
+        // Check time consistency between self and signer.
+        let signer_validity = signer_cert.validity_period();
+        if !signer_validity.contains(&validity_period) {
+            return Err(CertificateError::InconsistentValidityPeriod);
+        }
+
+        // Check issuing permissions consistency between self and signer.
+        let signer_permissions = signer_cert.issue_permissions()?;
+        let permissions = self.issue_permissions()?;
+        if !permissions.iter().all(|p| {
+            signer_permissions
+                .iter()
+                .find(|e| e.aid() == p.aid())
+                .is_some()
+        }) {
+            return Err(CertificateError::InconsistentPermissions);
+        }
 
         // Get public verification key.
         let signer_pubkey = signer_cert.public_verification_key()?;

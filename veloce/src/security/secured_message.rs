@@ -13,6 +13,8 @@ use crate::{security::certificate::Certificate, time::TAI2004};
 
 use super::signature::{EcdsaSignature, EcdsaSignatureError};
 
+pub type SecuredMessageResult<T> = core::result::Result<T, SecuredMessageError>;
+
 #[derive(Debug)]
 /// Secured message signer identifier method. See [SecuredMessage::signer_identifier].
 pub enum SignerIdentifier {
@@ -66,14 +68,14 @@ pub struct SecuredMessage {
 
 impl SecuredMessage {
     /// Constructs a [SecuredMessage] from bytes.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SecuredMessageError> {
+    pub fn from_bytes(bytes: &[u8]) -> SecuredMessageResult<Self> {
         Ok(Self {
             inner: Self::decode(bytes)?,
         })
     }
 
     /// Returns the generation time field of the secured message.
-    pub fn generation_time(&self) -> Result<TAI2004, SecuredMessageError> {
+    pub fn generation_time(&self) -> SecuredMessageResult<TAI2004> {
         use ieee1609Dot2::Ieee1609Dot2Content;
 
         let Ieee1609Dot2Content::signedData(ref sd) = self.inner.0 .0.content else {
@@ -89,7 +91,7 @@ impl SecuredMessage {
     }
 
     /// Returns the message signature.
-    pub fn signature(&self) -> Result<EcdsaSignature, SecuredMessageError> {
+    pub fn signature(&self) -> SecuredMessageResult<EcdsaSignature> {
         use ieee1609Dot2::Ieee1609Dot2Content;
 
         let Ieee1609Dot2Content::signedData(ref sd) = self.inner.0 .0.content else {
@@ -103,7 +105,7 @@ impl SecuredMessage {
     }
 
     /// Returns the signer identifier field of the secured message.
-    pub fn signer_identifier(&self) -> Result<SignerIdentifier, SecuredMessageError> {
+    pub fn signer_identifier(&self) -> SecuredMessageResult<SignerIdentifier> {
         use ieee1609Dot2::Ieee1609Dot2Content;
 
         let Ieee1609Dot2Content::signedData(ref sd) = self.inner.0 .0.content else {
@@ -126,11 +128,11 @@ impl SecuredMessage {
         Ok(signer_id)
     }
 
-    fn decode(bytes: &[u8]) -> Result<EtsiTs103097DataSigned, SecuredMessageError> {
+    fn decode(bytes: &[u8]) -> SecuredMessageResult<EtsiTs103097DataSigned> {
         let data = rasn::coer::decode::<EtsiTs103097DataSigned>(bytes)
             .map_err(SecuredMessageError::Asn1)?;
 
-        Self::verify_etsi_data_signed(&data)?;
+        Self::verify_etsi_data_signed_constraints(&data)?;
 
         Ok(data)
     }
@@ -139,10 +141,12 @@ impl SecuredMessage {
     /// This method is necessary as the rasn Asn.1 compiler does not generate
     /// the validation code for custom parameterized types.
     #[inline]
-    fn verify_etsi_data_signed(data: &EtsiTs103097DataSigned) -> Result<(), SecuredMessageError> {
+    fn verify_etsi_data_signed_constraints(
+        data: &EtsiTs103097DataSigned,
+    ) -> SecuredMessageResult<()> {
         use ieee1609Dot2::Ieee1609Dot2Content;
 
-        SecuredMessage::verify_etsi_data(&data.0)?;
+        SecuredMessage::verify_etsi_data_constraints(&data.0)?;
 
         let signed_data = match data.0 .0.content {
             Ieee1609Dot2Content::signedData(ref sd) => sd,
@@ -165,7 +169,7 @@ impl SecuredMessage {
     /// This method is necessary as the rasn Asn.1 compiler does not generate
     /// the validation code for custom parameterized types.
     #[inline]
-    fn verify_etsi_data(data: &EtsiTs103097Data) -> Result<(), SecuredMessageError> {
+    fn verify_etsi_data_constraints(data: &EtsiTs103097Data) -> SecuredMessageResult<()> {
         use ieee1609Dot2::{Ieee1609Dot2Content, RecipientInfo, SignerIdentifier};
         if data.0.protocol_version.0 != 3 {
             return Err(SecuredMessageError::UnsupportedProtocolVersion);

@@ -59,15 +59,25 @@ fn tlm_cert_valid() {
 }
 
 #[test]
-fn tlm_ea_valid() {
+fn ea_cert_valid() {
     let backend = openssl_backend();
-    let cert = load_ea_cert();
-    let _ = EnrollmentAuthorityCertificate::from_etsi_cert(cert.0, &backend).unwrap();
+    let raw_cert = load_ea_cert();
+    let root_cert = RootCertificate::from_etsi_cert(load_root_cert().0, &backend).unwrap();
+    let ea_cert = EnrollmentAuthorityCertificate::from_etsi_cert(raw_cert.0, &backend).unwrap();
+
+    assert!(ea_cert
+        .check(Instant::now(), &backend, |_| Some(root_cert))
+        .unwrap());
 }
 
 #[test]
-fn tlm_aa_valid() {
+fn aa_cert_valid() {
     let backend = openssl_backend();
-    let cert = load_aa_cert();
-    let _ = AuthorizationAuthorityCertificate::from_etsi_cert(cert.0, &backend).unwrap();
+    let raw_cert = load_aa_cert();
+    let root_cert = RootCertificate::from_etsi_cert(load_root_cert().0, &backend).unwrap();
+    let aa_cert = AuthorizationAuthorityCertificate::from_etsi_cert(raw_cert.0, &backend).unwrap();
+
+    assert!(aa_cert
+        .check(Instant::now(), &backend, |_| Some(root_cert))
+        .unwrap());
 }
