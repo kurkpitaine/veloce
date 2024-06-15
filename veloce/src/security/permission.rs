@@ -107,7 +107,7 @@ impl Permission {
             Permission::CRL { .. } => AID::CRL,
             Permission::CTL { .. } => AID::CTL,
             Permission::SCR { .. } => AID::SCR,
-            Permission::Unknown { aid, .. } => AID::Unknown(*aid),
+            Permission::Unknown { aid, .. } => AID::from(*aid),
         }
     }
 }

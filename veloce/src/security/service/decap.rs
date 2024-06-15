@@ -23,7 +23,7 @@ pub struct DecapConfirm {
     pub permissions: (),
 }
 
-impl SecurityService {
+impl SecurityService<'_> {
     pub fn decap_packet(&mut self, packet: &[u8], timestamp: Instant) -> DecapResult {
         let msg =
             SecuredMessage::from_bytes(packet).map_err(SecurityServiceError::InvalidContent)?;

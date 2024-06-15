@@ -40,9 +40,36 @@ pub struct ValidityPeriod {
 }
 
 impl ValidityPeriod {
+    /// Check if `self` contains [TAI2004] `instant`.
+    pub fn contains_instant(&self, instant: TAI2004) -> bool {
+        instant >= self.start && instant <= self.end
+    }
+
     /// Check if `self` contains `other` [ValidityPeriod].
     pub fn contains(&self, other: &ValidityPeriod) -> bool {
         self.start <= other.start && self.end >= other.end
+    }
+}
+
+/// Generic container to store a certificate along its [HashedId8].
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct CertificateWithHashContainer<C: ExplicitCertificate> {
+    /// Certificate hash.
+    hash: HashedId8,
+    /// Certificate.
+    cert: C,
+}
+
+impl<C: ExplicitCertificate> CertificateWithHashContainer<C> {
+    /// Get the [HashedId8] of the contained certificate.
+    pub fn hashed_id8(&self) -> HashedId8 {
+        self.hash
+    }
+
+    /// Get a reference on the contained certificate.
+    pub fn certificate(&self) -> &C {
+        &self.cert
     }
 }
 
@@ -519,5 +546,20 @@ pub trait ExplicitCertificate: CertificateTrait {
         };
 
         EcdsaSignature::try_from(s).map_err(CertificateError::Signature)
+    }
+
+    /// Converts the certificate into a [CertificateWithHashContainer].
+    /// This method consumes `self`.
+    fn into_with_hash_container<B>(
+        self,
+        backend: &B,
+    ) -> CertificateResult<CertificateWithHashContainer<Self>>
+    where
+        Self: Sized,
+        B: Backend,
+    {
+        let hash = self.hashed_id8(backend)?;
+
+        Ok(CertificateWithHashContainer { hash, cert: self })
     }
 }

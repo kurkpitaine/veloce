@@ -2,15 +2,20 @@
 //! This implementation supports ETSI TS 103 097 V2.1.1. V1.3.1 and V1.4.1
 //! could be supported also as they use the same Asn.1 message structure.
 
-use veloce_asn1::defs::etsi_103097_v211::{
-    etsi_ts103097Module::{EtsiTs103097Data, EtsiTs103097DataSigned},
-    ieee1609Dot2::{self, Certificate as EtsiCertificate},
-    ieee1609Dot2Base_types::HashedId8,
-};
+use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2::Ieee1609Dot2Content;
 use veloce_asn1::prelude::rasn::{self, error::DecodeError};
+use veloce_asn1::{
+    defs::etsi_103097_v211::{
+        etsi_ts103097Module::{EtsiTs103097Data, EtsiTs103097DataSigned},
+        ieee1609Dot2::{self, Certificate as EtsiCertificate},
+        ieee1609Dot2Base_types::HashedId8,
+    },
+    prelude::rasn::error::EncodeError,
+};
 
 use crate::{security::certificate::Certificate, time::TAI2004};
 
+use super::permission::AID;
 use super::signature::{EcdsaSignature, EcdsaSignatureError};
 
 pub type SecuredMessageResult<T> = core::result::Result<T, SecuredMessageError>;
@@ -30,7 +35,9 @@ pub enum SignerIdentifier {
 /// Secured message errors.
 pub enum SecuredMessageError {
     /// Asn.1 decoding error.
-    Asn1(DecodeError),
+    Asn1Decode(DecodeError),
+    /// Asn.1 encoding error.
+    Asn1Encode(EncodeError),
     /// Security protocol version is not supported.
     UnsupportedProtocolVersion,
     /// Secured message content is malformed, ie: a mandatory field
@@ -51,6 +58,8 @@ pub enum SecuredMessageError {
     Signature(EcdsaSignatureError),
     /// Signer identifier type is not supported.
     UnsupportedSignerIdentifier,
+    /// AID format is not supported.
+    UnsupportedAIDFormat,
     /// Message does not contain data. [ieee1609Dot2::SignedDataPayload::data] should be present.
     NoData,
     /// Message data is of wrong type. Should be [ieee1609Dot2::Ieee1609Dot2Content::unsecuredData].
@@ -74,10 +83,29 @@ impl SecuredMessage {
         })
     }
 
+    /// Get the secured message `to_be_signed` content bytes, encoded as Asn.1 COER.
+    pub fn to_be_signed_bytes(&self) -> SecuredMessageResult<Vec<u8>> {
+        let Ieee1609Dot2Content::signedData(sd) = &self.inner.0 .0.content else {
+            return Err(SecuredMessageError::NotSigned);
+        };
+
+        Ok(rasn::coer::encode(&sd.tbs_data).map_err(SecuredMessageError::Asn1Encode)?)
+    }
+
+    /// Get the AID of the secured message.
+    pub fn application_id(&self) -> SecuredMessageResult<AID> {
+        let Ieee1609Dot2Content::signedData(sd) = &self.inner.0 .0.content else {
+            return Err(SecuredMessageError::NotSigned);
+        };
+
+        let aid = AID::try_from(&sd.tbs_data.header_info.psid.0)
+            .map_err(|_| SecuredMessageError::UnsupportedAIDFormat)?;
+
+        Ok(aid)
+    }
+
     /// Returns the generation time field of the secured message.
     pub fn generation_time(&self) -> SecuredMessageResult<TAI2004> {
-        use ieee1609Dot2::Ieee1609Dot2Content;
-
         let Ieee1609Dot2Content::signedData(ref sd) = self.inner.0 .0.content else {
             return Err(SecuredMessageError::NotSigned);
         };
@@ -87,13 +115,11 @@ impl SecuredMessage {
             .generation_time
             .as_ref()
             .ok_or(SecuredMessageError::NoGenerationTime)
-            .map(|gen_time| TAI2004::from_millis_const(gen_time.0 .0 as i64))
+            .map(|gen_time| TAI2004::from_micros_const(gen_time.0 .0 as i64))
     }
 
     /// Returns the message signature.
     pub fn signature(&self) -> SecuredMessageResult<EcdsaSignature> {
-        use ieee1609Dot2::Ieee1609Dot2Content;
-
         let Ieee1609Dot2Content::signedData(ref sd) = self.inner.0 .0.content else {
             return Err(SecuredMessageError::NotSigned);
         };
@@ -106,8 +132,6 @@ impl SecuredMessage {
 
     /// Returns the signer identifier field of the secured message.
     pub fn signer_identifier(&self) -> SecuredMessageResult<SignerIdentifier> {
-        use ieee1609Dot2::Ieee1609Dot2Content;
-
         let Ieee1609Dot2Content::signedData(ref sd) = self.inner.0 .0.content else {
             return Err(SecuredMessageError::NotSigned);
         };
@@ -130,7 +154,7 @@ impl SecuredMessage {
 
     fn decode(bytes: &[u8]) -> SecuredMessageResult<EtsiTs103097DataSigned> {
         let data = rasn::coer::decode::<EtsiTs103097DataSigned>(bytes)
-            .map_err(SecuredMessageError::Asn1)?;
+            .map_err(SecuredMessageError::Asn1Decode)?;
 
         Self::verify_etsi_data_signed_constraints(&data)?;
 
@@ -144,8 +168,6 @@ impl SecuredMessage {
     fn verify_etsi_data_signed_constraints(
         data: &EtsiTs103097DataSigned,
     ) -> SecuredMessageResult<()> {
-        use ieee1609Dot2::Ieee1609Dot2Content;
-
         SecuredMessage::verify_etsi_data_constraints(&data.0)?;
 
         let signed_data = match data.0 .0.content {
@@ -170,7 +192,7 @@ impl SecuredMessage {
     /// the validation code for custom parameterized types.
     #[inline]
     fn verify_etsi_data_constraints(data: &EtsiTs103097Data) -> SecuredMessageResult<()> {
-        use ieee1609Dot2::{Ieee1609Dot2Content, RecipientInfo, SignerIdentifier};
+        use ieee1609Dot2::{RecipientInfo, SignerIdentifier};
         if data.0.protocol_version.0 != 3 {
             return Err(SecuredMessageError::UnsupportedProtocolVersion);
         }

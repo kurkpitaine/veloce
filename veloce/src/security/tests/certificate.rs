@@ -11,7 +11,7 @@ use crate::{
     time::Instant,
 };
 
-fn openssl_backend() -> OpensslBackend {
+pub fn openssl_backend() -> OpensslBackend {
     let config = OpensslBackendConfig {
         canonical_key_path: String::new(),
         canonical_key_passwd: "test1234".to_string(),
@@ -20,22 +20,22 @@ fn openssl_backend() -> OpensslBackend {
     OpensslBackend::new(config)
 }
 
-fn load_root_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_root_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
     let input_root = include_bytes!("assets/RCA.cert");
     rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_root).unwrap()
 }
 
-fn load_ea_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_ea_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
     let input_ea = include_bytes!("assets/EA.cert");
     rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_ea).unwrap()
 }
 
-fn load_aa_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_aa_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
     let input_aa = include_bytes!("assets/AA.cert");
     rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_aa).unwrap()
 }
 
-fn load_tlm_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_tlm_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
     let input_tlm = include_bytes!("assets/TLM.cert");
     rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_tlm).unwrap()
 }

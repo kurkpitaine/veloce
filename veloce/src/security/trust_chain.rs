@@ -1,58 +1,77 @@
 //! A trust chain contains a PKI signing certificates, ie: RCA, EA and AA certificates.
 //! Also, it contains the Certificate Revocation List.
 
-use super::{certificate::{AuthorizationAuthorityCertificate, EnrollmentAuthorityCertificate, RootCertificate}, HashedId8};
+use super::{
+    certificate::{
+        AuthorizationAuthorityCertificate, CertificateWithHashContainer,
+        EnrollmentAuthorityCertificate, RootCertificate,
+    },
+    HashedId8,
+};
+
+type Container<C> = CertificateWithHashContainer<C>;
 
 /// A certificate trust chain.
 pub struct TrustChain {
     /// Root certificate of the trust chain.
-    root_cert: RootCertificate,
+    root_cert: Container<RootCertificate>,
     /// Enrollment Authority certificate of the trust chain.
-    ea_cert: Option<EnrollmentAuthorityCertificate>,
+    ea_cert: Option<Container<EnrollmentAuthorityCertificate>>,
     /// Authorization Authority certificate of the trust chain.
-    aa_cert: Option<AuthorizationAuthorityCertificate>,
-    /// Revocated certificates.
-    revocated_certs: Vec<HashedId8>,
+    aa_cert: Option<Container<AuthorizationAuthorityCertificate>>,
+    /// Revoked certificates.
+    revoked_certs: Vec<HashedId8>,
 }
 
 impl TrustChain {
     /// Create a [TrustChain] with `root_cert` as root of trust.
-    pub fn new(root_cert: RootCertificate) -> Self {
+    pub fn new(root_cert: Container<RootCertificate>) -> Self {
         Self {
             root_cert,
             ea_cert: None,
             aa_cert: None,
-            revocated_certs: Vec::new(),
+            revoked_certs: Vec::new(),
         }
     }
 
-    /// Returns the Root certificate.
-    pub fn root_cert(&self) -> RootCertificate {
-        self.root_cert.clone()
+    /// Get a reference on the Root certificate.
+    pub fn root_cert(&self) -> &Container<RootCertificate> {
+        &self.root_cert
     }
 
-    /// Returns the Enrollment Authority certificate, if any.
-    pub fn ea_cert(&self) -> Option<EnrollmentAuthorityCertificate> {
-        self.ea_cert.clone()
+    /// Get a reference on the Enrollment Authority certificate, if any.
+    pub fn ea_cert(&self) -> &Option<Container<EnrollmentAuthorityCertificate>> {
+        &self.ea_cert
     }
 
-    /// Returns the Authorization Authority certificate, if any.
-    pub fn aa_cert(&self) -> Option<AuthorizationAuthorityCertificate> {
-        self.aa_cert.clone()
+    /// Get a reference on the Authorization Authority certificate, if any.
+    pub fn aa_cert(&self) -> &Option<Container<AuthorizationAuthorityCertificate>> {
+        &self.aa_cert
     }
 
     /// Set the Enrollment Authority Certificate.
-    pub fn set_ea_cert(&mut self, ea_cert: EnrollmentAuthorityCertificate) {
+    pub fn set_ea_cert(&mut self, ea_cert: Container<EnrollmentAuthorityCertificate>) {
         self.ea_cert = Some(ea_cert);
     }
 
     /// Set the Authorization Authority Certificate.
-    pub fn set_aa_cert(&mut self, aa_cert: AuthorizationAuthorityCertificate) {
+    pub fn set_aa_cert(&mut self, aa_cert: Container<AuthorizationAuthorityCertificate>) {
         self.aa_cert = Some(aa_cert);
     }
 
-    /// Add a certificate [HashedId8] to the revocated certificates list.
-    pub fn add_revocated_cert(&mut self, digest: HashedId8) {
-        self.revocated_certs.push(digest);
+    /// Add a certificate [HashedId8] to the revoked certificates list.
+    pub fn add_revoked_cert(&mut self, digest: HashedId8) {
+        self.revoked_certs.push(digest);
+    }
+
+    /// Clears the revoked certificates list.
+    pub fn clear_revoked_certs(&mut self) {
+        self.revoked_certs.clear();
+    }
+
+    /// Query whether the certificate identifier `hash` is in the revoked
+    /// certificates list.
+    pub fn is_revoked(&self, hash: HashedId8) -> bool {
+        self.revoked_certs.contains(&hash)
     }
 }

@@ -20,15 +20,43 @@ pub struct Store {
 }
 
 impl Store {
-    /// Check the certificate identified with `hash` is known as revoked
-    /// across any known trust chain.
-    pub fn is_revoked(&self, _hash: HashedId8) -> bool {
-        false
+    /// Constructs a [Store] with the local trust chain `own_chain`.
+    pub fn new(own_chain: TrustChain) -> Self {
+        Self {
+            own_chain,
+            remote_chains: BTreeMap::new(),
+        }
+    }
+
+    /// Query whether the certificate identifier `hash` is in the revoked
+    /// certificates list of any trust chain.
+    pub fn is_revoked(&self, hash: HashedId8) -> bool {
+        if self.own_chain.is_revoked(hash) {
+            return true;
+        }
+
+        self.remote_chains
+            .iter()
+            .any(|(_, chain)| chain.is_revoked(hash))
     }
 
     /// Lookup into the own and the remote chains for an [AuthorizationAuthorityCertificate]
     /// identified with `hash`.
-    pub fn lookup_aa(&self, _hash: HashedId8) -> Option<AuthorizationAuthorityCertificate> {
+    pub fn lookup_aa(&self, hash: HashedId8) -> Option<AuthorizationAuthorityCertificate> {
+        match self.own_chain.aa_cert() {
+            Some(own_aa) if own_aa.hashed_id8() == hash => {
+                return Some(own_aa.certificate().clone())
+            }
+            _ => {}
+        }
+
+        self.remote_chains
+            .iter()
+            .find_map(|(_, chain)| match chain.aa_cert() {
+                Some(aa) if aa.hashed_id8() == hash => return Some(aa.certificate().clone()),
+                _ => None,
+            });
+
         None
     }
 }
