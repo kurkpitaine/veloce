@@ -14,13 +14,15 @@ mod location_service;
 mod location_table;
 mod socket_set;
 
-mod v2x_packet;
+mod packet;
 
 pub(crate) use self::congestion::Congestion;
 pub use self::interface::{
     congestion::CongestionControl, Config, Interface, InterfaceInner as Context,
 };
 
-pub(crate) use self::interface::InterfaceServices as ContextMeta;
+#[cfg(all(test, feature = "proto-security"))]
+pub(crate) use self::interface::DecapContext;
+pub(crate) use self::interface::InterfaceContext as ContextMeta;
+pub(crate) use self::packet::EthernetPacket;
 pub use self::socket_set::{SocketHandle, SocketSet, SocketStorage};
-pub(crate) use self::v2x_packet::{GeonetPacket, GeonetPayload};

@@ -1,3 +1,5 @@
+use core::fmt;
+
 use veloce_asn1::{
     defs::etsi_103097_v211::ieee1609Dot2Base_types::{
         BitmapSsp, BitmapSspRange, PsidSsp, PsidSspRange, ServiceSpecificPermissions, SspRange,
@@ -5,7 +7,7 @@ use veloce_asn1::{
     prelude::rasn::types::Integer,
 };
 
-use super::ssp::{crl::CrlSsp, ctl::CtlSsp, scr::ScrSsp, SspError};
+use super::ssp::{crl::CrlSsp, ctl::CtlSsp, scr::ScrSsp, SspError, SspTrait};
 
 enum_with_unknown! {
     /// ITS Application Object Identifier Registration numbers, as ETSI TS 102 965 V2.1.1.
@@ -45,6 +47,12 @@ enum_with_unknown! {
    }
 }
 
+impl fmt::Display for AID {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 pub struct AIDUnsupportedFormatError;
 
 impl TryFrom<&Integer> for AID {
@@ -65,6 +73,22 @@ impl TryFrom<&Integer> for AID {
     }
 }
 
+impl Into<Integer> for AID {
+    fn into(self) -> Integer {
+        u64::from(self).into()
+    }
+}
+
+/// Generic container for SSPs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct PermissionSspContainer<S: SspTrait> {
+    /// SSP.
+    pub ssp: S,
+    /// Mask for SSP Range.
+    pub mask: Option<Vec<u8>>,
+}
+
 /// Permission error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -81,17 +105,28 @@ pub enum PermissionError {
     SSP(SspError),
 }
 
+impl fmt::Display for PermissionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PermissionError::UnsupportedAIDFormat => write!(f, "Unsupported AID format"),
+            PermissionError::UnsupportedSSPFormat => write!(f, "Unsupported SSP format"),
+            PermissionError::NoSSP(aid) => write!(f, "No SSP for AID: {}", aid),
+            PermissionError::LenMismatch => write!(f, "SSP and mask length mismatch"),
+            PermissionError::SSP(e) => write!(f, "SSP error: {}", e),
+        }
+    }
+}
+
 /// Signing permission.
-/// the `mask` field of each variant is used to describe an SSP Range type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Permission {
     /// Certificate Revocation List service permission.
-    CRL { ssp: CrlSsp, mask: Option<Vec<u8>> },
+    CRL(PermissionSspContainer<CrlSsp>),
     /// Certificate Trust List service permission.
-    CTL { ssp: CtlSsp, mask: Option<Vec<u8>> },
+    CTL(PermissionSspContainer<CtlSsp>),
     /// Secured Certificate Request service permission.
-    SCR { ssp: ScrSsp, mask: Option<Vec<u8>> },
+    SCR(PermissionSspContainer<ScrSsp>),
     /// Fallback variant for an unknown permission type.
     Unknown {
         aid: u64,
@@ -104,10 +139,23 @@ impl Permission {
     /// Get the AID of the permission.
     pub fn aid(&self) -> AID {
         match self {
-            Permission::CRL { .. } => AID::CRL,
-            Permission::CTL { .. } => AID::CTL,
-            Permission::SCR { .. } => AID::SCR,
+            Permission::CRL(_) => AID::CRL,
+            Permission::CTL(_) => AID::CTL,
+            Permission::SCR(_) => AID::SCR,
             Permission::Unknown { aid, .. } => AID::from(*aid),
+        }
+    }
+
+    pub fn contains_permissions_of(&self, other: &Permission) -> bool {
+        match (self, other) {
+            (Permission::CRL(l), Permission::CRL(r)) => l.ssp.contains_permissions_of(&r.ssp),
+            (Permission::CTL(l), Permission::CTL(r)) => l.ssp.contains_permissions_of(&r.ssp),
+            (Permission::SCR(l), Permission::SCR(r)) => l.ssp.contains_permissions_of(&r.ssp),
+            (
+                Permission::Unknown { ssp: Some(l), .. },
+                Permission::Unknown { ssp: Some(r), .. },
+            ) if l.len() == r.len() => l.iter().zip(r.iter()).all(|(lv, rv)| lv | *rv == *lv),
+            _ => false,
         }
     }
 }
@@ -136,20 +184,19 @@ impl<'a> TryFrom<&'a PsidSsp> for Permission {
             AID::CRL => {
                 let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CrlSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
-
-                Permission::CRL { ssp, mask: None }
+                Permission::CRL(PermissionSspContainer { ssp, mask: None })
             }
             AID::SCR => {
                 let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = ScrSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
 
-                Permission::SCR { ssp, mask: None }
+                Permission::SCR(PermissionSspContainer { ssp, mask: None })
             }
             AID::CTL => {
                 let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CtlSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
 
-                Permission::CTL { ssp, mask: None }
+                Permission::CTL(PermissionSspContainer { ssp, mask: None })
             }
             _ => {
                 let raw = extract_ssp(&value)?;
@@ -197,21 +244,21 @@ impl<'a> TryFrom<&'a PsidSspRange> for Permission {
                 let ssp = CrlSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
                 let mask = Some(range.ssp_bitmask.to_vec());
 
-                Permission::CRL { ssp, mask }
+                Permission::CRL(PermissionSspContainer { ssp, mask })
             }
             AID::SCR => {
                 let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = ScrSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
                 let mask = Some(range.ssp_bitmask.to_vec());
 
-                Permission::SCR { ssp, mask }
+                Permission::SCR(PermissionSspContainer { ssp, mask })
             }
             AID::CTL => {
                 let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CtlSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
                 let mask = Some(range.ssp_bitmask.to_vec());
 
-                Permission::CTL { ssp, mask }
+                Permission::CTL(PermissionSspContainer { ssp, mask })
             }
             _ => {
                 let range = extract_ssp_range(&value)?;

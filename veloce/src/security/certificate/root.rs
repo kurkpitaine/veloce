@@ -7,7 +7,7 @@ use veloce_asn1::{
 };
 
 use crate::{
-    security::{backend::Backend, permission::AID, HashAlgorithm},
+    security::{backend::BackendTrait, permission::AID, HashAlgorithm},
     time::{Instant, TAI2004},
 };
 
@@ -30,7 +30,7 @@ impl RootCertificate {
     /// Certificate is also canonicalized if necessary.
     pub fn from_etsi_cert(
         cert: EtsiCertificate,
-        backend: &impl Backend,
+        backend: &impl BackendTrait,
     ) -> CertificateResult<RootCertificate> {
         Certificate::verify_ieee_constraints(&cert)?;
         Certificate::verify_etsi_constraints(&cert)?;
@@ -46,7 +46,7 @@ impl RootCertificate {
 impl ExplicitCertificate for RootCertificate {
     fn check<F, B, C>(&self, timestamp: Instant, backend: &B, _f: F) -> CertificateResult<bool>
     where
-        B: Backend + ?Sized,
+        B: BackendTrait + ?Sized,
         C: ExplicitCertificate,
         F: FnOnce(crate::security::HashedId8) -> Option<C>,
     {

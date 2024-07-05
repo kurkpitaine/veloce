@@ -17,7 +17,10 @@ use crate::socket::{PollAt, SendError};
 use crate::{config, wire};
 
 use crate::storage::Empty;
-use crate::wire::{BtpBHeader, BtpBRepr, EthernetAddress, GeonetRepr};
+use crate::wire::{
+    BtpBHeader, BtpBRepr, EthernetAddress, GeonetGeoAnycast, GeonetGeoBroadcast, GeonetSingleHop,
+    GeonetTopoBroadcast, GeonetUnicast, GeonetVariant,
+};
 
 /// Packet metadata.
 pub type RxPacketMetadata = crate::storage::PacketMetadata<Indication>;
@@ -379,7 +382,7 @@ impl<'a> Socket<'a> {
             &mut Context,
             &mut GnCore,
             &mut Congestion,
-            (EthernetAddress, GeonetRepr, &[u8]),
+            (EthernetAddress, GeonetVariant, &[u8]),
         ) -> Result<(), E>,
     {
         let res = self.tx_buffer.dequeue_with(|&mut req, payload_buf| {
@@ -401,8 +404,8 @@ impl<'a> Socket<'a> {
                         meta,
                         payload_buf,
                         |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, uc_repr, pl)| {
-                            let gn_repr = GeonetRepr::new_unicast(bh_repr, ch_repr, uc_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
+                            let gn_repr = GeonetUnicast::new(bh_repr, ch_repr, uc_repr);
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
                         },
                     )
                 }
@@ -421,8 +424,8 @@ impl<'a> Socket<'a> {
                         meta,
                         payload_buf,
                         |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, gac_repr, pl)| {
-                            let gn_repr = GeonetRepr::new_anycast(bh_repr, ch_repr, gac_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
+                            let gn_repr = GeonetGeoAnycast::new(bh_repr, ch_repr, gac_repr);
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
                         },
                     )
                 }
@@ -441,8 +444,8 @@ impl<'a> Socket<'a> {
                         meta,
                         payload_buf,
                         |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, gac_repr, pl)| {
-                            let gn_repr = GeonetRepr::new_broadcast(bh_repr, ch_repr, gac_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
+                            let gn_repr = GeonetGeoBroadcast::new(bh_repr, ch_repr, gac_repr);
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
                         },
                     )
                 }
@@ -460,9 +463,8 @@ impl<'a> Socket<'a> {
                         meta,
                         payload_buf,
                         |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, shb_repr, pl)| {
-                            let gn_repr =
-                                GeonetRepr::new_single_hop_broadcast(bh_repr, ch_repr, shb_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
+                            let gn_repr = GeonetSingleHop::new(bh_repr, ch_repr, shb_repr);
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
                         },
                     )
                 }
@@ -480,9 +482,8 @@ impl<'a> Socket<'a> {
                         meta,
                         payload_buf,
                         |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, tsb_repr, pl)| {
-                            let gn_repr =
-                                GeonetRepr::new_topo_scoped_broadcast(bh_repr, ch_repr, tsb_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
+                            let gn_repr = GeonetTopoBroadcast::new(bh_repr, ch_repr, tsb_repr);
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
                         },
                     )
                 }

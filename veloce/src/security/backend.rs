@@ -17,6 +17,8 @@ pub enum BackendError {
     UnsupportedKeyType,
     /// Key format is invalid
     InvalidKeyFormat,
+    /// No signing certificate secret key is available.
+    NoSigningCertSecretKey,
     /// Invalid key.
     InvalidKey,
     /// Backend internal error.
@@ -32,8 +34,30 @@ pub enum BackendError {
 pub type BackendResult<T> = Result<T, BackendError>;
 
 /// Cryptography operations backend.
+#[derive(Debug)]
+pub enum Backend {
+    /// OpenSSL based backend.
+    Openssl(openssl::OpensslBackend),
+}
+
+impl Backend {
+    #[inline]
+    pub(super) fn inner(&self) -> &dyn BackendTrait {
+        match self {
+            Backend::Openssl(backend) => backend,
+        }
+    }
+
+    #[inline]
+    pub(super) fn inner_mut(&mut self) -> &mut dyn BackendTrait {
+        match self {
+            Backend::Openssl(backend) => backend,
+        }
+    }
+}
+
 #[allow(unused_variables)]
-pub trait Backend {
+pub trait BackendTrait {
     /// Generate a key pair for a given `key_type`, and return a [KeyPair] containing the
     /// secret and the public key.
     ///
@@ -56,6 +80,9 @@ pub trait Backend {
         verification_key: EcdsaKey,
         data: &[u8],
     ) -> BackendResult<bool>;
+
+    /// Sign the given `data` slice.
+    fn generate_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature>;
 
     /// Computes the SHA256 hash for a given `data` slice.
     fn sha256(&self, data: &[u8]) -> [u8; 32];

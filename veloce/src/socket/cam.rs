@@ -8,10 +8,10 @@ use crate::network::{GnCore, Transport};
 use crate::socket::{self, btp::SocketB as BtpBSocket, PollAt};
 use crate::time::{Duration, Instant, TAI2004};
 use crate::types::Pseudonym;
-use crate::wire::{self, ports, GnTrafficClass};
+use crate::wire::{self, ports, GeonetVariant, GnTrafficClass};
 
 use crate::storage::PacketBuffer;
-use crate::wire::{EthernetAddress, GeonetRepr, StationType};
+use crate::wire::{EthernetAddress, StationType};
 
 use veloce_asn1::defs::c_a_m__p_d_u__descriptions as cam;
 use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d as cdd;
@@ -190,7 +190,7 @@ impl<'a> Socket<'a> {
             &mut Context,
             &mut GnCore,
             &mut Congestion,
-            (EthernetAddress, GeonetRepr, &[u8]),
+            (EthernetAddress, GeonetVariant, &[u8]),
         ) -> Result<(), E>,
     {
         if !self.inner.is_open() {

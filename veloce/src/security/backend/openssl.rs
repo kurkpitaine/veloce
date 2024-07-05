@@ -10,12 +10,16 @@ use openssl::{
     sign::Verifier,
     symm,
 };
-use std::{fs::File, io::Write};
+use std::{
+    fs::File,
+    io::{self, Read, Result as IoResult, Write},
+};
 
-use super::{Backend, BackendError, BackendResult};
+use super::{BackendError, BackendResult, BackendTrait};
 use crate::security::{
-    signature::EcdsaSignature, EccPoint, EcdsaKey, EcdsaKeyType, EciesKey, HashAlgorithm, KeyPair,
-    PublicKey, SecretKey, UncompressedEccPoint,
+    signature::{EcdsaSignature, EcdsaSignatureInner},
+    EccPoint, EcdsaKey, EcdsaKeyType, EciesKey, HashAlgorithm, KeyPair, PublicKey, SecretKey,
+    UncompressedEccPoint,
 };
 
 #[derive(Debug, Default)]
@@ -24,17 +28,33 @@ pub struct OpensslBackendConfig {
     pub canonical_key_path: String,
     /// Canonical key password.
     pub canonical_key_passwd: String,
+    /// Signing certificate secret key path.
+    pub signing_cert_secret_key_path: Option<String>,
+    /// Signing certificate secret key password.
+    pub signing_cert_secret_key_passwd: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct OpensslBackend {
     /// Backend configuration.
     config: OpensslBackendConfig,
+    /// Signing certificate secret key. Used to sign the messages over the air.
+    signing_cert_secret_key: Option<EcKey<Private>>,
 }
 
 impl OpensslBackend {
     /// Constructs a new [OpensslBackend] with the provided `config`.
-    pub fn new(config: OpensslBackendConfig) -> Self {
-        Self { config }
+    pub fn new(config: OpensslBackendConfig) -> IoResult<Self> {
+        let signing_cert_secret_key = if config.signing_cert_secret_key_path.is_some() {
+            Some(OpensslBackend::load_signing_cert_secret_key(&config)?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            config,
+            signing_cert_secret_key,
+        })
     }
 
     /// Generate a secret key for a given `key_type`.
@@ -104,9 +124,30 @@ impl OpensslBackend {
 
         Ok(res)
     }
+
+    fn load_signing_cert_secret_key(cfg: &OpensslBackendConfig) -> IoResult<EcKey<Private>> {
+        let (path, pwd) = match (
+            &cfg.signing_cert_secret_key_path,
+            &cfg.signing_cert_secret_key_passwd,
+        ) {
+            (Some(path), Some(pwd)) => (path, pwd),
+            _ => {
+                return Err(io::ErrorKind::InvalidInput.into());
+            }
+        };
+
+        let mut content = File::open(&path)?;
+        let mut buf = Vec::new();
+        content.read_to_end(&mut buf)?;
+
+        let key = EcKey::private_key_from_pem_passphrase(&buf, pwd.as_bytes())
+            .map_err(|_| io::ErrorKind::Other)?;
+
+        Ok(key)
+    }
 }
 
-impl Backend for OpensslBackend {
+impl BackendTrait for OpensslBackend {
     fn generate_keypair(&self, key_type: EcdsaKeyType) -> BackendResult<KeyPair> {
         let secret_key =
             OpensslBackend::generate_secret_key(key_type).map_err(BackendError::OpenSSL)?;
@@ -203,17 +244,6 @@ impl Backend for OpensslBackend {
             return Err(BackendError::NotOnCurve);
         }
 
-        /* let mut bn_ctx = BigNumContext::new().unwrap();
-        let mut x = BigNum::new().unwrap();
-        let mut y = BigNum::new().unwrap();
-        ec_point
-            .affine_coordinates(&group, &mut x, &mut y, &mut bn_ctx)
-            .unwrap();
-
-        println!("data: {:02x?}", data);
-        println!("x: {:02x?}", x.to_vec());
-        println!("y: {:02x?}", y.to_vec()); */
-
         let ec_key = EcKey::from_public_key(&group, &ec_point).map_err(BackendError::OpenSSL)?;
         ec_key.check_key().map_err(|_| BackendError::InvalidKey)?;
 
@@ -228,9 +258,6 @@ impl Backend for OpensslBackend {
         let r = BigNum::from_slice(&r).map_err(BackendError::OpenSSL)?;
         let s = BigNum::from_slice(&signature.s).map_err(BackendError::OpenSSL)?;
 
-        /* println!("r: {:02x?}", r.to_vec());
-        println!("s: {:02x?}", s.to_vec()); */
-
         let mut verifier = Verifier::new(msg_digest, &key).map_err(BackendError::OpenSSL)?;
         verifier.update(data).map_err(BackendError::OpenSSL)?;
 
@@ -238,6 +265,19 @@ impl Backend for OpensslBackend {
         let sig_der = signature.to_der().map_err(BackendError::OpenSSL)?;
 
         Ok(verifier.verify(&sig_der).map_err(BackendError::OpenSSL)?)
+    }
+
+    fn generate_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature> {
+        let Some(key) = &self.signing_cert_secret_key else {
+            return Err(BackendError::NoSigningCertSecretKey);
+        };
+
+        let signature = EcdsaSig::sign(data, key).map_err(BackendError::OpenSSL)?;
+
+        Ok(EcdsaSignature::NistP256r1(EcdsaSignatureInner {
+            r: EccPoint::XCoordinateOnly(signature.r().to_vec()),
+            s: signature.s().to_vec(),
+        }))
     }
 
     fn sha256(&self, data: &[u8]) -> [u8; 32] {

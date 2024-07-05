@@ -22,8 +22,6 @@ pub(crate) const GN_LOC_TABLE_ENTRY_LIFETIME: Duration = Duration::from_secs(20)
 pub(crate) const GN_BEACON_SERVICE_RETRANSMIT_TIMER: Duration = Duration::from_millis(3000);
 /// Maximum beacon jitter. Default value is GN_BEACON_SERVICE_RETRANSMIT_TIMER / 4.
 pub(crate) const GN_BEACON_SERVICE_MAX_JITTER: Duration = Duration::from_millis(750);
-/// Flag indicating whether the security is active.
-pub(crate) const GN_SECURITY: bool = false;
 pub(crate) const GN_DEFAULT_HOP_LIMIT: u8 = 10;
 pub(crate) const GN_DEFAULT_TRAFFIC_CLASS: GnTrafficClass = GnTrafficClass::from_byte(&0x00);
 pub(crate) const GN_MAX_PACKET_LIFETIME: Duration = Duration::from_secs(600);
@@ -68,8 +66,6 @@ pub(crate) const BTP_MAX_PL_SIZE: usize = GN_MAX_SDU_SIZE - 4;
 
 /// Maximum size of one DCC queue.
 pub(crate) const DCC_QUEUE_SIZE: usize = 10 * 1000;
-/// Maximum number of elements in one DCC queue.
-pub(crate) const DCC_QUEUE_ENTRY_COUNT: usize = 10;
 
 /// Maximum number of certificates in the security certificate cache.
 pub(crate) const SEC_CERT_CACHE_ENTRY_COUNT: usize = 16;
@@ -82,20 +78,12 @@ mod cfg {
     pub(crate) const GN_LOCATION_SERVICE_MAX_REQS: usize = 5;
     /// Maximum size of the Location Service buffer.
     pub(crate) const GN_LOCATION_SERVICE_PACKET_BUFFER_SIZE: usize = 1024;
-    /// Maximum number of elements in the Location Service buffer.
-    pub(crate) const GN_LOCATION_SERVICE_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
     /// Maximum size of the unicast buffer.
     pub(crate) const GN_UC_FORWARDING_PACKET_BUFFER_SIZE: usize = 256 * 1000;
-    /// Maximum number of elements in the unicast buffer.
-    pub(crate) const GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
     /// Maximum size of the broadcast buffer.
     pub(crate) const GN_BC_FORWARDING_PACKET_BUFFER_SIZE: usize = 1024 * 1000;
-    /// Maximum number of elements in the broadcast buffer.
-    pub(crate) const GN_BC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
     /// Maximum size of the contention routing buffer.
     pub(crate) const GN_CBF_PACKET_BUFFER_SIZE: usize = 256 * 1000;
-    /// Maximum number of elements in the broadcast buffer.
-    pub(crate) const GN_CBF_PACKET_BUFFER_ENTRY_COUNT: usize = 256;
 }
 
 #[cfg(test)]
@@ -104,20 +92,12 @@ mod cfg {
     pub(crate) const GN_LOCATION_SERVICE_MAX_REQS: usize = 5;
     /// For tests - Maximum size of the Location Service buffer.
     pub(crate) const GN_LOCATION_SERVICE_PACKET_BUFFER_SIZE: usize = 1024;
-    /// For tests - Maximum number of elements in the Location Service buffer.
-    pub(crate) const GN_LOCATION_SERVICE_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
     /// For tests - Maximum size of the unicast buffer.
     pub(crate) const GN_UC_FORWARDING_PACKET_BUFFER_SIZE: usize = 2048;
-    /// For tests - Maximum number of elements in the unicast buffer.
-    pub(crate) const GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
     /// For tests - Maximum size of the broadcast buffer.
     pub(crate) const GN_BC_FORWARDING_PACKET_BUFFER_SIZE: usize = 4096;
-    /// For tests - Maximum number of elements in the broadcast buffer.
-    pub(crate) const GN_BC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
     /// For tests - Maximum size of the contention routing buffer.
     pub(crate) const GN_CBF_PACKET_BUFFER_SIZE: usize = 2048;
-    /// For tests - Maximum number of elements in the broadcast buffer.
-    pub(crate) const GN_CBF_PACKET_BUFFER_ENTRY_COUNT: usize = 10;
 }
 
 /// The GeoNetworking protocol networking interface type.

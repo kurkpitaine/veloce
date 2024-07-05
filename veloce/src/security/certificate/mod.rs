@@ -1,3 +1,5 @@
+use core::fmt;
+
 use veloce_asn1::{
     defs::etsi_103097_v211::{
         ieee1609Dot2::{self, Certificate as EtsiCertificate, VerificationKeyIndicator},
@@ -14,7 +16,7 @@ use crate::{
 };
 
 use super::{
-    backend::Backend,
+    backend::BackendTrait,
     permission::{Permission, PermissionError},
     signature::{EcdsaSignature, EcdsaSignatureError, EcdsaSignatureInner},
     EccPoint, EcdsaKey, EcdsaKeyError, EciesKeyError, HashAlgorithm, HashedId8, Issuer,
@@ -115,6 +117,32 @@ pub enum CertificateError {
     Backend,
     /// A custom error that does not fall under any other Certificate error kind.
     Other,
+}
+
+impl fmt::Display for CertificateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CertificateError::Asn1 => write!(f, "Asn1 error"),
+            CertificateError::Malformed => write!(f, "Malformed certificate"),
+            CertificateError::NoPermissions => write!(f, "No permissions"),
+            CertificateError::Permission(e) => write!(f, "Permission error: {}", e),
+            CertificateError::IllegalPermissions => write!(f, "Illegal permissions"),
+            CertificateError::UnknownSigner(h) => write!(f, "Unknown signer: {}", h),
+            CertificateError::InconsistentValidityPeriod => {
+                write!(f, "Inconsistent validity period")
+            }
+            CertificateError::InconsistentPermissions => write!(f, "Inconsistent permissions"),
+            CertificateError::UnexpectedId => write!(f, "Unexpected certificate Id"),
+            CertificateError::Expired => write!(f, "Certificate expired"),
+            CertificateError::UnexpectedIssuer => write!(f, "Unexpected issuer"),
+            CertificateError::UnsupportedIssuer => write!(f, "Unsupported issuer"),
+            CertificateError::Signature(e) => write!(f, "Signature error: {}", e),
+            CertificateError::VerificationKey(e) => write!(f, "Verification key error: {}", e),
+            CertificateError::EncryptionKey(e) => write!(f, "Encryption key error: {}", e),
+            CertificateError::Backend => write!(f, "Backend error"),
+            CertificateError::Other => write!(f, "Other error"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -331,7 +359,7 @@ pub trait CertificateTrait {
         backend: &B,
     ) -> CertificateResult<EtsiCertificate>
     where
-        B: Backend + ?Sized,
+        B: BackendTrait + ?Sized,
     {
         // All keys should be in compressed form.
         let tbs = &mut certificate.0.to_be_signed;
@@ -441,7 +469,7 @@ pub trait ExplicitCertificate: CertificateTrait {
     /// Checks the certificate validity and signature.
     fn check<F, B, C>(&self, timestamp: Instant, backend: &B, f: F) -> CertificateResult<bool>
     where
-        B: Backend + ?Sized,
+        B: BackendTrait + ?Sized,
         C: ExplicitCertificate,
         F: FnOnce(HashedId8) -> Option<C>,
     {
@@ -509,7 +537,7 @@ pub trait ExplicitCertificate: CertificateTrait {
     /// Computes the Hashed-id8 of the certificate.
     fn hashed_id8<B>(&self, backend: &B) -> CertificateResult<HashedId8>
     where
-        B: Backend + ?Sized,
+        B: BackendTrait + ?Sized,
     {
         let k = self.public_verification_key()?;
 
@@ -556,7 +584,7 @@ pub trait ExplicitCertificate: CertificateTrait {
     ) -> CertificateResult<CertificateWithHashContainer<Self>>
     where
         Self: Sized,
-        B: Backend,
+        B: BackendTrait,
     {
         let hash = self.hashed_id8(backend)?;
 

@@ -2,15 +2,14 @@ use openssl::{
     bn::{BigNum, BigNumContext},
     ec::{EcGroup, EcKey},
     nid::Nid,
-    pkey::PKey,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 use crate::security::{
     backend::{
         openssl::{OpensslBackend, OpensslBackendConfig},
-        Backend,
+        BackendTrait,
     },
     EccPoint, EcdsaKey, EcdsaKeyType, UncompressedEccPoint,
 };
@@ -28,9 +27,11 @@ fn test_create_canonical_key() {
     let config = OpensslBackendConfig {
         canonical_key_path: canonical_key_path.clone(),
         canonical_key_passwd: "test1234".to_string(),
+        signing_cert_secret_key_path: None,
+        signing_cert_secret_key_passwd: None,
     };
 
-    let backend = OpensslBackend::new(config);
+    let backend = OpensslBackend::new(config).unwrap();
     let _pub_key = backend
         .generate_canonical_keypair(EcdsaKeyType::NistP384r1)
         .unwrap();
@@ -52,7 +53,7 @@ fn test_compress_point() {
         .unwrap();
 
     let config = OpensslBackendConfig::default();
-    let backend = OpensslBackend::new(config);
+    let backend = OpensslBackend::new(config).unwrap();
 
     let key = EcdsaKey::NistP256r1(EccPoint::Uncompressed(UncompressedEccPoint {
         x: x.to_vec(),
@@ -60,4 +61,23 @@ fn test_compress_point() {
     }));
 
     backend.compress_ecdsa_key(key).unwrap();
+}
+
+#[test]
+fn test_load_secret_key() {
+    let mut key_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    key_path.pop();
+    key_path.push(file!());
+    key_path.pop();
+    key_path.push("assets/AT.pem");
+    let key_path = std::fs::canonicalize(key_path).unwrap();
+
+    let config = OpensslBackendConfig {
+        canonical_key_path: "".to_string(),
+        canonical_key_passwd: "".to_string(),
+        signing_cert_secret_key_path: Some(key_path.into_os_string().into_string().unwrap()),
+        signing_cert_secret_key_passwd: Some("test1234".to_string()),
+    };
+
+    OpensslBackend::new(config).unwrap();
 }

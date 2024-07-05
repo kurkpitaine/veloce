@@ -84,13 +84,19 @@ fn test_receive_ls_rep() {
 
     let ctx_meta = meta!(core, iface);
     let pkt_meta = PacketMeta::default();
+    let mut sec_buf = SecuredDataBuffer::default();
 
     let mut buf = [0u8; GUC_LEN];
     geo_uc.emit(&mut buf);
 
-    let res = iface
-        .inner
-        .process_geonet_packet(ctx_meta, &mut sockets, pkt_meta, &buf, ethernet);
+    let res = iface.inner.process_geonet_packet(
+        ctx_meta,
+        &mut sockets,
+        pkt_meta,
+        &buf,
+        ethernet,
+        &mut sec_buf,
+    );
 
     // Processing an Geo Unicast packet with a remaining hop limit > 1 should return.
     assert!(res.is_some());
@@ -101,10 +107,10 @@ fn test_receive_ls_rep() {
     assert!(dst_ll_addr.is_broadcast());
 
     // Packet type
-    let gn_repr = forwarded.geonet_repr();
-    assert!(matches!(gn_repr, GeonetRepr::Unicast(_)));
+    let gn_repr = forwarded.repr().inner();
+    assert!(matches!(gn_repr, GeonetVariant::Unicast(_)));
 
-    if let GeonetRepr::LocationServiceReply(lsr) = gn_repr {
+    if let GeonetVariant::LocationServiceReply(lsr) = gn_repr {
         let guc_spv = lsr.extended_header.source_position_vector;
         let geo_uc_spv = geo_uc.extended_header.source_position_vector;
         let lsr_dpv = lsr.extended_header.destination_position_vector;
@@ -151,24 +157,24 @@ fn test_receive_ls_rep() {
 
     // Basic header
     assert_eq!(
-        forwarded.basic_header().version,
+        gn_repr.basic_header().version,
         geo_uc.basic_header.version
     );
     assert_eq!(
-        forwarded.basic_header().next_header,
+        gn_repr.basic_header().next_header,
         geo_uc.basic_header.next_header
     );
     assert_eq!(
-        forwarded.basic_header().lifetime,
+        gn_repr.basic_header().lifetime,
         geo_uc.basic_header.lifetime
     );
     assert_eq!(
-        forwarded.basic_header().remaining_hop_limit,
+        gn_repr.basic_header().remaining_hop_limit,
         geo_uc.basic_header.remaining_hop_limit - 1
     );
 
     // Common header
-    assert_eq!(forwarded.common_header(), geo_uc.common_header);
+    assert_eq!(gn_repr.common_header(), geo_uc.common_header);
 
     // Station should be in Location table
     let entry_opt = iface.inner.location_table.find(

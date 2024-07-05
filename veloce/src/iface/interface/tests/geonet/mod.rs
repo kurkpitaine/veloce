@@ -31,6 +31,8 @@ macro_rules! meta {
             uc_forwarding_buffer: &mut $iface.uc_forwarding_buffer,
             bc_forwarding_buffer: &mut $iface.bc_forwarding_buffer,
             cb_forwarding_buffer: &mut $iface.cb_forwarding_buffer,
+            #[cfg(feature = "proto-security")]
+            decap_context: &mut DecapContext::default(),
         }
     };
 }
@@ -86,13 +88,19 @@ fn test_receive_beacon() {
 
     let ctx_meta = meta!(core, iface);
     let pkt_meta = PacketMeta::default();
+    let mut sec_buf = SecuredDataBuffer::default();
 
     let mut buf = [0u8; BEACON_LEN];
     beacon.emit(&mut buf);
 
-    let res = iface
-        .inner
-        .process_geonet_packet(ctx_meta, &mut sockets, pkt_meta, &buf, ethernet);
+    let res = iface.inner.process_geonet_packet(
+        ctx_meta,
+        &mut sockets,
+        pkt_meta,
+        &buf,
+        ethernet,
+        &mut sec_buf,
+    );
 
     // Processing a beacon packet should return nothing.
     assert!(res.is_none());

@@ -1,24 +1,29 @@
 use super::check;
 use super::EthernetPacket;
+use super::InterfaceContext;
 use super::InterfaceInner;
-use super::InterfaceServices;
+use super::SecuredDataBuffer;
 use super::SocketSet;
 use crate::phy::PacketMeta;
 use crate::wire::*;
 
 impl InterfaceInner {
     #[cfg(feature = "medium-ieee80211p")]
-    pub(super) fn process_ieee80211p<'frame, 'services>(
+    pub(super) fn process_ieee80211p<'frame, 'ctx>(
         &mut self,
-        srv: InterfaceServices<'services>,
+        ctx: InterfaceContext<'ctx>,
         sockets: &mut SocketSet,
         meta: PacketMeta,
         frame: &'frame [u8],
+        sec_buf: &'frame mut SecuredDataBuffer,
     ) -> Option<(
-        InterfaceServices<'services>,
+        InterfaceContext<'ctx>,
         EthernetAddress,
         EthernetPacket<'frame>,
-    )> {
+    )>
+    where
+        'frame: 'ctx,
+    {
         let ieee80211_frame = check!(Ieee80211Frame::new_checked(frame));
         let ieee80211_repr = check!(Ieee80211Repr::parse(&ieee80211_frame));
 
@@ -41,8 +46,15 @@ impl InterfaceInner {
                     dst_addr: ieee80211_repr.dst_addr,
                     ethertype: llc_repr.snap_protocol,
                 };
-                self.process_geonet_packet(srv, sockets, meta, &llc_frame.payload(), eth_repr)
-                    .map(|e| (e.0, e.1, EthernetPacket::Geonet(e.2)))
+                self.process_geonet_packet(
+                    ctx,
+                    sockets,
+                    meta,
+                    llc_frame.payload(),
+                    eth_repr,
+                    sec_buf,
+                )
+                .map(|(ctx, addr, pkt)| (ctx, addr, pkt.into()))
             }
             // Drop all other traffic.
             _ => None,

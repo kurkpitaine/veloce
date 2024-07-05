@@ -1,3 +1,5 @@
+use core::fmt;
+
 use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2Base_types::{
     EcdsaP256Signature, EcdsaP384Signature, Signature as EtsiSignature,
 };
@@ -13,6 +15,18 @@ pub enum EcdsaSignatureError {
     UnsupportedCoordinates(EccPointUnsupportedCoordinatesErr),
     /// Other type of error
     Other,
+}
+
+impl fmt::Display for EcdsaSignatureError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EcdsaSignatureError::UnsupportedType => write!(f, "unsupported signature type"),
+            EcdsaSignatureError::UnsupportedCoordinates(e) => {
+                write!(f, "unsupported signature coordinates: {}", e)
+            }
+            EcdsaSignatureError::Other => write!(f, "other error"),
+        }
+    }
 }
 
 /// An ECDSA signature.

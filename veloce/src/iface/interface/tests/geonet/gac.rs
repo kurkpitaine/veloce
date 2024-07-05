@@ -81,13 +81,19 @@ fn test_receive_gac() {
 
     let ctx_meta = meta!(core, iface);
     let pkt_meta = PacketMeta::default();
+    let mut sec_buf = SecuredDataBuffer::default();
 
     let mut buf = [0u8; GAC_LEN];
     gac.emit(&mut buf);
 
-    let res = iface
-        .inner
-        .process_geonet_packet(ctx_meta, &mut sockets, pkt_meta, &buf, ethernet);
+    let res = iface.inner.process_geonet_packet(
+        ctx_meta,
+        &mut sockets,
+        pkt_meta,
+        &buf,
+        ethernet,
+        &mut sec_buf,
+    );
 
     // Processing a GAC packet with a remaining hop limit > 1 should return.
     assert!(res.is_some());
@@ -98,10 +104,10 @@ fn test_receive_gac() {
     assert!(dst_ll_addr.is_broadcast());
 
     // Packet type
-    let gn_repr = forwarded.geonet_repr();
-    assert!(matches!(gn_repr, GeonetRepr::Anycast(_)));
+    let gn_repr = forwarded.repr().inner();
+    assert!(matches!(gn_repr, GeonetVariant::Anycast(_)));
 
-    if let GeonetRepr::Anycast(anycast) = gn_repr {
+    if let GeonetVariant::Anycast(anycast) = gn_repr {
         let anycast_spv = anycast.extended_header.source_position_vector;
         let gac_spv = gac.extended_header.source_position_vector;
 
@@ -154,19 +160,19 @@ fn test_receive_gac() {
     };
 
     // Basic header
-    assert_eq!(forwarded.basic_header().version, gac.basic_header.version);
+    assert_eq!(gn_repr.basic_header().version, gac.basic_header.version);
     assert_eq!(
-        forwarded.basic_header().next_header,
+        gn_repr.basic_header().next_header,
         gac.basic_header.next_header
     );
-    assert_eq!(forwarded.basic_header().lifetime, gac.basic_header.lifetime);
+    assert_eq!(gn_repr.basic_header().lifetime, gac.basic_header.lifetime);
     assert_eq!(
-        forwarded.basic_header().remaining_hop_limit,
+        gn_repr.basic_header().remaining_hop_limit,
         gac.basic_header.remaining_hop_limit - 1
     );
 
     // Common header
-    assert_eq!(forwarded.common_header(), gac.common_header);
+    assert_eq!(gn_repr.common_header(), gac.common_header);
 
     // Station should be in Location table
     let entry_opt = iface.inner.location_table.find(

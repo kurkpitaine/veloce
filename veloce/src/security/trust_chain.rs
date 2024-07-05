@@ -3,8 +3,7 @@
 
 use super::{
     certificate::{
-        AuthorizationAuthorityCertificate, CertificateWithHashContainer,
-        EnrollmentAuthorityCertificate, RootCertificate,
+        AuthorizationAuthorityCertificate, AuthorizationTicketCertificate, CertificateWithHashContainer, EnrollmentAuthorityCertificate, RootCertificate
     },
     HashedId8,
 };
@@ -12,6 +11,8 @@ use super::{
 type Container<C> = CertificateWithHashContainer<C>;
 
 /// A certificate trust chain.
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct TrustChain {
     /// Root certificate of the trust chain.
     root_cert: Container<RootCertificate>,
@@ -19,6 +20,8 @@ pub struct TrustChain {
     ea_cert: Option<Container<EnrollmentAuthorityCertificate>>,
     /// Authorization Authority certificate of the trust chain.
     aa_cert: Option<Container<AuthorizationAuthorityCertificate>>,
+    /// Authorization Ticket certificate of the trust chain.
+    at_cert: Option<Container<AuthorizationTicketCertificate>>,
     /// Revoked certificates.
     revoked_certs: Vec<HashedId8>,
 }
@@ -30,6 +33,7 @@ impl TrustChain {
             root_cert,
             ea_cert: None,
             aa_cert: None,
+            at_cert: None,
             revoked_certs: Vec::new(),
         }
     }
@@ -49,6 +53,11 @@ impl TrustChain {
         &self.aa_cert
     }
 
+    /// Get a reference on the Authorization Ticket certificate, if any.
+    pub fn at_cert(&self) -> &Option<Container<AuthorizationTicketCertificate>> {
+        &self.at_cert
+    }
+
     /// Set the Enrollment Authority Certificate.
     pub fn set_ea_cert(&mut self, ea_cert: Container<EnrollmentAuthorityCertificate>) {
         self.ea_cert = Some(ea_cert);
@@ -57,6 +66,11 @@ impl TrustChain {
     /// Set the Authorization Authority Certificate.
     pub fn set_aa_cert(&mut self, aa_cert: Container<AuthorizationAuthorityCertificate>) {
         self.aa_cert = Some(aa_cert);
+    }
+
+    /// Set the Authorization Ticket Certificate.
+    pub fn set_at_cert(&mut self, at_cert: Container<AuthorizationTicketCertificate>) {
+        self.at_cert = Some(at_cert);
     }
 
     /// Add a certificate [HashedId8] to the revoked certificates list.

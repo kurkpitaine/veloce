@@ -1,7 +1,9 @@
-use core::ops::DerefMut;
-use heapless::linked_list::{LinkedIndexUsize, LinkedList};
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+use alloc::collections::vec_deque::VecDeque;
 
-use crate::config::GN_MAX_SDU_SIZE;
+#[cfg(feature = "std")]
+use std::collections::VecDeque;
+
 use crate::time::{Duration, Instant};
 use crate::wire::{EthernetAddress, GnAddress, SequenceNumber};
 
@@ -10,8 +12,6 @@ use super::packet_buffer::BufferMeta;
 /// Packet identifier inside CBF buffer.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct CbfIdentifier(pub GnAddress, pub SequenceNumber);
-
-pub const PAYLOAD_MAX_SIZE: usize = GN_MAX_SDU_SIZE;
 
 /// CBF buffer node.
 #[derive(Debug)]
@@ -34,17 +34,13 @@ where
     /// Packet headers, without payload.
     metadata: T,
     /// Packet payload.
-    payload: [u8; PAYLOAD_MAX_SIZE],
+    payload: Vec<u8>,
 }
 
 impl<T> Node<T>
 where
     T: BufferMeta,
 {
-    pub const fn payload_max_size() -> usize {
-        PAYLOAD_MAX_SIZE
-    }
-
     /// CBF packet identifier inside buffer.
     pub fn cbf_identifier(&self) -> CbfIdentifier {
         self.cbf_identifier
@@ -56,7 +52,12 @@ where
     }
 
     /// Accessor to metadata.
-    pub fn metadata(&mut self) -> &mut T {
+    pub fn metadata(&self) -> &T {
+        &self.metadata
+    }
+
+    /// Mutable accessor to metadata.
+    pub fn metadata_mut(&mut self) -> &mut T {
         &mut self.metadata
     }
 
@@ -73,12 +74,12 @@ where
 
 /// Generic packet buffer.
 #[derive(Debug)]
-pub struct ContentionBuffer<T, const N: usize, const C: usize>
+pub struct ContentionBuffer<T, const C: usize>
 where
     T: BufferMeta,
 {
     /// Buffer underlying storage.
-    storage: LinkedList<Node<T>, LinkedIndexUsize, N>,
+    storage: VecDeque<Node<T>>,
     /// Buffer total capacity in bytes.
     capacity: usize,
     /// Used length in buffer in bytes.
@@ -87,14 +88,14 @@ where
     poll_at: Option<Instant>,
 }
 
-impl<T, const N: usize, const C: usize> ContentionBuffer<T, N, C>
+impl<T, const C: usize> ContentionBuffer<T, C>
 where
     T: BufferMeta,
 {
     /// Builds a new `packet buffer`.
-    pub fn new() -> ContentionBuffer<T, N, C> {
+    pub fn new() -> ContentionBuffer<T, C> {
         ContentionBuffer {
-            storage: LinkedList::new_usize(),
+            storage: VecDeque::new(),
             capacity: C,
             len: 0,
             poll_at: None,
@@ -122,11 +123,6 @@ where
         timestamp: Instant,
         sender: EthernetAddress,
     ) -> Result<(), PacketBufferError> {
-        // Check payload length vs Node payload capacity.
-        if payload.len() > Node::<T>::payload_max_size() {
-            return Err(PacketBufferError::PayloadTooLong);
-        }
-
         let mut node = Node {
             cbf_identifier: cbf_id,
             cbf_expires_at: timestamp + cbf_timer,
@@ -135,12 +131,12 @@ where
             size: meta.size(),
             expires_at: timestamp + meta.lifetime(),
             metadata: meta,
-            payload: [0; PAYLOAD_MAX_SIZE],
+            payload: Vec::new(),
         };
 
         // TODO: improve this. We should copy only if the push is ok.
         // Make push return a reference on the pushed element.
-        node.payload[0..payload.len()].copy_from_slice(payload);
+        node.payload.copy_from_slice(payload);
 
         self.push(node)
             .map_err(|_| PacketBufferError::PacketTooBig)?;
@@ -157,25 +153,16 @@ where
             return Err(TooBig);
         }
 
-        // Buffer could be full either by: no sufficient bytes available or no slots available.
-        // The first check ensure the packet will fit in terms of bytes.
+        // Buffer could be full by: no sufficient bytes available.
+        // This check ensure the packet will fit in terms of bytes.
         while node.size > self.rem_capacity() {
-            if let Ok(removed) = self.storage.pop_front() {
-                self.len -= removed.size;
-            }
-        }
-
-        // The second check ensure the packet will fit in terms slots.
-        if self.storage.is_full() {
-            // No slot available in the buffer, remove oldest packet.
-            if let Ok(removed) = self.storage.pop_front() {
+            if let Some(removed) = self.storage.pop_front() {
                 self.len -= removed.size;
             }
         }
 
         let size = node.size;
-        // Safety: we have checked the buffer is not full.
-        unsafe { self.storage.push_back_unchecked(node) };
+        self.storage.push_back(node);
         self.len += size;
 
         Ok(())
@@ -199,9 +186,14 @@ where
     /// Removes packet identified by `id` from CBF buffer.
     /// Returns `true` if the packet was in the buffer.
     pub fn remove(&mut self, id: CbfIdentifier) -> bool {
-        match self.storage.find_mut(|n| n.cbf_identifier == id) {
-            Some(p) => {
-                p.pop();
+        match self
+            .storage
+            .iter()
+            .enumerate()
+            .find(|(_, n)| n.cbf_identifier == id)
+        {
+            Some((idx, _)) => {
+                self.storage.remove(idx);
                 self.update_poll();
                 true
             }
@@ -215,12 +207,17 @@ where
     where
         F: FnOnce(&mut Node<T>) -> bool,
     {
-        let Some(mut fm) = self.storage.find_mut(|n| n.cbf_identifier == id) else {
+        let Some((idx, fm)) = self
+            .storage
+            .iter_mut()
+            .enumerate()
+            .find(|(_, n)| n.cbf_identifier == id)
+        else {
             return None;
         };
 
-        let rc = if f(fm.deref_mut()) {
-            fm.pop();
+        let rc = if f(fm) {
+            self.storage.remove(idx);
             Some(true)
         } else {
             Some(false)
@@ -235,12 +232,17 @@ where
     where
         F: FnOnce(&mut Node<T>) -> Result<(), E>,
     {
-        let Some(mut fm) = self.storage.find_mut(|e| e.cbf_expires_at >= timestamp) else {
+        let Some((idx, fm)) = self
+            .storage
+            .iter_mut()
+            .enumerate()
+            .find(|(_, e)| e.cbf_expires_at >= timestamp)
+        else {
             return None;
         };
 
-        let rc = f(fm.deref_mut());
-        fm.pop();
+        let rc = f(fm);
+        self.storage.remove(idx);
 
         Some(rc)
     }

@@ -1,9 +1,17 @@
+use std::path::PathBuf;
+
 use crate::{
     security::{
-        certificate::{AuthorizationAuthorityCertificate, ExplicitCertificate, RootCertificate},
+        backend::openssl::{OpensslBackend, OpensslBackendConfig},
+        certificate::{
+            AuthorizationAuthorityCertificate, AuthorizationTicketCertificate, ExplicitCertificate,
+            RootCertificate,
+        },
+        permission::Permission,
         secured_message::SecuredMessage,
         service::SecurityService,
         trust_chain::TrustChain,
+        SecurityBackend,
     },
     time::Instant,
 };
@@ -33,6 +41,13 @@ const SECURITY_ENVELOPE: [u8; 313] = [
     0x75, 0xf8, 0x72, 0x86, 0xb9, 0xc6, 0xbc, 0x7d, 0xec,
 ];
 
+const BTP_CAM: [u8; 64] = [
+    0x02, 0x00, 0x00, 0x1e, 0x01, 0x00, 0x3c, 0x00, 0xae, 0x17, 0x15, 0xb4, 0x56, 0x03, 0xd7, 0x73,
+    0x4e, 0x6b, 0x1c, 0xa8, 0xac, 0xff, 0xff, 0x04, 0x1e, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x07, 0xd1, 0x00, 0x00, 0x02, 0x02, 0xc7, 0x92, 0xbf, 0xbc, 0x63, 0xa4, 0x00, 0xfa,
+    0x49, 0xb2, 0xbf, 0xed, 0x49, 0xbe, 0x16, 0x06, 0x30, 0xa1, 0x40, 0x00, 0x33, 0x1a, 0x96, 0x80,
+];
+
 #[test]
 fn verify_secured_message() {
     let backend = certificate::openssl_backend();
@@ -45,10 +60,56 @@ fn verify_secured_message() {
     let mut own_chain = TrustChain::new(root_cert.into_with_hash_container(&backend).unwrap());
     own_chain.set_aa_cert(aa_cert.into_with_hash_container(&backend).unwrap());
 
-    let mut service = SecurityService::new(own_chain, &backend);
+    let mut service = SecurityService::new(own_chain, SecurityBackend::Openssl(backend));
 
     let msg = SecuredMessage::from_bytes(&SECURITY_ENVELOPE).unwrap();
-    assert!(service
+
+    service
         .verify_secured_message(&msg, Instant::now())
-        .unwrap());
+        .unwrap();
+}
+
+#[test]
+fn test_sign_message() {
+    let mut key_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    key_path.pop();
+    key_path.push(file!());
+    key_path.pop();
+    key_path.push("assets/AT.pem");
+    let key_path = std::fs::canonicalize(key_path).unwrap();
+
+    let config = OpensslBackendConfig {
+        canonical_key_path: "".to_string(),
+        canonical_key_passwd: "".to_string(),
+        signing_cert_secret_key_path: Some(key_path.into_os_string().into_string().unwrap()),
+        signing_cert_secret_key_passwd: Some("test1234".to_string()),
+    };
+
+    let backend = OpensslBackend::new(config).unwrap();
+    let raw_root_cert = certificate::load_root_cert();
+    let raw_aa_cert = certificate::load_aa_cert();
+    let raw_at_cert = certificate::load_at_cert();
+
+    let root_cert = RootCertificate::from_etsi_cert(raw_root_cert.0, &backend).unwrap();
+    let aa_cert =
+        AuthorizationAuthorityCertificate::from_etsi_cert(raw_aa_cert.0, &backend).unwrap();
+    let at_cert = AuthorizationTicketCertificate::from_etsi_cert(raw_at_cert.0, &backend).unwrap();
+
+    let mut own_chain = TrustChain::new(root_cert.into_with_hash_container(&backend).unwrap());
+    own_chain.set_aa_cert(aa_cert.into_with_hash_container(&backend).unwrap());
+    own_chain.set_at_cert(at_cert.into_with_hash_container(&backend).unwrap());
+
+    let mut service = SecurityService::new(own_chain, SecurityBackend::Openssl(backend));
+
+    let permissions = Permission::Unknown {
+        aid: 36,
+        ssp: Some(vec![0x01, 0x00, 0x00]),
+        mask: None,
+    };
+
+    let res = service
+        .encap_packet(&BTP_CAM, permissions, Instant::now())
+        .unwrap();
+
+    assert!(res.len() > 0);
 }

@@ -1,4 +1,4 @@
-use super::{SspContainer, SspError, SspResult, SSP_VERSION};
+use super::{SspContainer, SspError, SspResult, SspTrait, SSP_VERSION};
 
 /// Length for CRL SSP.
 const CRL_SSP_LEN: usize = 1;
@@ -33,5 +33,13 @@ impl CrlSsp {
         }
 
         Ok(CrlSsp(SspContainer::from_bytes(buf)))
+    }
+}
+
+impl SspTrait for CrlSsp {
+    type SspType = CrlSsp;
+
+    fn contains_permissions_of(&self, _: &Self::SspType) -> bool {
+        true
     }
 }

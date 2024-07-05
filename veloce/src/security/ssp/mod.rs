@@ -16,6 +16,8 @@
 //! Beware of ETSI bit position for SSP bits in their documents! Index 0 is defined as the Most Significant Bit,
 //! which is the opposite in our code.
 
+use core::fmt;
+
 pub mod crl;
 pub mod ctl;
 pub mod scr;
@@ -33,6 +35,16 @@ pub enum SspError {
     Version,
     /// Illegal permissions.
     Illegal,
+}
+
+impl fmt::Display for SspError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SspError::Length => write!(f, "Length mismatch"),
+            SspError::Version => write!(f, "Unsupported version"),
+            SspError::Illegal => write!(f, "Illegal permissions"),
+        }
+    }
 }
 
 /// SSP version implemented in this module.
@@ -90,4 +102,11 @@ impl<const N: usize> SspContainer<N> {
         let raw = if value { raw | mask } else { raw & !mask };
         self.inner[B] = raw;
     }
+}
+
+pub trait SspTrait {
+    type SspType;
+
+    /// Check if SSP contains the permissions of `other`.
+    fn contains_permissions_of(&self, other: &Self::SspType) -> bool;
 }

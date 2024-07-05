@@ -135,13 +135,19 @@ fn test_receive_ls_req() {
 
     let ctx_meta = meta!(core, iface);
     let pkt_meta = PacketMeta::default();
+    let mut sec_buf = SecuredDataBuffer::default();
 
     let mut buf = [0u8; LS_REQ_LEN];
     ls_req.emit(&mut buf);
 
-    let res = iface
-        .inner
-        .process_geonet_packet(ctx_meta, &mut sockets, pkt_meta, &buf, ethernet);
+    let res = iface.inner.process_geonet_packet(
+        ctx_meta,
+        &mut sockets,
+        pkt_meta,
+        &buf,
+        ethernet,
+        &mut sec_buf,
+    );
 
     // Processing an LS request packet with a remaining hop limit > 1 should return.
     assert!(res.is_some());
@@ -152,10 +158,10 @@ fn test_receive_ls_req() {
     assert!(dst_ll_addr.is_broadcast());
 
     // Packet type
-    let gn_repr = forwarded.geonet_repr();
-    assert!(matches!(gn_repr, GeonetRepr::LocationServiceRequest(_)));
+    let gn_repr = forwarded.repr().inner();
+    assert!(matches!(gn_repr, GeonetVariant::LocationServiceRequest(_)));
 
-    if let GeonetRepr::LocationServiceRequest(lsr) = gn_repr {
+    if let GeonetVariant::LocationServiceRequest(lsr) = gn_repr {
         let lsr_spv = lsr.extended_header.source_position_vector;
         let ls_req_spv = ls_req.extended_header.source_position_vector;
 
@@ -192,25 +198,22 @@ fn test_receive_ls_req() {
     };
 
     // Basic header
+    assert_eq!(gn_repr.basic_header().version, ls_req.basic_header.version);
     assert_eq!(
-        forwarded.basic_header().version,
-        ls_req.basic_header.version
-    );
-    assert_eq!(
-        forwarded.basic_header().next_header,
+        gn_repr.basic_header().next_header,
         ls_req.basic_header.next_header
     );
     assert_eq!(
-        forwarded.basic_header().lifetime,
+        gn_repr.basic_header().lifetime,
         ls_req.basic_header.lifetime
     );
     assert_eq!(
-        forwarded.basic_header().remaining_hop_limit,
+        gn_repr.basic_header().remaining_hop_limit,
         ls_req.basic_header.remaining_hop_limit - 1
     );
 
     // Common header
-    assert_eq!(forwarded.common_header(), ls_req.common_header);
+    assert_eq!(gn_repr.common_header(), ls_req.common_header);
 
     // Station should be in Location table
     let entry_opt = iface.inner.location_table.find(
@@ -239,13 +242,19 @@ fn test_receive_ls_rep() {
 
     let ctx_meta = meta!(core, iface);
     let pkt_meta = PacketMeta::default();
+    let mut sec_buf = SecuredDataBuffer::default();
 
     let mut buf = [0u8; LS_REP_LEN];
     ls_rep.emit(&mut buf);
 
-    let res = iface
-        .inner
-        .process_geonet_packet(ctx_meta, &mut sockets, pkt_meta, &buf, ethernet);
+    let res = iface.inner.process_geonet_packet(
+        ctx_meta,
+        &mut sockets,
+        pkt_meta,
+        &buf,
+        ethernet,
+        &mut sec_buf,
+    );
 
     // Processing an LS request packet with a remaining hop limit > 1 should return.
     assert!(res.is_some());
@@ -256,10 +265,10 @@ fn test_receive_ls_rep() {
     assert!(dst_ll_addr.is_broadcast());
 
     // Packet type
-    let gn_repr = forwarded.geonet_repr();
-    assert!(matches!(gn_repr, GeonetRepr::LocationServiceReply(_)));
+    let gn_repr = forwarded.repr().inner();
+    assert!(matches!(gn_repr, GeonetVariant::LocationServiceReply(_)));
 
-    if let GeonetRepr::LocationServiceReply(lsr) = gn_repr {
+    if let GeonetVariant::LocationServiceReply(lsr) = gn_repr {
         let lsr_spv = lsr.extended_header.source_position_vector;
         let ls_rep_spv = ls_rep.extended_header.source_position_vector;
         let lsr_dpv = lsr.extended_header.destination_position_vector;
@@ -305,25 +314,22 @@ fn test_receive_ls_rep() {
     };
 
     // Basic header
+    assert_eq!(gn_repr.basic_header().version, ls_rep.basic_header.version);
     assert_eq!(
-        forwarded.basic_header().version,
-        ls_rep.basic_header.version
-    );
-    assert_eq!(
-        forwarded.basic_header().next_header,
+        gn_repr.basic_header().next_header,
         ls_rep.basic_header.next_header
     );
     assert_eq!(
-        forwarded.basic_header().lifetime,
+        gn_repr.basic_header().lifetime,
         ls_rep.basic_header.lifetime
     );
     assert_eq!(
-        forwarded.basic_header().remaining_hop_limit,
+        gn_repr.basic_header().remaining_hop_limit,
         ls_rep.basic_header.remaining_hop_limit - 1
     );
 
     // Common header
-    assert_eq!(forwarded.common_header(), ls_rep.common_header);
+    assert_eq!(gn_repr.common_header(), ls_rep.common_header);
 
     // Station should be in Location table
     let entry_opt = iface.inner.location_table.find(

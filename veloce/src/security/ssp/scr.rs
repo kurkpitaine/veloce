@@ -1,7 +1,7 @@
 //! Secured Certificate Request messages SSP definition.
 //! See ETSI TS 102 941 V2.2.1 section B.4.
 
-use super::{SspContainer, SspError, SspResult, SSP_VERSION};
+use super::{SspContainer, SspError, SspResult, SspTrait, SSP_VERSION};
 
 mod field {
     /// SCR CA Certificate Request signing permission bit position.
@@ -208,5 +208,13 @@ impl ScrSsp {
         }
 
         Ok(())
+    }
+}
+
+impl SspTrait for ScrSsp {
+    type SspType = ScrSsp;
+
+    fn contains_permissions_of(&self, other: &Self::SspType) -> bool {
+        self.0.inner[1] | other.0.inner[1] == self.0.inner[1]
     }
 }

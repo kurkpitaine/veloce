@@ -1,4 +1,4 @@
-use super::{SspContainer, SspError, SspResult, SSP_VERSION};
+use super::{SspContainer, SspError, SspResult, SspTrait, SSP_VERSION};
 
 /// ECTL permissions.
 pub const TLM_CTL: CtlSsp = CtlSsp::from_raw_permissions(0xc8);
@@ -124,5 +124,13 @@ impl CtlSsp {
         }
 
         Ok(())
+    }
+}
+
+impl SspTrait for CtlSsp {
+    type SspType = CtlSsp;
+
+    fn contains_permissions_of(&self, other: &Self::SspType) -> bool {
+        self.0.inner[1] | other.0.inner[1] == self.0.inner[1]
     }
 }

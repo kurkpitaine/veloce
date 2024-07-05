@@ -1,21 +1,23 @@
 use super::check;
 use super::EthernetPacket;
+use super::InterfaceContext;
 use super::InterfaceInner;
-use super::InterfaceServices;
+use super::SecuredDataBuffer;
 use super::SocketSet;
 use crate::phy::PacketMeta;
 use crate::wire::*;
 
 impl InterfaceInner {
     #[cfg(feature = "medium-ethernet")]
-    pub(super) fn process_ethernet<'frame, 'services>(
+    pub(super) fn process_ethernet<'frame, 'ctx>(
         &mut self,
-        srv: InterfaceServices<'services>,
+        ctx: InterfaceContext<'ctx>,
         sockets: &mut SocketSet,
         meta: PacketMeta,
         frame: &'frame [u8],
+        sec_buf: &'frame mut SecuredDataBuffer,
     ) -> Option<(
-        InterfaceServices<'services>,
+        InterfaceContext<'ctx>,
         EthernetAddress,
         EthernetPacket<'frame>,
     )> {
@@ -33,8 +35,8 @@ impl InterfaceInner {
         match eth_frame.ethertype() {
             #[cfg(feature = "proto-geonet")]
             EthernetProtocol::Geonet => self
-                .process_geonet_packet(srv, sockets, meta, &eth_frame.payload(), eth_repr)
-                .map(|e| (e.0, e.1, EthernetPacket::Geonet(e.2))),
+                .process_geonet_packet(ctx, sockets, meta, eth_frame.payload(), eth_repr, sec_buf)
+                .map(|(ctx, addr, pkt)| (ctx, addr, pkt.into())),
             // Drop all other traffic.
             _ => None,
         }

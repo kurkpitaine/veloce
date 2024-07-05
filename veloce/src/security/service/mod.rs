@@ -1,9 +1,11 @@
-use crate::time::Instant;
+use core::fmt::{self, Formatter};
+
+use crate::{time::Instant, types::Pseudonym, wire::EthernetAddress};
 
 use super::{
-    backend::Backend, certificate::CertificateError, certificate_cache::CertificateCache,
+    certificate::CertificateError, certificate_cache::CertificateCache,
     secured_message::SecuredMessageError, trust_chain::TrustChain,
-    trust_store::Store as TrustStore,
+    trust_store::Store as TrustStore, SecurityBackend,
 };
 
 pub(crate) mod decap;
@@ -13,6 +15,8 @@ pub(crate) mod verify;
 
 #[derive(Debug)]
 pub enum SecurityServiceError {
+    /// No AT certificate to sign messages.
+    NoSigningCertificate,
     /// Security envelope has invalid content.
     InvalidContent(SecuredMessageError),
     /// Signature is invalid.
@@ -46,7 +50,40 @@ pub enum SecurityServiceError {
     Backend,
 }
 
-pub struct SecurityService<'a> {
+impl fmt::Display for SecurityServiceError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            SecurityServiceError::NoSigningCertificate => {
+                write!(f, "no signing certificate")
+            }
+            SecurityServiceError::InvalidContent(e) => {
+                write!(f, "invalid content: {}", e)
+            }
+            SecurityServiceError::FalseSignature => write!(f, "false signature"),
+            SecurityServiceError::InvalidCertificate(e) => {
+                write!(f, "invalid certificate: {}", e)
+            }
+            SecurityServiceError::RevokedCertificate => write!(f, "revoked certificate"),
+            SecurityServiceError::InsufficientPermissions => {
+                write!(f, "insufficient permissions")
+            }
+            SecurityServiceError::InconsistentChain => write!(f, "inconsistent chain"),
+            SecurityServiceError::InvalidTimestamp => write!(f, "invalid timestamp"),
+            SecurityServiceError::OffValidityPeriod => write!(f, "off validity period"),
+            SecurityServiceError::DuplicateMessage => write!(f, "duplicate message"),
+            SecurityServiceError::InvalidMobilityData => write!(f, "invalid mobility data"),
+            SecurityServiceError::UnsignedMessage => write!(f, "unsigned message"),
+            SecurityServiceError::SignerCertificateNotFound => {
+                write!(f, "signer certificate not found")
+            }
+            SecurityServiceError::UnencryptedMessage => write!(f, "unencrypted message"),
+            SecurityServiceError::DecryptionError => write!(f, "decryption error"),
+            SecurityServiceError::Backend => write!(f, "backend error"),
+        }
+    }
+}
+
+pub struct SecurityService {
     /// Instant at which to include the certificate in a CAM message signature.
     next_cert_in_cam_at: Instant,
     /// AT Certificates cache.
@@ -54,17 +91,60 @@ pub struct SecurityService<'a> {
     /// Trust store for chain of trust.
     store: TrustStore,
     /// Cryptography backend.
-    backend: &'a dyn Backend,
+    backend: SecurityBackend,
 }
 
-impl<'a> SecurityService<'a> {
+impl fmt::Debug for SecurityService {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SecurityService")
+            .field("next_cert_in_cam_at", &self.next_cert_in_cam_at)
+            .field("cache", &self.cache)
+            .field("store", &self.store)
+            .finish()
+    }
+}
+
+impl SecurityService {
     /// Constructs a [SecurityService].
-    pub fn new(own_chain: TrustChain, backend: &'a impl Backend) -> Self {
+    pub fn new(own_chain: TrustChain, backend: SecurityBackend) -> Self {
         Self {
             next_cert_in_cam_at: Instant::ZERO,
             cache: CertificateCache::new(),
             store: TrustStore::new(own_chain),
             backend,
         }
+    }
+
+    /// Get a mutable reference to the [TrustStore].
+    pub fn store_mut(&mut self) -> &mut TrustStore {
+        &mut self.store
+    }
+
+    /// Get the pseudonym of the local station.
+    /// Pseudonym is derived from the AT certificate.
+    pub fn pseudonym(&self) -> Result<Pseudonym, SecurityServiceError> {
+        self.store
+            .own_chain()
+            .at_cert()
+            .as_ref()
+            .map(|at| Pseudonym(at.hashed_id8().as_u64() as u32))
+            .ok_or(SecurityServiceError::NoSigningCertificate)
+    }
+
+    /// Get the hardware address of the local station.
+    /// Hardware address is derived from the AT certificate.
+    pub fn hardware_address(&self) -> Result<EthernetAddress, SecurityServiceError> {
+        self.store
+            .own_chain()
+            .at_cert()
+            .as_ref()
+            .map(|at| {
+                let mut addr_bytes = at.hashed_id8().as_bytes();
+                // Clear multicast and locally administered bits.
+                addr_bytes[0] &= !0x03;
+
+                EthernetAddress::from_bytes(&addr_bytes[..6])
+            })
+            .ok_or(SecurityServiceError::NoSigningCertificate)
     }
 }

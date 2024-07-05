@@ -16,19 +16,14 @@ use super::congestion::{AnyController, Congestion, CongestionSuccess};
 
 use super::location_service::LocationService;
 use super::location_table::LocationTable;
-use super::v2x_packet::*;
+use super::packet::*;
 
 use super::socket_set::SocketSet;
 
-use crate::common::{ContentionBuffer, PacketBuffer};
+use crate::common::{ContentionBuffer, PacketBuffer, PacketBufferMeta};
 use crate::config::{
-    GN_BC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT as BC_BUF_ENTRY_NUM,
-    GN_BC_FORWARDING_PACKET_BUFFER_SIZE as BC_BUF_SIZE,
-    GN_CBF_PACKET_BUFFER_ENTRY_COUNT as CBF_BUF_ENTRY_NUM,
-    GN_CBF_PACKET_BUFFER_SIZE as CBF_BUF_SIZE,
-    GN_LOCATION_SERVICE_PACKET_BUFFER_ENTRY_COUNT as LS_BUF_ENTRY_NUM,
+    GN_BC_FORWARDING_PACKET_BUFFER_SIZE as BC_BUF_SIZE, GN_CBF_PACKET_BUFFER_SIZE as CBF_BUF_SIZE,
     GN_LOCATION_SERVICE_PACKET_BUFFER_SIZE as LS_BUF_SIZE,
-    GN_UC_FORWARDING_PACKET_BUFFER_ENTRY_COUNT as UC_BUF_ENTRY_NUM,
     GN_UC_FORWARDING_PACKET_BUFFER_SIZE as UC_BUF_SIZE,
 };
 use crate::network::GnCore;
@@ -37,14 +32,17 @@ use crate::phy::{
     Device, DeviceCapabilities, MacFilterCapabilities, Medium, PacketMeta, RxToken, TxToken,
 };
 
+#[cfg(feature = "proto-security")]
+use crate::security::service::decap::DecapConfirm;
+
 use crate::socket::geonet::Socket as GeonetSocket;
 use crate::socket::*;
 use crate::time::{Duration, Instant};
 
 use crate::wire::ieee80211::{FrameControl, QoSControl};
 use crate::wire::{
-    EthernetAddress, EthernetFrame, EthernetProtocol, GeonetRepr, GeonetUnicast, HardwareAddress,
-    Ieee80211Frame, Ieee80211Repr, LlcFrame, LlcRepr, SequenceNumber,
+    EthernetAddress, EthernetFrame, EthernetProtocol, GeonetRepr, GeonetUnicast, GeonetVariant,
+    HardwareAddress, Ieee80211Frame, Ieee80211Repr, LlcFrame, LlcRepr, SequenceNumber,
 };
 
 macro_rules! check {
@@ -73,15 +71,37 @@ macro_rules! next_sequence_number {
     };
 }
 
+#[cfg(feature = "proto-geonet")]
+pub(super) fn to_gn_repr<T>(variant: T, ctx: &mut DecapContext) -> GeonetRepr<T>
+where
+    T: PacketBufferMeta,
+{
+    #[cfg(not(feature = "proto-security"))]
+    let metadata = GeonetRepr::Unsecured(variant);
+
+    #[cfg(feature = "proto-security")]
+    let metadata = if let Some(d) = ctx.decap_confirm.take() {
+        GeonetRepr::Secured {
+            repr: variant,
+            secured_message: d.secured_message,
+            secured_message_size: d.size,
+        }
+    } else {
+        GeonetRepr::Unsecured(variant)
+    };
+
+    metadata
+}
+
 use check;
 
 #[cfg(feature = "proto-geonet")]
 use next_sequence_number;
 
-type LsBuffer = PacketBuffer<GeonetUnicast, LS_BUF_ENTRY_NUM, LS_BUF_SIZE>;
-type UcBuffer = PacketBuffer<GeonetUnicast, UC_BUF_ENTRY_NUM, UC_BUF_SIZE>;
-type BcBuffer = PacketBuffer<GeonetRepr, BC_BUF_ENTRY_NUM, BC_BUF_SIZE>;
-type CbfBuffer = ContentionBuffer<GeonetRepr, CBF_BUF_ENTRY_NUM, CBF_BUF_SIZE>;
+type LsBuffer = PacketBuffer<GeonetRepr<GeonetUnicast>, LS_BUF_SIZE>;
+type UcBuffer = PacketBuffer<GeonetRepr<GeonetUnicast>, UC_BUF_SIZE>;
+type BcBuffer = PacketBuffer<GeonetRepr<GeonetVariant>, BC_BUF_SIZE>;
+type CbfBuffer = ContentionBuffer<GeonetRepr<GeonetVariant>, CBF_BUF_SIZE>;
 
 /// A network interface.
 ///
@@ -154,7 +174,7 @@ impl Config {
 
 /// Utility struct containing metadata for [InterfaceInner] processing.
 #[cfg(feature = "proto-geonet")]
-pub(crate) struct InterfaceServices<'a> {
+pub(crate) struct InterfaceContext<'a> {
     /// Reference on the Geonetworking core services.
     pub core: &'a mut GnCore,
     /// Reference on the Location Service.
@@ -169,6 +189,23 @@ pub(crate) struct InterfaceServices<'a> {
     pub bc_forwarding_buffer: &'a mut BcBuffer,
     /// Contention Based forwarding packet buffer.
     pub cb_forwarding_buffer: &'a mut CbfBuffer,
+    #[cfg(feature = "proto-security")]
+    /// Security decapsulation context.
+    pub decap_context: &'a mut DecapContext,
+}
+
+#[cfg(feature = "proto-security")]
+#[derive(Default, Clone)]
+pub(crate) struct DecapContext {
+    /// Security decap service result.
+    pub decap_confirm: Option<DecapConfirm>,
+}
+
+/// Buffer type for data enclosed in the security wrapper.
+#[derive(Default)]
+pub(crate) struct SecuredDataBuffer {
+    #[cfg(feature = "proto-security")]
+    pub buffer: veloce_asn1::prelude::rasn::types::OctetString,
 }
 
 impl Interface {
@@ -208,13 +245,6 @@ impl Interface {
                 sequence_number: SequenceNumber(0),
             },
         }
-    }
-
-    /// Get the socket context.
-    ///
-    /// The context is needed for some socket methods.
-    pub fn context(&mut self) -> &mut InterfaceInner {
-        &mut self.inner
     }
 
     /// Transmit packets queued in the given sockets, and receive packets queued
@@ -346,33 +376,40 @@ impl Interface {
 
         while let Some((rx_token, tx_token)) = device.receive(core.now) {
             let rx_meta = rx_token.meta();
-            let srv = InterfaceServices {
-                core,
-                ls: &mut self.location_service,
-                congestion_control: &mut self.congestion_control,
-                ls_buffer: &mut self.ls_buffer,
-                uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
-                bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
-                cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
-            };
 
             rx_token.consume(|frame| {
                 if frame.is_empty() {
                     return;
                 }
 
+                #[cfg(feature = "proto-security")]
+                let mut sec_buf = SecuredDataBuffer::default();
+
+                let ctx = InterfaceContext {
+                    core,
+                    ls: &mut self.location_service,
+                    congestion_control: &mut self.congestion_control,
+                    ls_buffer: &mut self.ls_buffer,
+                    uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
+                    bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+                    cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
+                    #[cfg(feature = "proto-security")]
+                    decap_context: &mut DecapContext::default(),
+                };
+
                 match self.inner.caps.medium {
                     #[cfg(feature = "medium-ethernet")]
                     Medium::Ethernet => {
-                        if let Some((svcs, dst_addr, packet)) =
-                            self.inner.process_ethernet(srv, sockets, rx_meta, frame)
+                        if let Some((ctx, dst_addr, packet)) =
+                            self.inner
+                                .process_ethernet(ctx, sockets, rx_meta, frame, &mut sec_buf)
                         {
                             if let Err(err) = self.inner.dispatch(
                                 tx_token,
-                                svcs.core,
+                                ctx.core,
                                 dst_addr,
                                 packet,
-                                svcs.congestion_control,
+                                ctx.congestion_control,
                             ) {
                                 net_debug!("Failed to send response: {:?}", err);
                             }
@@ -380,15 +417,19 @@ impl Interface {
                     }
                     #[cfg(feature = "medium-ieee80211p")]
                     Medium::Ieee80211p => {
-                        if let Some((svcs, dst_addr, packet)) =
-                            self.inner.process_ieee80211p(srv, sockets, rx_meta, frame)
-                        {
+                        if let Some((ctx, dst_addr, packet)) = self.inner.process_ieee80211p(
+                            ctx,
+                            sockets,
+                            rx_meta,
+                            frame,
+                            &mut sec_buf,
+                        ) {
                             if let Err(err) = self.inner.dispatch(
                                 tx_token,
-                                svcs.core,
+                                ctx.core,
                                 dst_addr,
                                 packet,
-                                svcs.congestion_control,
+                                ctx.congestion_control,
                             ) {
                                 net_debug!("Failed to send response: {:?}", err);
                             }
@@ -454,7 +495,10 @@ impl Interface {
                 Ok(())
             };
 
-            let srv = InterfaceServices {
+            #[cfg(feature = "proto-security")]
+            let mut sec_ctx = DecapContext::default();
+
+            let srv = InterfaceContext {
                 core,
                 ls: &mut self.location_service,
                 congestion_control: &mut self.congestion_control,
@@ -462,6 +506,8 @@ impl Interface {
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
                 cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
+                #[cfg(feature = "proto-security")]
+                decap_context: &mut sec_ctx,
             };
 
             let result = match &mut item.socket {
@@ -476,7 +522,7 @@ impl Interface {
                             congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
-                            GeonetPacket::new(gn, GeonetPayload::Raw(raw)),
+                            GeonetPacket::new(GeonetRepr::Unsecured(gn), Some(raw)),
                         )
                     },
                 ),
@@ -491,7 +537,7 @@ impl Interface {
                             congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
-                            GeonetPacket::new(gn.into(), GeonetPayload::Raw(pl)),
+                            GeonetPacket::new(GeonetRepr::Unsecured(gn.into()), Some(pl)),
                         )
                     },
                 ),
@@ -506,7 +552,7 @@ impl Interface {
                             congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
-                            GeonetPacket::new(gn, GeonetPayload::Raw(pl)),
+                            GeonetPacket::new(GeonetRepr::Unsecured(gn), Some(pl)),
                         )
                     },
                 ),
@@ -521,7 +567,7 @@ impl Interface {
                             congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
-                            GeonetPacket::new(gn, GeonetPayload::Raw(pl)),
+                            GeonetPacket::new(GeonetRepr::Unsecured(gn), Some(pl)),
                         )
                     },
                 ),
@@ -536,7 +582,7 @@ impl Interface {
                             congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
-                            GeonetPacket::new(gn, GeonetPayload::Raw(pl)),
+                            GeonetPacket::new(GeonetRepr::Unsecured(gn), Some(pl)),
                         )
                     },
                 ),
@@ -585,7 +631,10 @@ impl Interface {
             Ok(())
         };
 
-        let srv = InterfaceServices {
+        #[cfg(feature = "proto-security")]
+        let mut sec_ctx = DecapContext::default();
+
+        let srv = InterfaceContext {
             core,
             ls: &mut self.location_service,
             congestion_control: &mut self.congestion_control,
@@ -593,21 +642,22 @@ impl Interface {
             uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
             bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
             cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
+            #[cfg(feature = "proto-security")]
+            decap_context: &mut sec_ctx,
         };
 
-        let result = self.inner.dispatch_beacon(
-            srv,
-            |inner, core, congestion, (dst_ll_addr, bh_repr, ch_repr, bc_repr)| {
-                respond(
-                    inner,
-                    core,
-                    congestion,
-                    PacketMeta::default(),
-                    dst_ll_addr,
-                    GeonetPacket::new_beacon(bh_repr, ch_repr, bc_repr),
-                )
-            },
-        );
+        let result =
+            self.inner
+                .dispatch_beacon(srv, |inner, core, congestion, (dst_ll_addr, variant)| {
+                    respond(
+                        inner,
+                        core,
+                        congestion,
+                        PacketMeta::default(),
+                        dst_ll_addr,
+                        GeonetPacket::new(GeonetRepr::Unsecured(variant), None),
+                    )
+                });
 
         match result {
             Err(EgressError::Exhausted) => {} // Device buffer full.
@@ -652,7 +702,10 @@ impl Interface {
             Ok(())
         };
 
-        let srv = InterfaceServices {
+        #[cfg(feature = "proto-security")]
+        let mut sec_ctx = DecapContext::default();
+
+        let srv = InterfaceContext {
             core,
             ls: &mut self.location_service,
             congestion_control: &mut self.congestion_control,
@@ -660,18 +713,20 @@ impl Interface {
             uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
             bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
             cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
+            #[cfg(feature = "proto-security")]
+            decap_context: &mut sec_ctx,
         };
 
         let result = self.inner.dispatch_ls_request(
             srv,
-            |inner, core, congestion, (dst_ll_addr, bh_repr, ch_repr, ls_repr)| {
+            |inner, core, congestion, (dst_ll_addr, variant)| {
                 respond(
                     inner,
                     core,
                     congestion,
                     PacketMeta::default(),
                     dst_ll_addr,
-                    GeonetPacket::new_location_service_request(bh_repr, ch_repr, ls_repr),
+                    GeonetPacket::new(GeonetRepr::Unsecured(variant), None),
                 )
             },
         );
@@ -720,7 +775,10 @@ impl Interface {
         };
 
         loop {
-            let srv = InterfaceServices {
+            #[cfg(feature = "proto-security")]
+            let mut sec_ctx = DecapContext::default();
+
+            let srv = InterfaceContext {
                 core,
                 ls: &mut self.location_service,
                 congestion_control: &mut self.congestion_control,
@@ -728,23 +786,20 @@ impl Interface {
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
                 cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
+                #[cfg(feature = "proto-security")]
+                decap_context: &mut sec_ctx,
             };
 
             let dequeued_some = self.inner.dispatch_ls_buffer(
                 srv,
-                |inner, core, congestion, (dst_ll_addr, bh_repr, ch_repr, uc_repr, raw)| {
+                |inner, core, congestion, (dst_ll_addr, gn_repr, raw)| {
                     respond(
                         inner,
                         core,
                         congestion,
                         PacketMeta::default(),
                         dst_ll_addr,
-                        GeonetPacket::new_unicast(
-                            bh_repr,
-                            ch_repr,
-                            uc_repr,
-                            GeonetPayload::Raw(raw),
-                        ),
+                        GeonetPacket::new(gn_repr, Some(raw)),
                     )
                 },
             );
@@ -802,7 +857,10 @@ impl Interface {
         };
 
         loop {
-            let srv = InterfaceServices {
+            #[cfg(feature = "proto-security")]
+            let mut sec_ctx = DecapContext::default();
+
+            let srv = InterfaceContext {
                 core,
                 ls: &mut self.location_service,
                 congestion_control: &mut self.congestion_control,
@@ -810,23 +868,20 @@ impl Interface {
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
                 cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
+                #[cfg(feature = "proto-security")]
+                decap_context: &mut sec_ctx,
             };
 
             let dequeued_some = self.inner.dispatch_unicast_buffer(
                 srv,
-                |inner, core, congestion, (dst_ll_addr, bh_repr, ch_repr, uc_repr, raw)| {
+                |inner, core, congestion, (dst_ll_addr, gn_repr, raw)| {
                     respond(
                         inner,
                         core,
                         congestion,
                         PacketMeta::default(),
                         dst_ll_addr,
-                        GeonetPacket::new_unicast(
-                            bh_repr,
-                            ch_repr,
-                            uc_repr,
-                            GeonetPayload::Raw(raw),
-                        ),
+                        GeonetPacket::new(gn_repr, Some(raw)),
                     )
                 },
             );
@@ -884,7 +939,10 @@ impl Interface {
         };
 
         loop {
-            let srv = InterfaceServices {
+            #[cfg(feature = "proto-security")]
+            let mut sec_ctx = DecapContext::default();
+
+            let srv = InterfaceContext {
                 core,
                 ls: &mut self.location_service,
                 congestion_control: &mut self.congestion_control,
@@ -892,47 +950,20 @@ impl Interface {
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
                 cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
+                #[cfg(feature = "proto-security")]
+                decap_context: &mut sec_ctx,
             };
 
             let dequeued_some = self.inner.dispatch_broadcast_buffer(
                 srv,
                 |inner, core, congestion, (dst_ll_addr, gn_repr, raw)| {
-                    let response = match gn_repr {
-                        GeonetRepr::Anycast(p) => GeonetPacket::new_anycast(
-                            p.basic_header,
-                            p.common_header,
-                            p.extended_header,
-                            GeonetPayload::Raw(raw),
-                        ),
-                        GeonetRepr::Broadcast(p) => GeonetPacket::new_broadcast(
-                            p.basic_header,
-                            p.common_header,
-                            p.extended_header,
-                            GeonetPayload::Raw(raw),
-                        ),
-                        GeonetRepr::SingleHopBroadcast(p) => {
-                            GeonetPacket::new_single_hop_broadcast(
-                                p.basic_header,
-                                p.common_header,
-                                p.extended_header,
-                                GeonetPayload::Raw(raw),
-                            )
-                        }
-                        GeonetRepr::TopoBroadcast(p) => GeonetPacket::new_topo_scoped_broadcast(
-                            p.basic_header,
-                            p.common_header,
-                            p.extended_header,
-                            GeonetPayload::Raw(raw),
-                        ),
-                        _ => unreachable!(), // No other packet type.
-                    };
                     respond(
                         inner,
                         core,
                         congestion,
                         PacketMeta::default(),
                         dst_ll_addr,
-                        response,
+                        GeonetPacket::new(gn_repr, Some(raw)),
                     )
                 },
             );
@@ -990,7 +1021,10 @@ impl Interface {
         };
 
         loop {
-            let srv = InterfaceServices {
+            #[cfg(feature = "proto-security")]
+            let mut sec_ctx = DecapContext::default();
+
+            let srv = InterfaceContext {
                 core,
                 ls: &mut self.location_service,
                 congestion_control: &mut self.congestion_control,
@@ -998,47 +1032,20 @@ impl Interface {
                 uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
                 bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
                 cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
+                #[cfg(feature = "proto-security")]
+                decap_context: &mut sec_ctx,
             };
 
             let dequeued_some = self.inner.dispatch_contention_buffer(
                 srv,
                 |inner, core, congestion, (dst_ll_addr, gn_repr, raw)| {
-                    let response = match gn_repr {
-                        GeonetRepr::Anycast(p) => GeonetPacket::new_anycast(
-                            p.basic_header,
-                            p.common_header,
-                            p.extended_header,
-                            GeonetPayload::Raw(raw),
-                        ),
-                        GeonetRepr::Broadcast(p) => GeonetPacket::new_broadcast(
-                            p.basic_header,
-                            p.common_header,
-                            p.extended_header,
-                            GeonetPayload::Raw(raw),
-                        ),
-                        GeonetRepr::SingleHopBroadcast(p) => {
-                            GeonetPacket::new_single_hop_broadcast(
-                                p.basic_header,
-                                p.common_header,
-                                p.extended_header,
-                                GeonetPayload::Raw(raw),
-                            )
-                        }
-                        GeonetRepr::TopoBroadcast(p) => GeonetPacket::new_topo_scoped_broadcast(
-                            p.basic_header,
-                            p.common_header,
-                            p.extended_header,
-                            GeonetPayload::Raw(raw),
-                        ),
-                        _ => unreachable!(), // No other packet type.
-                    };
                     respond(
                         inner,
                         core,
                         congestion,
                         PacketMeta::default(),
                         dst_ll_addr,
-                        response,
+                        GeonetPacket::new(gn_repr, Some(raw)),
                     )
                 },
             );
@@ -1146,7 +1153,7 @@ impl InterfaceInner {
             }
         }
 
-        let gn_repr = packet.geonet_repr();
+        let gn_repr = packet.repr().inner();
         let caps = self.caps.clone();
 
         // First we calculate the total length that we will have to emit.
@@ -1154,7 +1161,7 @@ impl InterfaceInner {
 
         // Add the size of the Ethernet header if the medium is Ethernet.
         #[cfg(feature = "medium-ethernet")]
-        if matches!(self.caps.medium, Medium::Ethernet) {
+        if matches!(caps.medium, Medium::Ethernet) {
             total_len = EthernetFrame::<&[u8]>::buffer_len(total_len);
         }
 
@@ -1216,24 +1223,24 @@ impl InterfaceInner {
         };
 
         // Emit function for the Geonetworking header and payload.
-        let emit_gn = |repr: &GeonetRepr, mut tx_buffer: &mut [u8]| {
+        let emit_gn = |repr: &GeonetVariant, mut tx_buffer: &mut [u8]| {
             gn_repr.emit(&mut tx_buffer);
 
-            let payload = &mut tx_buffer[repr.header_len()..];
-            packet.emit_payload(repr, payload, &caps)
+            let payload_buf = &mut tx_buffer[repr.header_len()..];
+            packet.emit_payload(payload_buf)
         };
 
         tx_token.set_meta(meta);
         tx_token
             .consume(total_len, |mut tx_buffer| {
                 #[cfg(feature = "medium-ethernet")]
-                if matches!(self.caps.medium, Medium::Ethernet) {
+                if matches!(caps.medium, Medium::Ethernet) {
                     emit_ethernet(tx_buffer);
                     tx_buffer = &mut tx_buffer[EthernetFrame::<&[u8]>::header_len()..];
                 }
 
                 #[cfg(feature = "medium-ieee80211p")]
-                if matches!(self.caps.medium, Medium::Ieee80211p) {
+                if matches!(caps.medium, Medium::Ieee80211p) {
                     emit_ieee80211(tx_buffer);
                     let pl_start =
                         Ieee80211Frame::<&[u8]>::header_len() + LlcFrame::<&[u8]>::header_len();

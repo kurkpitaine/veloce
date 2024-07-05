@@ -8,10 +8,9 @@ use crate::network::{GnCore, Transport};
 use crate::socket::{self, btp::SocketB as BtpBSocket, PollAt};
 use crate::time::{Duration, Instant, TAI2004};
 use crate::types::Pseudonym;
-use crate::wire::{self, ports, GnTrafficClass};
+use crate::wire::{self, ports, EthernetAddress, GeonetVariant, GnTrafficClass};
 
 use crate::storage::PacketBuffer;
-use crate::wire::{EthernetAddress, GeonetRepr};
 
 use managed::ManagedSlice;
 use veloce_asn1::defs::d_e_n_m__p_d_u__descriptions as denm;
@@ -814,7 +813,7 @@ impl<'a> Socket<'a> {
             &mut Context,
             &mut GnCore,
             &mut Congestion,
-            (EthernetAddress, GeonetRepr, &[u8]),
+            (EthernetAddress, GeonetVariant, &[u8]),
         ) -> Result<(), E>,
     {
         if !self.inner.is_open() {
@@ -1289,6 +1288,8 @@ mod test {
             uc_forwarding_buffer: &mut s.iface.uc_forwarding_buffer,
             bc_forwarding_buffer: &mut s.iface.bc_forwarding_buffer,
             cb_forwarding_buffer: &mut s.iface.cb_forwarding_buffer,
+            #[cfg(feature = "proto-security")]
+            decap_context: &mut DecapContext::default(),
         };
 
         s.socket
@@ -1308,6 +1309,8 @@ mod test {
             uc_forwarding_buffer: &mut s.iface.uc_forwarding_buffer,
             bc_forwarding_buffer: &mut s.iface.bc_forwarding_buffer,
             cb_forwarding_buffer: &mut s.iface.cb_forwarding_buffer,
+            #[cfg(feature = "proto-security")]
+            decap_context: &mut DecapContext::default(),
         };
 
         while s.socket.poll_at(&mut s.iface.inner) <= PollAt::Time(timestamp) {
@@ -1317,7 +1320,7 @@ mod test {
                     srv,
                     |_, _core, _, (_eth_repr, gn_repr, buf)| {
                         // Geonet parameters verification.
-                        let GeonetRepr::Broadcast(gn_inner) = gn_repr else {
+                        let GeonetVariant::Broadcast(gn_inner) = gn_repr else {
                             panic!("Should be geo-broadcast");
                         };
 
@@ -1439,6 +1442,8 @@ mod test {
     use crate::common::{
         PotiConfidence, PotiFix, PotiMode, PotiMotion, PotiPosition, PotiPositionConfidence,
     };
+    #[cfg(feature = "proto-security")]
+    use crate::iface::DecapContext;
     use crate::iface::Interface;
     use crate::types::{Distance, Latitude, Longitude};
 

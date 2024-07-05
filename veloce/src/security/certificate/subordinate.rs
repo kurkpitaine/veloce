@@ -7,7 +7,7 @@ use veloce_asn1::{
     prelude::rasn,
 };
 
-use crate::security::backend::Backend;
+use crate::security::backend::BackendTrait;
 
 use super::{Certificate, CertificateError, CertificateResult, CertificateTrait, ExplicitCertificate};
 
@@ -44,7 +44,7 @@ impl<T> SubordinateCertificate<T> {
     /// Certificate has to be canonicalized if necessary.
     pub fn from_etsi_cert(
         cert: EtsiCertificate,
-        backend: &impl Backend,
+        backend: &impl BackendTrait,
     ) -> CertificateResult<Self> {
         Certificate::verify_ieee_constraints(&cert)?;
         Certificate::verify_etsi_constraints(&cert)?;

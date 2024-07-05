@@ -16,7 +16,10 @@ use crate::socket::PollAt;
 use crate::socket::WakerRegistration;
 
 use crate::storage::Empty;
-use crate::wire::{EthernetAddress, GeonetRepr};
+use crate::wire::{
+    EthernetAddress, GeonetGeoAnycast, GeonetGeoBroadcast, GeonetSingleHop, GeonetTopoBroadcast,
+    GeonetUnicast, GeonetVariant,
+};
 
 use super::SendError;
 
@@ -313,6 +316,7 @@ impl<'a> Socket<'a> {
         self.rx_waker.wake();
     }
 
+    /// Dispatch one packet from the Geonet socket.
     pub(crate) fn dispatch<F, E>(
         &mut self,
         cx: &mut Context,
@@ -324,7 +328,7 @@ impl<'a> Socket<'a> {
             &mut Context,
             &mut GnCore,
             &mut Congestion,
-            (EthernetAddress, GeonetRepr, &[u8]),
+            (EthernetAddress, GeonetVariant, &[u8]),
         ) -> Result<(), E>,
     {
         let res = self.tx_buffer.dequeue_with(|&mut req, payload_buf| {
@@ -346,8 +350,8 @@ impl<'a> Socket<'a> {
                         meta,
                         payload_buf,
                         |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, uc_repr, pl)| {
-                            let gn_repr = GeonetRepr::new_unicast(bh_repr, ch_repr, uc_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
+                            let gn_repr = GeonetUnicast::new(bh_repr, ch_repr, uc_repr);
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
                         },
                     )
                 }
@@ -366,8 +370,8 @@ impl<'a> Socket<'a> {
                         meta,
                         payload_buf,
                         |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, gac_repr, pl)| {
-                            let gn_repr = GeonetRepr::new_anycast(bh_repr, ch_repr, gac_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
+                            let gn_repr = GeonetGeoAnycast::new(bh_repr, ch_repr, gac_repr);
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
                         },
                     )
                 }
@@ -386,8 +390,8 @@ impl<'a> Socket<'a> {
                         meta,
                         payload_buf,
                         |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, gac_repr, pl)| {
-                            let gn_repr = GeonetRepr::new_broadcast(bh_repr, ch_repr, gac_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
+                            let gn_repr = GeonetGeoBroadcast::new(bh_repr, ch_repr, gac_repr);
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
                         },
                     )
                 }
@@ -405,9 +409,8 @@ impl<'a> Socket<'a> {
                         meta,
                         payload_buf,
                         |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, shb_repr, pl)| {
-                            let gn_repr =
-                                GeonetRepr::new_single_hop_broadcast(bh_repr, ch_repr, shb_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
+                            let gn_repr = GeonetSingleHop::new(bh_repr, ch_repr, shb_repr);
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
                         },
                     )
                 }
@@ -425,9 +428,8 @@ impl<'a> Socket<'a> {
                         meta,
                         payload_buf,
                         |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, tsb_repr, pl)| {
-                            let gn_repr =
-                                GeonetRepr::new_topo_scoped_broadcast(bh_repr, ch_repr, tsb_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr, pl))
+                            let gn_repr = GeonetTopoBroadcast::new(bh_repr, ch_repr, tsb_repr);
+                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
                         },
                     )
                 }

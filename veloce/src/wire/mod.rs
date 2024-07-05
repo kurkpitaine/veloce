@@ -38,7 +38,7 @@ pub use geonet::{
     geonet::{
         GeonetBeacon, GeonetGeoAnycast, GeonetGeoBroadcast, GeonetLocationServiceReply,
         GeonetLocationServiceRequest, GeonetSingleHop, GeonetTopoBroadcast, GeonetUnicast,
-        Protocol as GnProtocol, Repr as GeonetRepr,
+        Protocol as GnProtocol, Repr as GeonetRepr, Variant as GeonetVariant,
     },
     location_service_req_header::{
         Header as LocationServiceRequestHeader, Repr as LocationServiceRequestRepr,

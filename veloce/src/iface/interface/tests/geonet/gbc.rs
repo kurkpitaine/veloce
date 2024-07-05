@@ -81,13 +81,19 @@ fn test_receive_gbc() {
 
     let ctx_meta = meta!(core, iface);
     let pkt_meta = PacketMeta::default();
+    let mut sec_buf = SecuredDataBuffer::default();
 
     let mut buf = [0u8; GBC_LEN];
     gbc.emit(&mut buf);
 
-    let res = iface
-        .inner
-        .process_geonet_packet(ctx_meta, &mut sockets, pkt_meta, &buf, ethernet);
+    let res = iface.inner.process_geonet_packet(
+        ctx_meta,
+        &mut sockets,
+        pkt_meta,
+        &buf,
+        ethernet,
+        &mut sec_buf,
+    );
 
     // Processing a GBC packet with a remaining hop limit > 1 should return.
     assert!(res.is_some());
@@ -98,10 +104,10 @@ fn test_receive_gbc() {
     assert!(dst_ll_addr.is_broadcast());
 
     // Packet type
-    let gn_repr = forwarded.geonet_repr();
-    assert!(matches!(gn_repr, GeonetRepr::Broadcast(_)));
+    let gn_repr = forwarded.repr().inner();
+    assert!(matches!(gn_repr, GeonetVariant::Broadcast(_)));
 
-    if let GeonetRepr::Broadcast(broadcast) = gn_repr {
+    if let GeonetVariant::Broadcast(broadcast) = gn_repr {
         let broadcast_spv = broadcast.extended_header.source_position_vector;
         let gbc_spv = gbc.extended_header.source_position_vector;
 
@@ -154,19 +160,19 @@ fn test_receive_gbc() {
     };
 
     // Basic header
-    assert_eq!(forwarded.basic_header().version, gbc.basic_header.version);
+    assert_eq!(gn_repr.basic_header().version, gbc.basic_header.version);
     assert_eq!(
-        forwarded.basic_header().next_header,
+        gn_repr.basic_header().next_header,
         gbc.basic_header.next_header
     );
-    assert_eq!(forwarded.basic_header().lifetime, gbc.basic_header.lifetime);
+    assert_eq!(gn_repr.basic_header().lifetime, gbc.basic_header.lifetime);
     assert_eq!(
-        forwarded.basic_header().remaining_hop_limit,
+        gn_repr.basic_header().remaining_hop_limit,
         gbc.basic_header.remaining_hop_limit - 1
     );
 
     // Common header
-    assert_eq!(forwarded.common_header(), gbc.common_header);
+    assert_eq!(gn_repr.common_header(), gbc.common_header);
 
     // Station should be in Location table
     let entry_opt = iface.inner.location_table.find(

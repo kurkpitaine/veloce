@@ -9,9 +9,9 @@ use std::collections::BTreeMap;
 
 use super::{certificate::AuthorizationAuthorityCertificate, trust_chain::TrustChain, HashedId8};
 
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Store {
-    /* /// TLM certificate, retrieved from ECTL.
-    tlm: TrustListManagerCertificate, */
     /// Station own certificate chain, containing our enrolled PKI certs.
     own_chain: TrustChain,
     /// Other trusted certificate chains, containing other trusted PKI certs.
@@ -26,6 +26,11 @@ impl Store {
             own_chain,
             remote_chains: BTreeMap::new(),
         }
+    }
+
+    /// Get a reference to the own certificate chain.
+    pub fn own_chain(&self) -> &TrustChain {
+        &self.own_chain
     }
 
     /// Query whether the certificate identifier `hash` is in the revoked

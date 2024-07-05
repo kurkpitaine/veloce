@@ -1,16 +1,17 @@
-use core::ops::DerefMut;
-use heapless::linked_list::{LinkedIndexUsize, LinkedList};
+#[cfg(all(feature = "alloc", not(feature = "std")))]
+use alloc::collections::vec_deque::VecDeque;
+use core::fmt;
 
-use crate::config::GN_MAX_SDU_SIZE;
+#[cfg(feature = "std")]
+use std::collections::VecDeque;
+
 use crate::time::{Duration, Instant};
 
 /// Trait stored metadata structures must implement.
-pub trait BufferMeta {
+pub trait BufferMeta: fmt::Debug {
     fn size(&self) -> usize;
     fn lifetime(&self) -> Duration;
 }
-
-pub const PAYLOAD_MAX_SIZE: usize = GN_MAX_SDU_SIZE;
 
 /// Packet buffer node.
 #[derive(Debug)]
@@ -22,19 +23,20 @@ where
     expires_at: Instant,
     flushable: bool,
     metadata: T,
-    payload: [u8; PAYLOAD_MAX_SIZE],
+    payload: Vec<u8>,
 }
 
 impl<T> Node<T>
 where
     T: BufferMeta,
 {
-    pub const fn payload_max_size() -> usize {
-        PAYLOAD_MAX_SIZE
+    /// Accessor to metadata.
+    pub fn metadata(&self) -> &T {
+        &self.metadata
     }
 
-    /// Accessor to metadata.
-    pub fn metadata(&mut self) -> &mut T {
+    /// Mutable accessor to metadata.
+    pub fn metadata_mut(&mut self) -> &mut T {
         &mut self.metadata
     }
 
@@ -51,26 +53,26 @@ where
 
 /// Generic packet buffer.
 #[derive(Debug)]
-pub struct PacketBuffer<T, const N: usize, const C: usize>
+pub struct PacketBuffer<T, const C: usize>
 where
     T: BufferMeta,
 {
     /// Buffer underlying storage.
-    storage: LinkedList<Node<T>, LinkedIndexUsize, N>,
+    storage: VecDeque<Node<T>>,
     /// Buffer total capacity in bytes.
     capacity: usize,
     /// Used length in buffer in bytes.
     len: usize,
 }
 
-impl<T, const N: usize, const C: usize> PacketBuffer<T, N, C>
+impl<T, const C: usize> PacketBuffer<T, C>
 where
     T: BufferMeta,
 {
     /// Builds a new `packet buffer`.
-    pub fn new() -> PacketBuffer<T, N, C> {
+    pub fn new() -> PacketBuffer<T, C> {
         PacketBuffer {
-            storage: LinkedList::new_usize(),
+            storage: VecDeque::new(),
             capacity: C,
             len: 0,
         }
@@ -99,22 +101,17 @@ where
         payload: &[u8],
         timestamp: Instant,
     ) -> Result<(), PacketBufferError> {
-        // Check payload length vs Node payload capacity.
-        if payload.len() > Node::<T>::payload_max_size() {
-            return Err(PacketBufferError::PayloadTooLong);
-        }
-
         let mut node = Node {
             size: meta.size(),
             expires_at: timestamp + meta.lifetime(),
             flushable: false,
             metadata: meta,
-            payload: [0; PAYLOAD_MAX_SIZE],
+            payload: Vec::new(),
         };
 
         // TODO: improve this. We should copy only if the push is ok.
         // Make push return a reference on the pushed element.
-        node.payload[0..payload.len()].copy_from_slice(payload);
+        node.payload.copy_from_slice(payload);
 
         self.push(node, timestamp)
             .map_err(|_| PacketBufferError::PacketTooBig)?;
@@ -132,25 +129,16 @@ where
             return Err(TooBig);
         }
 
-        // Buffer could be full either by: no sufficient bytes available or no slots available.
-        // The first check ensure the packet will fit in terms of bytes.
+        // Buffer could be full by: no sufficient bytes available.
+        // This check ensure the packet will fit in terms of bytes.
         while node.size > self.rem_capacity() {
-            if let Ok(removed) = self.storage.pop_front() {
-                self.len -= removed.size;
-            }
-        }
-
-        // The second check ensure the packet will fit in terms slots.
-        if self.storage.is_full() {
-            // No slot available in the buffer, remove oldest packet.
-            if let Ok(removed) = self.storage.pop_front() {
+            if let Some(removed) = self.storage.pop_front() {
                 self.len -= removed.size;
             }
         }
 
         let size = node.size;
-        // Safety: we have checked the buffer is not full.
-        unsafe { self.storage.push_back_unchecked(node) };
+        self.storage.push_back(node);
         self.len += size;
 
         Ok(())
@@ -209,13 +197,18 @@ where
     where
         F: FnOnce(&mut Node<T>) -> Result<(), E>,
     {
-        let Some(mut fm) = self.storage.find_mut(|e| e.flushable) else {
+        let Some((pos, fm)) = self
+            .storage
+            .iter_mut()
+            .enumerate()
+            .find(|(_, e)| e.flushable)
+        else {
             return None;
         };
 
-        let rc = f(fm.deref_mut());
+        let rc = f(fm);
         self.len -= fm.size;
-        fm.pop();
+        self.storage.remove(pos);
 
         Some(rc)
     }
@@ -225,7 +218,7 @@ where
     where
         F: FnOnce(&mut Node<T>) -> Result<S, E>,
     {
-        let Ok(mut node) = self.storage.pop_front() else {
+        let Some(mut node) = self.storage.pop_front() else {
             return None;
         };
 
@@ -248,8 +241,6 @@ pub struct TooBig;
 
 /// Error returned by `enqueue()`.
 pub enum PacketBufferError {
-    /// Payload is too long.
-    PayloadTooLong,
     /// Packet is too big to fit in buffer.
     PacketTooBig,
 }

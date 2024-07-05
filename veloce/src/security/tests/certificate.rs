@@ -4,8 +4,9 @@ use crate::{
     security::{
         backend::openssl::{OpensslBackend, OpensslBackendConfig},
         certificate::{
-            AuthorizationAuthorityCertificate, EnrollmentAuthorityCertificate, ExplicitCertificate,
-            RootCertificate, TrustListManagerCertificate,
+            AuthorizationAuthorityCertificate, AuthorizationTicketCertificate,
+            EnrollmentAuthorityCertificate, ExplicitCertificate, RootCertificate,
+            TrustListManagerCertificate,
         },
     },
     time::Instant,
@@ -15,9 +16,11 @@ pub fn openssl_backend() -> OpensslBackend {
     let config = OpensslBackendConfig {
         canonical_key_path: String::new(),
         canonical_key_passwd: "test1234".to_string(),
+        signing_cert_secret_key_path: None,
+        signing_cert_secret_key_passwd: None,
     };
 
-    OpensslBackend::new(config)
+    OpensslBackend::new(config).unwrap()
 }
 
 pub fn load_root_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
@@ -32,6 +35,11 @@ pub fn load_ea_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
 
 pub fn load_aa_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
     let input_aa = include_bytes!("assets/AA.cert");
+    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_aa).unwrap()
+}
+
+pub fn load_at_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+    let input_aa = include_bytes!("assets/AT.cert");
     rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_aa).unwrap()
 }
 
@@ -79,5 +87,18 @@ fn aa_cert_valid() {
 
     assert!(aa_cert
         .check(Instant::now(), &backend, |_| Some(root_cert))
+        .unwrap());
+}
+
+#[test]
+fn at_cert_valid() {
+    let backend = openssl_backend();
+    let raw_cert = load_at_cert();
+    let aa_cert = load_aa_cert();
+    let aa_cert = AuthorizationAuthorityCertificate::from_etsi_cert(aa_cert.0, &backend).unwrap();
+    let at_cert = AuthorizationTicketCertificate::from_etsi_cert(raw_cert.0, &backend).unwrap();
+
+    assert!(at_cert
+        .check(Instant::now(), &backend, |_| Some(aa_cert))
         .unwrap());
 }

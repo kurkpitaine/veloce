@@ -5,7 +5,7 @@ use veloce_asn1::{
     prelude::rasn,
 };
 
-use crate::security::backend::Backend;
+use crate::security::backend::BackendTrait;
 
 use super::{
     Certificate, CertificateError, CertificateResult, CertificateTrait, ExplicitCertificate,
@@ -29,7 +29,7 @@ impl AuthorizationTicketCertificate {
         backend: &B,
     ) -> CertificateResult<AuthorizationTicketCertificate>
     where
-        B: Backend + ?Sized,
+        B: BackendTrait + ?Sized,
     {
         Certificate::verify_ieee_constraints(&cert)?;
         Certificate::verify_etsi_constraints(&cert)?;

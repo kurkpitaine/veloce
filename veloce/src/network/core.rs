@@ -14,6 +14,9 @@ use crate::wire::{
     EthernetAddress, GnAddress, LongPositionVectorRepr as LongPositionVector, StationType,
 };
 
+#[cfg(feature = "proto-security")]
+use crate::security::{SecurityBackend, SecurityService, TrustChain};
+
 /// Geonetworking local address configuration mode. If Geonetworking security is enabled,
 /// configuration mode will be forced to Anonymous mode.
 #[derive(Debug)]
@@ -24,6 +27,13 @@ pub enum AddrConfigMode {
     Managed(EthernetAddress),
     /// Geonetworking address is derived from security certificate.
     Anonymous,
+}
+
+#[cfg(feature = "proto-security")]
+#[derive(Debug)]
+pub struct SecurityConfig {
+    pub security_backend: SecurityBackend,
+    pub own_trust_chain: TrustChain,
 }
 
 #[derive(Debug)]
@@ -47,6 +57,9 @@ pub struct Config {
     pub station_type: StationType,
     /// Geonetworking address config mode.
     pub addr_config_mode: AddrConfigMode,
+    #[cfg(feature = "proto-security")]
+    /// Security backend. Set to None to disable security.
+    pub security: Option<SecurityConfig>,
 }
 
 impl Config {
@@ -62,6 +75,8 @@ impl Config {
             pseudonym,
             station_type,
             addr_config_mode: AddrConfigMode::Auto,
+            #[cfg(feature = "proto-security")]
+            security: None,
         }
     }
 }
@@ -81,12 +96,42 @@ pub struct Core {
     pub(crate) pseudonym: Pseudonym,
     /// Poti for position and timing.
     pub(crate) poti: Poti,
+    #[cfg(feature = "proto-security")]
+    /// Security service.
+    pub(crate) security: Option<SecurityService>,
 }
 
 impl Core {
     pub fn new(config: Config, now: Instant) -> Self {
         let mut rand = Rand::new(config.random_seed);
 
+        #[cfg(feature = "proto-security")]
+        let security = config
+            .security
+            .map(|s| SecurityService::new(s.own_trust_chain, s.security_backend));
+
+        #[cfg(feature = "proto-security")]
+        let (address, addr_auto_mode) = match (config.addr_config_mode, &security) {
+            (_, Some(sec)) => {
+                let mac_addr = sec.hardware_address().unwrap_or_else(|_| {
+                    net_debug!("Cannot get hardware address from security service - using random");
+                    EthernetAddress::from_bytes(&rand.rand_mac_addr())
+                });
+                (GnAddress::new(false, config.station_type, mac_addr), true)
+            }
+            (AddrConfigMode::Auto, None) => {
+                let mac_addr = EthernetAddress::from_bytes(&rand.rand_mac_addr());
+                (GnAddress::new(false, config.station_type, mac_addr), true)
+            }
+            (AddrConfigMode::Managed(mac_addr), None) => {
+                (GnAddress::new(true, config.station_type, mac_addr), false)
+            }
+            (AddrConfigMode::Anonymous, None) => {
+                panic!("Anonymous address mode is not supported when security is disabled")
+            }
+        };
+
+        #[cfg(not(feature = "proto-security"))]
         let (address, addr_auto_mode) = match config.addr_config_mode {
             AddrConfigMode::Auto => {
                 let mac_addr = EthernetAddress::from_bytes(&rand.rand_mac_addr());
@@ -97,6 +142,15 @@ impl Core {
             }
             AddrConfigMode::Anonymous => unimplemented!(),
         };
+
+        #[cfg(feature = "proto-security")]
+        let pseudonym = security
+            .as_ref()
+            .and_then(|s| s.pseudonym().ok())
+            .unwrap_or(config.pseudonym);
+
+        #[cfg(not(feature = "proto-security"))]
+        let pseudonym = config.pseudonym;
 
         let ego_position_vector = LongPositionVector {
             address,
@@ -113,8 +167,10 @@ impl Core {
             rand,
             addr_auto_mode,
             ego_position_vector,
-            pseudonym: config.pseudonym,
+            pseudonym,
             poti: Poti::new(),
+            #[cfg(feature = "proto-security")]
+            security,
         }
     }
 
@@ -266,6 +322,8 @@ mod test {
             pseudonym: Pseudonym(123456789),
             poti: Poti::new(),
             addr_auto_mode: true,
+            #[cfg(feature = "proto-security")]
+            security: None,
         };
 
         let eth_addr = EthernetAddress::new(0, 1, 2, 3, 4, 5);
@@ -291,6 +349,8 @@ mod test {
             pseudonym: Pseudonym(123456789),
             poti: Poti::new(),
             addr_auto_mode: true,
+            #[cfg(feature = "proto-security")]
+            security: None,
         };
 
         core.duplicate_address_detection(

@@ -5,12 +5,12 @@ use crate::{
     time::{Duration, Instant},
     wire::{
         ieee80211::{FrameControl, QoSControl},
-        EthernetAddress, EthernetFrame, EthernetProtocol, GeonetRepr, Ieee80211Frame,
-        Ieee80211Repr, LlcFrame, LlcRepr,
+        EthernetAddress, EthernetFrame, EthernetProtocol, GeonetRepr, GeonetVariant,
+        Ieee80211Frame, Ieee80211Repr, LlcFrame, LlcRepr,
     },
 };
 
-use super::{GeonetPacket, GeonetPayload, Interface, InterfaceInner};
+use super::{GeonetPacket, Interface, InterfaceInner};
 
 /// A congestion control algorithm.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -113,7 +113,7 @@ impl Interface {
                 let gn_repr = node.metadata().packet.to_owned();
                 let payload = node.payload();
 
-                let gn_pkt = GeonetPacket::new(gn_repr, GeonetPayload::Raw(payload));
+                let gn_pkt = GeonetPacket::new(gn_repr, Some(payload));
 
                 self.inner
                     .dispatch_congestion_control(tx_token, core, dst_hw_addr, gn_pkt)
@@ -153,7 +153,7 @@ impl InterfaceInner {
         dst_hw_addr: EthernetAddress,
         packet: GeonetPacket,
     ) -> Result<usize, CongestionError> {
-        let gn_repr = packet.geonet_repr();
+        let gn_repr = packet.repr().inner();
         let caps = self.caps.clone();
 
         // First we calculate the total length that we will have to emit.
@@ -161,7 +161,7 @@ impl InterfaceInner {
 
         // Add the size of the Ethernet header if the medium is Ethernet.
         #[cfg(feature = "medium-ethernet")]
-        if matches!(self.caps.medium, Medium::Ethernet) {
+        if matches!(caps.medium, Medium::Ethernet) {
             total_len = EthernetFrame::<&[u8]>::buffer_len(total_len);
         }
 
@@ -178,7 +178,7 @@ impl InterfaceInner {
 
         // Add the size of the Ieee 802.11 Qos with LLC header if the medium is Ieee 802.11p.
         #[cfg(feature = "medium-ieee80211p")]
-        if matches!(self.caps.medium, Medium::Ieee80211p) {
+        if matches!(caps.medium, Medium::Ieee80211p) {
             total_len =
                 total_len + Ieee80211Frame::<&[u8]>::header_len() + LlcFrame::<&[u8]>::header_len();
         }
@@ -223,24 +223,24 @@ impl InterfaceInner {
         };
 
         // Emit function for the Geonetworking header and payload.
-        let emit_gn = |repr: &GeonetRepr, mut tx_buffer: &mut [u8]| {
+        let emit_gn = |repr: &GeonetVariant, mut tx_buffer: &mut [u8]| {
             gn_repr.emit(&mut tx_buffer);
 
-            let payload = &mut tx_buffer[repr.header_len()..];
-            packet.emit_payload(repr, payload, &caps)
+            let payload_buf = &mut tx_buffer[repr.header_len()..];
+            packet.emit_payload(payload_buf)
         };
 
         tx_token.set_meta(Default::default());
         tx_token
             .consume(total_len, |mut tx_buffer| {
                 #[cfg(feature = "medium-ethernet")]
-                if matches!(self.caps.medium, Medium::Ethernet) {
+                if matches!(caps.medium, Medium::Ethernet) {
                     emit_ethernet(tx_buffer);
                     tx_buffer = &mut tx_buffer[EthernetFrame::<&[u8]>::header_len()..];
                 }
 
                 #[cfg(feature = "medium-ieee80211p")]
-                if matches!(self.caps.medium, Medium::Ieee80211p) {
+                if matches!(caps.medium, Medium::Ieee80211p) {
                     emit_ieee80211(tx_buffer);
                     let pl_start =
                         Ieee80211Frame::<&[u8]>::header_len() + LlcFrame::<&[u8]>::header_len();

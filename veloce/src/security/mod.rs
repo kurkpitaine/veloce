@@ -5,7 +5,7 @@ use veloce_asn1::{
     defs::etsi_103097_v211::{
         ieee1609Dot2::IssuerIdentifier,
         ieee1609Dot2Base_types::{
-            BasePublicEncryptionKey, EccP256CurvePoint, EccP256CurvePointUncompressedP256,
+            self, BasePublicEncryptionKey, EccP256CurvePoint, EccP256CurvePointUncompressedP256,
             EccP384CurvePoint, EccP384CurvePointUncompressedP384,
             HashAlgorithm as EtsiHashAlgorithm, PublicVerificationKey,
         },
@@ -26,6 +26,15 @@ pub mod trust_store;
 
 #[cfg(test)]
 mod tests;
+
+pub use backend::{
+    openssl::{OpensslBackend, OpensslBackendConfig},
+    Backend as SecurityBackend,
+};
+
+pub use certificate::Certificate;
+pub use service::SecurityService;
+pub use trust_chain::TrustChain;
 
 /// Hash algorithm for a certificate digest or a signature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +124,13 @@ impl HashedId8 {
         Self(NetworkEndian::read_u64(bytes))
     }
 
+    /// Returns HashedId8 as a byte array.
+    pub fn as_bytes(&self) -> [u8; 8] {
+        let mut bytes = [0u8; 8];
+        NetworkEndian::write_u64(&mut bytes, self.0);
+        bytes
+    }
+
     /// Constructs from an u64.
     pub const fn from_u64(val: u64) -> Self {
         Self(val)
@@ -129,6 +145,19 @@ impl HashedId8 {
 impl fmt::Display for HashedId8 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:0x}", self.0)
+    }
+}
+
+impl From<&ieee1609Dot2Base_types::HashedId8> for HashedId8 {
+    fn from(value: &ieee1609Dot2Base_types::HashedId8) -> Self {
+        Self::from_bytes(value.0.as_slice())
+    }
+}
+
+impl Into<ieee1609Dot2Base_types::HashedId8> for HashedId8 {
+    fn into(self) -> ieee1609Dot2Base_types::HashedId8 {
+        let hash = self.as_bytes();
+        ieee1609Dot2Base_types::HashedId8(FixedOctetString::<8>::new(hash))
     }
 }
 
@@ -163,6 +192,12 @@ pub enum EccPoint {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct EccPointUnsupportedCoordinatesErr;
+
+impl fmt::Display for EccPointUnsupportedCoordinatesErr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Unsupported coordinates")
+    }
+}
 
 impl TryFrom<&EccP256CurvePoint> for EccPoint {
     type Error = EccPointUnsupportedCoordinatesErr;
@@ -304,6 +339,15 @@ pub enum EcdsaKeyError {
     UnsupportedCoordinates(EccPointUnsupportedCoordinatesErr),
 }
 
+impl fmt::Display for EcdsaKeyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EcdsaKeyError::UnsupportedType => write!(f, "Unsupported key type"),
+            EcdsaKeyError::UnsupportedCoordinates(e) => write!(f, "{}", e),
+        }
+    }
+}
+
 impl TryFrom<&PublicVerificationKey> for EcdsaKey {
     type Error = EcdsaKeyError;
 
@@ -375,6 +419,15 @@ pub enum EciesKeyError {
     UnsupportedCoordinates(EccPointUnsupportedCoordinatesErr),
 }
 
+impl fmt::Display for EciesKeyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EciesKeyError::UnsupportedType => write!(f, "Unsupported key type"),
+            EciesKeyError::UnsupportedCoordinates(e) => write!(f, "{}", e),
+        }
+    }
+}
+
 impl TryFrom<&BasePublicEncryptionKey> for EciesKey {
     type Error = EciesKeyError;
 
@@ -423,10 +476,14 @@ pub struct UncompressedEccPoint {
 }
 
 /// Secret key type, stored as uncompressed bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct SecretKey(pub Vec<u8>);
 
 /// Public key type, stored as uncompressed ECC point coordinates.
 /// See [UncompressedEccPoint].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PublicKey(pub UncompressedEccPoint);
 
 pub type KeyPair = (SecretKey, PublicKey);

@@ -2,15 +2,13 @@ use heapless::{FnvIndexMap, Vec};
 
 use crate::{
     common::{PacketBuffer, PacketBufferMeta},
-    config::{
-        DCC_QUEUE_ENTRY_COUNT, DCC_QUEUE_SIZE, GN_CBR_G_TRIGGER_INTERVAL, GN_LOC_TABLE_ENTRY_COUNT,
-    },
+    config::{DCC_QUEUE_SIZE, GN_CBR_G_TRIGGER_INTERVAL, GN_LOC_TABLE_ENTRY_COUNT},
     phy::ChannelBusyRatio,
     time::{Duration, Instant},
-    wire::{ieee80211::AccessCategory, EthernetAddress, GeonetRepr},
+    wire::{ieee80211::AccessCategory, EthernetAddress, GeonetRepr, GeonetVariant},
 };
 
-use super::{location_table::LocationTable, GeonetPacket};
+use super::{location_table::LocationTable, packet::GeonetPacket};
 
 pub(crate) mod limeric;
 pub(crate) mod no_control;
@@ -48,7 +46,7 @@ pub(crate) struct QueuedPacket {
     /// Destination hardware address.
     pub dst_hw_addr: EthernetAddress,
     /// Geonet packet data.
-    pub packet: GeonetRepr,
+    pub packet: GeonetRepr<GeonetVariant>,
 }
 
 impl PacketBufferMeta for QueuedPacket {
@@ -61,7 +59,7 @@ impl PacketBufferMeta for QueuedPacket {
     }
 }
 
-type DccQueue = PacketBuffer<QueuedPacket, DCC_QUEUE_ENTRY_COUNT, DCC_QUEUE_SIZE>;
+type DccQueue = PacketBuffer<QueuedPacket, DCC_QUEUE_SIZE>;
 
 /// _Decentralized Congestion Control_ controller.
 #[derive(Debug)]
@@ -129,7 +127,7 @@ impl Congestion {
             return Ok(Success::ImmediateTx);
         }
 
-        let gn_repr = packet.geonet_repr();
+        let gn_repr = packet.repr().inner();
         let cat = gn_repr.traffic_class().access_category();
 
         // is there any packet enqueued with equal or higher priority?
@@ -152,11 +150,11 @@ impl Congestion {
 
         let pkt = QueuedPacket {
             dst_hw_addr,
-            packet: gn_repr,
+            packet: packet.repr().to_owned(),
         };
 
         // Special treatment for empty payload.
-        let payload = match packet.payload().into_option() {
+        let payload = match packet.payload() {
             Some(pl) => pl,
             None => &[],
         };

@@ -2,24 +2,24 @@ use crate::{
     iface::SocketSet,
     network::Indication,
     socket::{btp::Indication as BtpIndication, *},
-    wire::{BtpAHeader, BtpARepr, BtpBHeader, BtpBRepr, GeonetRepr},
+    wire::{BtpAHeader, BtpARepr, BtpBHeader, BtpBRepr, GeonetUnicast, GeonetVariant},
 };
 
-use super::{check, InterfaceInner, InterfaceServices};
+use super::{check, InterfaceContext, InterfaceInner};
 
 impl InterfaceInner {
     /// Processes a BTP-A packet.
     pub(super) fn process_btp_a(
         &mut self,
-        srv: &InterfaceServices,
+        srv: &InterfaceContext,
         sockets: &mut SocketSet,
         ind: Indication,
         _handled_by_geonet_socket: bool,
-        gn_repr: &GeonetRepr,
+        packet: &GeonetVariant,
         payload: &[u8],
     ) {
         // We only accept unicast packets.
-        let GeonetRepr::Unicast(uc_repr) = gn_repr else {
+        let GeonetVariant::Unicast(uc_repr) = packet else {
             return;
         };
 
@@ -52,7 +52,7 @@ impl InterfaceInner {
     /// Processes a BTP-B packet.
     pub(super) fn process_btp_b(
         &mut self,
-        srv: &InterfaceServices,
+        srv: &InterfaceContext,
         sockets: &mut SocketSet,
         ind: Indication,
         _handled_by_geonet_socket: bool,
