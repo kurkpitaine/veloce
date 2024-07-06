@@ -1518,8 +1518,10 @@ mod test {
         Indication {
             transport: Transport::Broadcast(geo_area()),
             ali_id: (),
-            its_aid: (),
-            cert_id: (),
+            #[cfg(feature = "proto-security")]
+            its_aid: Default::default(),
+            #[cfg(feature = "proto-security")]
+            cert_id: Default::default(),
             rem_lifetime: Duration::from_secs(1),
             rem_hop_limit: 9,
             traffic_class: GnTrafficClass::new(false, 10),

@@ -15,6 +15,9 @@ use crate::{
     wire::{GnAddress, GnTrafficClass},
 };
 
+#[cfg(feature = "proto-security")]
+use crate::security::{permission::Permission, HashedId8};
+
 /// Data request, aka `BTP-Data.request` in ETSI
 /// EN 302 636-5-1 v2.2.1 paragraph A.2.
 /// Represents metadata associated with a packet transmit
@@ -22,14 +25,15 @@ use crate::{
 /// Used in interfaces between a BTP socket and the
 /// user application layers.
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Request {
     /// Geonetworking transport type. See [`Transport`].
     pub transport: Transport,
     /// Access layer identifier.
     pub ali_id: (),
+    #[cfg(feature = "proto-security")]
     /// ITS Application Identifier.
-    pub its_aid: (),
+    pub its_aid: Permission,
     /// Maximum lifetime of the packet.
     pub max_lifetime: Duration,
     /// Maximum hop limit of the packet.
@@ -43,6 +47,7 @@ impl Default for Request {
         Self {
             transport: Transport::TopoBroadcast,
             ali_id: Default::default(),
+            #[cfg(feature = "proto-security")]
             its_aid: Default::default(),
             max_lifetime: config::GN_DEFAULT_PACKET_LIFETIME,
             max_hop_limit: config::GN_DEFAULT_HOP_LIMIT,
@@ -59,16 +64,18 @@ impl Default for Request {
 /// Used in interfaces between a BTP socket and the
 /// user application layers.
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Indication {
     /// Geonetworking transport type. See [`Transport`].
     pub transport: Transport,
     /// Access layer identifier.
     pub ali_id: (),
+    #[cfg(feature = "proto-security")]
     /// ITS Application Identifier.
-    pub its_aid: (),
+    pub its_aid: Permission,
+    #[cfg(feature = "proto-security")]
     /// Certificate ID.
-    pub cert_id: (),
+    pub cert_id: HashedId8,
     /// Remaining lifetime of the packet.
     pub rem_lifetime: Duration,
     /// Remaining hop limit of the packet.

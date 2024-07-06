@@ -89,6 +89,12 @@ pub struct PermissionSspContainer<S: SspTrait> {
     pub mask: Option<Vec<u8>>,
 }
 
+impl<S: SspTrait> From<S> for PermissionSspContainer<S> {
+    fn from(ssp: S) -> Self {
+        Self { ssp, mask: None }
+    }
+}
+
 /// Permission error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -125,6 +131,8 @@ pub enum Permission {
     CRL(PermissionSspContainer<CrlSsp>),
     /// Certificate Trust List service permission.
     CTL(PermissionSspContainer<CtlSsp>),
+    /// GeoNetworking Management Communications service permission.
+    GnMgmt,
     /// Secured Certificate Request service permission.
     SCR(PermissionSspContainer<ScrSsp>),
     /// Fallback variant for an unknown permission type.
@@ -135,12 +143,23 @@ pub enum Permission {
     },
 }
 
+impl Default for Permission {
+    fn default() -> Self {
+        Self::Unknown {
+            aid: 0,
+            ssp: None,
+            mask: None,
+        }
+    }
+}
+
 impl Permission {
     /// Get the AID of the permission.
     pub fn aid(&self) -> AID {
         match self {
             Permission::CRL(_) => AID::CRL,
             Permission::CTL(_) => AID::CTL,
+            Permission::GnMgmt => AID::GnMgmt,
             Permission::SCR(_) => AID::SCR,
             Permission::Unknown { aid, .. } => AID::from(*aid),
         }
@@ -150,6 +169,7 @@ impl Permission {
         match (self, other) {
             (Permission::CRL(l), Permission::CRL(r)) => l.ssp.contains_permissions_of(&r.ssp),
             (Permission::CTL(l), Permission::CTL(r)) => l.ssp.contains_permissions_of(&r.ssp),
+            (Permission::GnMgmt, Permission::GnMgmt) => true,
             (Permission::SCR(l), Permission::SCR(r)) => l.ssp.contains_permissions_of(&r.ssp),
             (
                 Permission::Unknown { ssp: Some(l), .. },
@@ -186,17 +206,18 @@ impl<'a> TryFrom<&'a PsidSsp> for Permission {
                 let ssp = CrlSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
                 Permission::CRL(PermissionSspContainer { ssp, mask: None })
             }
-            AID::SCR => {
-                let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
-                let ssp = ScrSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
-
-                Permission::SCR(PermissionSspContainer { ssp, mask: None })
-            }
             AID::CTL => {
                 let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CtlSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
 
                 Permission::CTL(PermissionSspContainer { ssp, mask: None })
+            }
+            AID::GnMgmt => Permission::GnMgmt,
+            AID::SCR => {
+                let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let ssp = ScrSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
+
+                Permission::SCR(PermissionSspContainer { ssp, mask: None })
             }
             _ => {
                 let raw = extract_ssp(&value)?;
@@ -246,19 +267,20 @@ impl<'a> TryFrom<&'a PsidSspRange> for Permission {
 
                 Permission::CRL(PermissionSspContainer { ssp, mask })
             }
-            AID::SCR => {
-                let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
-                let ssp = ScrSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
-                let mask = Some(range.ssp_bitmask.to_vec());
-
-                Permission::SCR(PermissionSspContainer { ssp, mask })
-            }
             AID::CTL => {
                 let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CtlSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
                 let mask = Some(range.ssp_bitmask.to_vec());
 
                 Permission::CTL(PermissionSspContainer { ssp, mask })
+            }
+            AID::GnMgmt => Permission::GnMgmt,
+            AID::SCR => {
+                let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let ssp = ScrSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
+                let mask = Some(range.ssp_bitmask.to_vec());
+
+                Permission::SCR(PermissionSspContainer { ssp, mask })
             }
             _ => {
                 let range = extract_ssp_range(&value)?;

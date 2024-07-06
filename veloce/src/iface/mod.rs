@@ -24,5 +24,4 @@ pub use self::interface::{
 #[cfg(all(test, feature = "proto-security"))]
 pub(crate) use self::interface::DecapContext;
 pub(crate) use self::interface::InterfaceContext as ContextMeta;
-pub(crate) use self::packet::EthernetPacket;
 pub use self::socket_set::{SocketHandle, SocketSet, SocketStorage};

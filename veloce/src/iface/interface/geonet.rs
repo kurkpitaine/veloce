@@ -33,7 +33,6 @@ use crate::{
     iface::{
         location_service::{LocationServiceFailedRequest, LocationServiceState},
         location_table::compare_position_vector_freshness,
-        //GeonetPacket, GeonetPayload,
     },
     time::Duration,
     wire::{
@@ -46,6 +45,9 @@ use crate::{
         TopoBroadcastHeader, TopoBroadcastRepr, UnicastHeader, UnicastRepr,
     },
 };
+
+#[cfg(feature = "proto-security")]
+use crate::security::permission::Permission;
 
 use super::{
     check, next_sequence_number, to_gn_repr, InterfaceContext, InterfaceInner, SecuredDataBuffer,
@@ -87,6 +89,7 @@ impl InterfaceInner {
     }
 
     /// Processes the Basic Header of a Geonetworking packet.
+    #[allow(unused_variables)]
     fn process_basic_header<'packet, 'ctx>(
         &mut self,
         ctx: InterfaceContext<'ctx>,
@@ -396,9 +399,18 @@ impl InterfaceInner {
                 destination_position_vector: entry.position_vector.into(),
             };
 
-            let packet =
-                GeonetLocationServiceReply::new(reply_bh_repr, reply_ch_repr, reply_ls_repr);
-            let packet = to_gn_repr(packet.into(), ctx.decap_context);
+            let repr = GeonetLocationServiceReply::new(reply_bh_repr, reply_ch_repr, reply_ls_repr);
+            #[cfg(feature = "proto-security")]
+            let packet = if ctx.core.security.is_some() {
+                GeonetRepr::ToSecure {
+                    repr: repr.into(),
+                    permission: Permission::GnMgmt,
+                }
+            } else {
+                GeonetRepr::Unsecured(repr.into())
+            };
+            #[cfg(not(feature = "proto-security"))]
+            let packet = GeonetRepr::Unsecured(repr.into());
 
             /* Step 9: Forwarding algorithm. */
             let addr_opt = if GN_NON_AREA_FORWARDING_ALGORITHM == GnNonAreaForwardingAlgorithm::Cbf
@@ -412,7 +424,7 @@ impl InterfaceInner {
                 return None;
             };
 
-            /* Step 10: Security sign packet done at a lower level */
+            /* Step 10: Security sign packet done at lower level */
             /* Step 11: Media dependent procedures done at lower level */
 
             /* Step 12: Return packet. */
@@ -1343,7 +1355,7 @@ impl InterfaceInner {
             &mut InterfaceInner,
             &mut GnCore,
             &mut Congestion,
-            (EthernetAddress, GeonetVariant),
+            (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
         if self.retransmit_beacon_at > ctx.core.now {
@@ -1373,17 +1385,30 @@ impl InterfaceInner {
             source_position_vector: ctx.core.ego_position_vector(),
         };
 
-        /* Step 2: security sign packet: done at a lower level */
-        /* Step 3: media dependent procedures: done at a lower level */
+        /* Step 2: security sign packet: done at lower level */
+        /* Step 3: media dependent procedures: done at lower level */
 
         /* Step 4: pass packet to access payload */
-        let pkt = GeonetBeacon::new(bh_repr, ch_repr, beacon_repr);
+        let repr = GeonetBeacon::new(bh_repr, ch_repr, beacon_repr);
 
+        #[cfg(feature = "proto-security")]
+        let repr = if ctx.core.security.is_some() {
+            GeonetRepr::ToSecure {
+                repr: repr.into(),
+                permission: Permission::GnMgmt,
+            }
+        } else {
+            GeonetRepr::Unsecured(repr.into())
+        };
+        #[cfg(not(feature = "proto-security"))]
+        let repr = GeonetRepr::Unsecured(repr.into());
+
+        let packet = GeonetPacket::new(repr, None);
         emit(
             self,
             ctx.core,
             ctx.congestion_control,
-            (EthernetAddress::BROADCAST, pkt.into()),
+            (EthernetAddress::BROADCAST, packet),
         )?;
 
         Ok(())
@@ -1400,7 +1425,7 @@ impl InterfaceInner {
             &mut InterfaceInner,
             &mut GnCore,
             &mut Congestion,
-            (EthernetAddress, GeonetVariant),
+            (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
         for r in ctx.ls.ls_requests.iter_mut() {
@@ -1442,13 +1467,27 @@ impl InterfaceInner {
                             request_address: pr.address,
                         };
 
-                        let pkt: GeonetLocationServiceRequest =
+                        let repr: GeonetLocationServiceRequest =
                             GeonetLocationServiceRequest::new(bh_repr, ch_repr, ls_req_repr);
+
+                        #[cfg(feature = "proto-security")]
+                        let repr = if ctx.core.security.is_some() {
+                            GeonetRepr::ToSecure {
+                                repr: repr.into(),
+                                permission: Permission::GnMgmt,
+                            }
+                        } else {
+                            GeonetRepr::Unsecured(repr.into())
+                        };
+                        #[cfg(not(feature = "proto-security"))]
+                        let repr = GeonetRepr::Unsecured(repr.into());
+
+                        let packet = GeonetPacket::new(repr, None);
                         emit(
                             self,
                             ctx.core,
                             ctx.congestion_control,
-                            (EthernetAddress::BROADCAST, pkt.into()),
+                            (EthernetAddress::BROADCAST, packet),
                         )?;
 
                         pr.retransmit_at = ctx.core.now + GN_LOCATION_SERVICE_RETRANSMIT_TIMER;
@@ -1528,7 +1567,19 @@ impl InterfaceInner {
             if entry.ls_pending.is_some() {
                 /* Location Service request pending for destination: buffer the packet into LS buffer */
                 let buf_packet = GeonetUnicast::new(bh_repr, ch_repr, uc_repr);
-                let metadata = GeonetRepr::Unsecured(buf_packet);
+
+                #[cfg(feature = "proto-security")]
+                let metadata = if ctx.core.security.is_some() {
+                    GeonetRepr::ToSecure {
+                        repr: buf_packet.into(),
+                        permission: Permission::GnMgmt,
+                    }
+                } else {
+                    GeonetRepr::Unsecured(buf_packet.into())
+                };
+                #[cfg(not(feature = "proto-security"))]
+                let metadata = GeonetRepr::Unsecured(buf_packet.into());
+
                 ctx.ls_buffer.enqueue(metadata, payload, ctx.core.now).ok();
 
                 return Ok(());
@@ -1539,7 +1590,19 @@ impl InterfaceInner {
             {
                 /* Buffer the packet into the unicast buffer */
                 let buf_packet = GeonetUnicast::new(bh_repr, ch_repr, uc_repr);
-                let metadata = GeonetRepr::Unsecured(buf_packet);
+
+                #[cfg(feature = "proto-security")]
+                let metadata = if ctx.core.security.is_some() {
+                    GeonetRepr::ToSecure {
+                        repr: buf_packet.into(),
+                        permission: Permission::GnMgmt,
+                    }
+                } else {
+                    GeonetRepr::Unsecured(buf_packet.into())
+                };
+                #[cfg(not(feature = "proto-security"))]
+                let metadata = GeonetRepr::Unsecured(buf_packet.into());
+
                 ctx.uc_forwarding_buffer
                     .enqueue(metadata, payload, ctx.core.now)
                     .ok();
@@ -1566,7 +1629,7 @@ impl InterfaceInner {
 
             /* Step 6: TODO: security encapsulation */
             /* Step 7: TODO: repetition */
-            /* Step 8: media dependent procedures: done at a lower level */
+            /* Step 8: media dependent procedures: done at lower level */
             /* Step 9: pass packet to access layer */
             emit(
                 self,
@@ -1653,7 +1716,7 @@ impl InterfaceInner {
             source_position_vector: ctx.core.ego_position_vector(),
         };
 
-        /* Step 2: security sign packet: done at a lower level */
+        /* Step 2: security sign packet: done at lower level */
 
         /* Step 3: check if we should buffer the packet */
         if !self.location_table.has_neighbour() && metadata.traffic_class.store_carry_forward() {
@@ -1668,7 +1731,7 @@ impl InterfaceInner {
         }
 
         /* Step 4: TODO: packet repetition */
-        /* Step 5: media dependent procedures: done at a lower level */
+        /* Step 5: media dependent procedures: done at lower level */
         /* Step 6: pass packet to access layer */
         emit(
             self,
@@ -1744,7 +1807,7 @@ impl InterfaceInner {
             shb_repr.extension.copy_from_slice(g5_ext.as_bytes());
         }
 
-        /* Step 2: security sign packet: done at a lower level */
+        /* Step 2: security sign packet: done at lower level */
 
         /* Step 3: check if we should buffer the packet */
         if !self.location_table.has_neighbour() && metadata.traffic_class.store_carry_forward() {
@@ -1759,7 +1822,7 @@ impl InterfaceInner {
         }
 
         /* Step 4: TODO: packet repetition */
-        /* Step 5: media dependent procedures: done at a lower level */
+        /* Step 5: media dependent procedures: done at lower level */
         /* Step 6: pass packet to access layer */
         emit(
             self,
@@ -1853,9 +1916,9 @@ impl InterfaceInner {
             return Ok(());
         };
 
-        /* Step 5: security sign packet: done at a lower level */
+        /* Step 5: security sign packet: done at lower level */
         /* Step 6: TODO: packet repetition */
-        /* Step 7: media dependent procedures: done at a lower level */
+        /* Step 7: media dependent procedures: done at lower level */
 
         /* Step 8: pass packet to access layer */
         emit(
@@ -1944,9 +2007,9 @@ impl InterfaceInner {
             return Ok(());
         };
 
-        /* Step 5: security sign packet: done at a lower level */
+        /* Step 5: security sign packet: done at lower level */
         /* Step 6: TODO: packet repetition */
-        /* Step 7: media dependent procedures: done at a lower level */
+        /* Step 7: media dependent procedures: done at lower level */
 
         /* Step 8: pass packet to access layer */
         emit(
@@ -2223,6 +2286,7 @@ impl InterfaceInner {
                     GeonetVariant::Unicast(u) => {
                         let buf_packet = match packet {
                             GeonetRepr::Unsecured(_) => GeonetRepr::Unsecured(u.to_owned()),
+                            #[cfg(feature = "proto-security")]
                             GeonetRepr::Secured {
                                 secured_message,
                                 secured_message_size,
@@ -2232,6 +2296,7 @@ impl InterfaceInner {
                                 secured_message: secured_message.to_owned(),
                                 secured_message_size: *secured_message_size,
                             },
+                            #[cfg(feature = "proto-security")]
                             GeonetRepr::ToSecure { permission, .. } => GeonetRepr::ToSecure {
                                 repr: u.to_owned(),
                                 permission: permission.to_owned(),
@@ -2535,19 +2600,21 @@ impl InterfaceInner {
             upper_proto: packet.next_proto().into(),
             transport: packet.transport(),
             ali_id: (),
-            its_aid: (),
-            cert_id: (),
+            #[cfg(feature = "proto-security")]
+            its_aid: Default::default(),
+            #[cfg(feature = "proto-security")]
+            cert_id: Default::default(),
             rem_lifetime: packet.lifetime(),
             rem_hop_limit: packet.hop_limit(),
             traffic_class: packet.traffic_class(),
         };
 
         #[cfg(feature = "socket-geonet")]
-        let handled_by_geonet_socket = self.geonet_socket_filter(sockets, ind, payload);
+        let handled_by_geonet_socket = self.geonet_socket_filter(sockets, ind.clone(), payload);
         #[cfg(not(feature = "socket-geonet"))]
         let handled_by_geonet_socket = false;
 
-        match ind.upper_proto {
+        match &ind.upper_proto {
             UpperProtocol::BtpA => {
                 self.process_btp_a(ctx, sockets, ind, handled_by_geonet_socket, packet, payload)
             }

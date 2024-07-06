@@ -1,7 +1,4 @@
-use crate::{
-    phy::DeviceCapabilities,
-    wire::{GeonetRepr, GeonetVariant},
-};
+use crate::wire::{GeonetRepr, GeonetVariant};
 
 #[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

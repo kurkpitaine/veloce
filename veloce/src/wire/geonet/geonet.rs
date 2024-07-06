@@ -624,6 +624,7 @@ impl PacketBufferMeta for Variant {
 pub(crate) fn unicast_to_variant_repr(unicast: &Repr<GeonetUnicast>) -> Repr<Variant> {
     match unicast {
         Repr::Unsecured(u) => Repr::Unsecured(Variant::Unicast(u.to_owned())),
+        #[cfg(feature = "proto-security")]
         Repr::Secured {
             repr: u,
             secured_message,
@@ -633,6 +634,7 @@ pub(crate) fn unicast_to_variant_repr(unicast: &Repr<GeonetUnicast>) -> Repr<Var
             secured_message: secured_message.to_owned(),
             secured_message_size: *secured_message_size,
         },
+        #[cfg(feature = "proto-security")]
         Repr::ToSecure {
             repr: u,
             permission,

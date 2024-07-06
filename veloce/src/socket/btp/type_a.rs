@@ -492,7 +492,7 @@ impl<'a> Socket<'a> {
             (EthernetAddress, GeonetUnicast, &[u8]),
         ) -> Result<(), E>,
     {
-        let res = self.tx_buffer.dequeue_with(|&mut req, payload_buf| {
+        let res = self.tx_buffer.dequeue_with(|req, payload_buf| {
             let endpoint = self.endpoint;
             let (packet_meta, req) = req;
 
@@ -503,11 +503,22 @@ impl<'a> Socket<'a> {
                 payload_buf.len()
             );
 
+            #[cfg(feature = "proto-security")]
             let meta = UnicastReqMeta::new(
                 UpperProtocol::BtpA,
                 packet_meta.endpoint.addr,
                 req.ali_id,
-                req.its_aid,
+                req.its_aid.clone(),
+                req.max_lifetime,
+                req.max_hop_limit,
+                req.traffic_class,
+            );
+
+            #[cfg(not(feature = "proto-security"))]
+            let meta = UnicastReqMeta::new(
+                UpperProtocol::BtpA,
+                packet_meta.endpoint.addr,
+                req.ali_id,
                 req.max_lifetime,
                 req.max_hop_limit,
                 req.traffic_class,

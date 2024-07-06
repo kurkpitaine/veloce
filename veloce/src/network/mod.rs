@@ -7,6 +7,8 @@ pub mod core;
 pub mod request;
 
 use crate::common::geo_area::GeoArea;
+use crate::security::permission::Permission;
+use crate::security::HashedId8;
 use crate::time::Duration;
 use crate::wire::GnProtocol;
 use crate::wire::{GnAddress, GnTrafficClass};
@@ -58,7 +60,7 @@ impl Into<GnProtocol> for UpperProtocol {
 /// request to the Geonetworking router.
 /// Used in interfaces between the router and the upper layers.
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Request {
     /// Protocol above Geonetworking layer.
     pub upper_proto: UpperProtocol,
@@ -66,8 +68,9 @@ pub struct Request {
     pub transport: Transport,
     /// Access layer identifier.
     pub ali_id: (),
+    #[cfg(feature = "proto-security")]
     /// ITS Application Identifier.
-    pub its_aid: (),
+    pub its_aid: Permission,
     /// Maximum lifetime of the packet.
     pub max_lifetime: Duration,
     /// Maximum hop limit of the packet.
@@ -82,6 +85,7 @@ impl Default for Request {
             upper_proto: UpperProtocol::Any,
             transport: Transport::TopoBroadcast,
             ali_id: Default::default(),
+            #[cfg(feature = "proto-security")]
             its_aid: Default::default(),
             max_lifetime: config::GN_DEFAULT_PACKET_LIFETIME,
             max_hop_limit: config::GN_DEFAULT_HOP_LIMIT,
@@ -96,7 +100,7 @@ impl Default for Request {
 /// after it has been processed by the Geonetworking router.
 /// Used in interfaces between the router and the upper layers.
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Indication {
     /// Protocol above Geonetworking layer.
     pub upper_proto: UpperProtocol,
@@ -104,10 +108,12 @@ pub struct Indication {
     pub transport: Transport,
     /// Access layer identifier.
     pub ali_id: (),
+    #[cfg(feature = "proto-security")]
     /// ITS Application Identifier.
-    pub its_aid: (),
+    pub its_aid: Permission,
+    #[cfg(feature = "proto-security")]
     /// Certificate ID.
-    pub cert_id: (),
+    pub cert_id: HashedId8,
     /// Remaining lifetime of the packet.
     pub rem_lifetime: Duration,
     /// Remaining hop limit of the packet.

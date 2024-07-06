@@ -385,16 +385,27 @@ impl<'a> Socket<'a> {
             (EthernetAddress, GeonetVariant, &[u8]),
         ) -> Result<(), E>,
     {
-        let res = self.tx_buffer.dequeue_with(|&mut req, payload_buf| {
+        let res = self.tx_buffer.dequeue_with(|req, payload_buf| {
             net_trace!("btp-b: sending {} octets", payload_buf.len());
 
             match req.transport {
                 Transport::Unicast(destination) => {
+                    #[cfg(feature = "proto-security")]
                     let meta = UnicastReqMeta::new(
                         UpperProtocol::BtpB,
                         destination,
                         req.ali_id,
-                        req.its_aid,
+                        req.its_aid.clone(),
+                        req.max_lifetime,
+                        req.max_hop_limit,
+                        req.traffic_class,
+                    );
+
+                    #[cfg(not(feature = "proto-security"))]
+                    let meta = UnicastReqMeta::new(
+                        UpperProtocol::BtpB,
+                        destination,
+                        req.ali_id,
                         req.max_lifetime,
                         req.max_hop_limit,
                         req.traffic_class,
@@ -410,11 +421,22 @@ impl<'a> Socket<'a> {
                     )
                 }
                 Transport::Anycast(destination) => {
+                    #[cfg(feature = "proto-security")]
                     let meta = GeoAnycastReqMeta::new(
                         UpperProtocol::BtpB,
                         destination,
                         req.ali_id,
-                        req.its_aid,
+                        req.its_aid.clone(),
+                        req.max_lifetime,
+                        req.max_hop_limit,
+                        req.traffic_class,
+                    );
+
+                    #[cfg(not(feature = "proto-security"))]
+                    let meta = GeoAnycastReqMeta::new(
+                        UpperProtocol::BtpB,
+                        destination,
+                        req.ali_id,
                         req.max_lifetime,
                         req.max_hop_limit,
                         req.traffic_class,
@@ -430,11 +452,22 @@ impl<'a> Socket<'a> {
                     )
                 }
                 Transport::Broadcast(destination) => {
+                    #[cfg(feature = "proto-security")]
                     let meta = GeoBroadcastReqMeta::new(
                         UpperProtocol::BtpB,
                         destination,
                         req.ali_id,
-                        req.its_aid,
+                        req.its_aid.clone(),
+                        req.max_lifetime,
+                        req.max_hop_limit,
+                        req.traffic_class,
+                    );
+
+                    #[cfg(not(feature = "proto-security"))]
+                    let meta = GeoBroadcastReqMeta::new(
+                        UpperProtocol::BtpB,
+                        destination,
+                        req.ali_id,
                         req.max_lifetime,
                         req.max_hop_limit,
                         req.traffic_class,
@@ -450,10 +483,20 @@ impl<'a> Socket<'a> {
                     )
                 }
                 Transport::SingleHopBroadcast => {
+                    #[cfg(feature = "proto-security")]
                     let meta = SingleHopReqMeta::new(
                         UpperProtocol::BtpB,
                         req.ali_id,
-                        req.its_aid,
+                        req.its_aid.clone(),
+                        req.max_lifetime,
+                        req.max_hop_limit,
+                        req.traffic_class,
+                    );
+
+                    #[cfg(not(feature = "proto-security"))]
+                    let meta = SingleHopReqMeta::new(
+                        UpperProtocol::BtpB,
+                        req.ali_id,
                         req.max_lifetime,
                         req.max_hop_limit,
                         req.traffic_class,
@@ -469,10 +512,20 @@ impl<'a> Socket<'a> {
                     )
                 }
                 Transport::TopoBroadcast => {
+                    #[cfg(feature = "proto-security")]
                     let meta = TopoScopedReqMeta::new(
                         UpperProtocol::BtpB,
                         req.ali_id,
-                        req.its_aid,
+                        req.its_aid.clone(),
+                        req.max_lifetime,
+                        req.max_hop_limit,
+                        req.traffic_class,
+                    );
+
+                    #[cfg(not(feature = "proto-security"))]
+                    let meta = TopoScopedReqMeta::new(
+                        UpperProtocol::BtpB,
+                        req.ali_id,
                         req.max_lifetime,
                         req.max_hop_limit,
                         req.traffic_class,

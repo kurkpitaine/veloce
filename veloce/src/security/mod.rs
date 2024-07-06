@@ -111,7 +111,7 @@ impl TryFrom<&IssuerIdentifier> for Issuer {
 }
 
 /// HashedId8, also known as certificate digest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct HashedId8(u64);
 

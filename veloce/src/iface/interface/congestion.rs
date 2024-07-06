@@ -5,8 +5,8 @@ use crate::{
     time::{Duration, Instant},
     wire::{
         ieee80211::{FrameControl, QoSControl},
-        EthernetAddress, EthernetFrame, EthernetProtocol, GeonetRepr, GeonetVariant,
-        Ieee80211Frame, Ieee80211Repr, LlcFrame, LlcRepr,
+        EthernetAddress, EthernetFrame, EthernetProtocol, GeonetVariant, Ieee80211Frame,
+        Ieee80211Repr, LlcFrame, LlcRepr,
     },
 };
 

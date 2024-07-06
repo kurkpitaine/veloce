@@ -331,7 +331,7 @@ impl<'a> Socket<'a> {
             (EthernetAddress, GeonetVariant, &[u8]),
         ) -> Result<(), E>,
     {
-        let res = self.tx_buffer.dequeue_with(|&mut req, payload_buf| {
+        let res = self.tx_buffer.dequeue_with(|req, payload_buf| {
             net_trace!("gn: sending {} octets", payload_buf.len());
 
             match req.transport {
@@ -340,7 +340,8 @@ impl<'a> Socket<'a> {
                         req.upper_proto,
                         destination,
                         req.ali_id,
-                        req.its_aid,
+                        #[cfg(feature = "proto-security")]
+                        req.its_aid.clone(),
                         req.max_lifetime,
                         req.max_hop_limit,
                         req.traffic_class,
@@ -360,7 +361,8 @@ impl<'a> Socket<'a> {
                         req.upper_proto,
                         destination,
                         req.ali_id,
-                        req.its_aid,
+                        #[cfg(feature = "proto-security")]
+                        req.its_aid.clone(),
                         req.max_lifetime,
                         req.max_hop_limit,
                         req.traffic_class,
@@ -380,7 +382,8 @@ impl<'a> Socket<'a> {
                         req.upper_proto,
                         destination,
                         req.ali_id,
-                        req.its_aid,
+                        #[cfg(feature = "proto-security")]
+                        req.its_aid.clone(),
                         req.max_lifetime,
                         req.max_hop_limit,
                         req.traffic_class,
@@ -399,7 +402,8 @@ impl<'a> Socket<'a> {
                     let meta = SingleHopReqMeta::new(
                         req.upper_proto,
                         req.ali_id,
-                        req.its_aid,
+                        #[cfg(feature = "proto-security")]
+                        req.its_aid.clone(),
                         req.max_lifetime,
                         req.max_hop_limit,
                         req.traffic_class,
@@ -418,7 +422,8 @@ impl<'a> Socket<'a> {
                     let meta = TopoScopedReqMeta::new(
                         req.upper_proto,
                         req.ali_id,
-                        req.its_aid,
+                        #[cfg(feature = "proto-security")]
+                        req.its_aid.clone(),
                         req.max_lifetime,
                         req.max_hop_limit,
                         req.traffic_class,

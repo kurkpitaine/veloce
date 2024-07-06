@@ -2,7 +2,7 @@ use crate::{
     iface::SocketSet,
     network::Indication,
     socket::{btp::Indication as BtpIndication, *},
-    wire::{BtpAHeader, BtpARepr, BtpBHeader, BtpBRepr, GeonetUnicast, GeonetVariant},
+    wire::{BtpAHeader, BtpARepr, BtpBHeader, BtpBRepr, GeonetVariant},
 };
 
 use super::{check, InterfaceContext, InterfaceInner};
@@ -31,7 +31,9 @@ impl InterfaceInner {
         let btp_ind = BtpIndication {
             transport: ind.transport,
             ali_id: ind.ali_id,
+            #[cfg(feature = "proto-security")]
             its_aid: ind.its_aid,
+            #[cfg(feature = "proto-security")]
             cert_id: ind.cert_id,
             rem_lifetime: ind.rem_lifetime,
             rem_hop_limit: ind.rem_hop_limit,
@@ -66,7 +68,9 @@ impl InterfaceInner {
         let btp_ind = BtpIndication {
             transport: ind.transport,
             ali_id: ind.ali_id,
+            #[cfg(feature = "proto-security")]
             its_aid: ind.its_aid,
+            #[cfg(feature = "proto-security")]
             cert_id: ind.cert_id,
             rem_lifetime: ind.rem_lifetime,
             rem_hop_limit: ind.rem_hop_limit,

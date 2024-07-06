@@ -71,16 +71,12 @@ macro_rules! next_sequence_number {
     };
 }
 
-#[cfg(feature = "proto-geonet")]
+#[cfg(all(feature = "proto-geonet", feature = "proto-security"))]
 pub(super) fn to_gn_repr<T>(variant: T, ctx: &mut DecapContext) -> GeonetRepr<T>
 where
     T: PacketBufferMeta,
 {
-    #[cfg(not(feature = "proto-security"))]
-    let metadata = GeonetRepr::Unsecured(variant);
-
-    #[cfg(feature = "proto-security")]
-    let metadata = if let Some(d) = ctx.decap_confirm.take() {
+    if let Some(d) = ctx.decap_confirm.take() {
         GeonetRepr::Secured {
             repr: variant,
             secured_message: d.secured_message,
@@ -88,9 +84,7 @@ where
         }
     } else {
         GeonetRepr::Unsecured(variant)
-    };
-
-    metadata
+    }
 }
 
 use check;
@@ -202,6 +196,8 @@ pub(crate) struct DecapContext {
 }
 
 /// Buffer type for data enclosed in the security wrapper.
+/// Becomes a zero-sized type when security is disabled, and will be zero-cost as
+/// stripped by the optimizer.
 #[derive(Default)]
 pub(crate) struct SecuredDataBuffer {
     #[cfg(feature = "proto-security")]
@@ -382,9 +378,7 @@ impl Interface {
                     return;
                 }
 
-                #[cfg(feature = "proto-security")]
                 let mut sec_buf = SecuredDataBuffer::default();
-
                 let ctx = InterfaceContext {
                     core,
                     ls: &mut self.location_service,
@@ -648,14 +642,14 @@ impl Interface {
 
         let result =
             self.inner
-                .dispatch_beacon(srv, |inner, core, congestion, (dst_ll_addr, variant)| {
+                .dispatch_beacon(srv, |inner, core, congestion, (dst_ll_addr, pkt)| {
                     respond(
                         inner,
                         core,
                         congestion,
                         PacketMeta::default(),
                         dst_ll_addr,
-                        GeonetPacket::new(GeonetRepr::Unsecured(variant), None),
+                        pkt,
                     )
                 });
 
@@ -719,14 +713,14 @@ impl Interface {
 
         let result = self.inner.dispatch_ls_request(
             srv,
-            |inner, core, congestion, (dst_ll_addr, variant)| {
+            |inner, core, congestion, (dst_ll_addr, packet)| {
                 respond(
                     inner,
                     core,
                     congestion,
                     PacketMeta::default(),
                     dst_ll_addr,
-                    GeonetPacket::new(GeonetRepr::Unsecured(variant), None),
+                    packet,
                 )
             },
         );
@@ -1100,7 +1094,7 @@ impl InterfaceInner {
             .items_mut()
             .filter_map(|i| GeonetSocket::downcast_mut(&mut i.socket))
         {
-            raw_socket.process(self, indication, payload);
+            raw_socket.process(self, indication.clone(), payload);
             handled_by_raw_socket = true;
         }
         handled_by_raw_socket
