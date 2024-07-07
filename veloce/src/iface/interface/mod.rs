@@ -32,9 +32,11 @@ use crate::phy::{
     Device, DeviceCapabilities, MacFilterCapabilities, Medium, PacketMeta, RxToken, TxToken,
 };
 
+use crate::security::secured_message::SecuredMessage;
 #[cfg(feature = "proto-security")]
 use crate::security::service::decap::DecapConfirm;
 
+use crate::security::service::{encap, SecurityServiceError};
 use crate::socket::geonet::Socket as GeonetSocket;
 use crate::socket::*;
 use crate::time::{Duration, Instant};
@@ -77,7 +79,7 @@ where
     T: PacketBufferMeta,
 {
     if let Some(d) = ctx.decap_confirm.take() {
-        GeonetRepr::Secured {
+        GeonetRepr::SecuredDecap {
             repr: variant,
             secured_message: d.secured_message,
             secured_message_size: d.size,
@@ -509,14 +511,14 @@ impl Interface {
                 Socket::Geonet(socket) => socket.dispatch(
                     &mut self.inner,
                     srv,
-                    |inner, core, congestion, (dst_ll_addr, gn, raw)| {
+                    |inner, core, congestion, (dst_ll_addr, pkt)| {
                         respond(
                             inner,
                             core,
                             congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
-                            GeonetPacket::new(GeonetRepr::Unsecured(gn), Some(raw)),
+                            pkt,
                         )
                     },
                 ),
@@ -524,14 +526,14 @@ impl Interface {
                 Socket::BtpA(socket) => socket.dispatch(
                     &mut self.inner,
                     srv,
-                    |inner, core, congestion, (dst_ll_addr, gn, pl)| {
+                    |inner, core, congestion, (dst_ll_addr, pkt)| {
                         respond(
                             inner,
                             core,
                             congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
-                            GeonetPacket::new(GeonetRepr::Unsecured(gn.into()), Some(pl)),
+                            pkt,
                         )
                     },
                 ),
@@ -539,14 +541,14 @@ impl Interface {
                 Socket::BtpB(socket) => socket.dispatch(
                     &mut self.inner,
                     srv,
-                    |inner, core, congestion, (dst_ll_addr, gn, pl)| {
+                    |inner, core, congestion, (dst_ll_addr, pkt)| {
                         respond(
                             inner,
                             core,
                             congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
-                            GeonetPacket::new(GeonetRepr::Unsecured(gn), Some(pl)),
+                            pkt,
                         )
                     },
                 ),
@@ -554,14 +556,14 @@ impl Interface {
                 Socket::Cam(socket) => socket.dispatch(
                     &mut self.inner,
                     srv,
-                    |inner, core, congestion, (dst_ll_addr, gn, pl)| {
+                    |inner, core, congestion, (dst_ll_addr, pkt)| {
                         respond(
                             inner,
                             core,
                             congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
-                            GeonetPacket::new(GeonetRepr::Unsecured(gn), Some(pl)),
+                            pkt,
                         )
                     },
                 ),
@@ -569,14 +571,14 @@ impl Interface {
                 Socket::Denm(socket) => socket.dispatch(
                     &mut self.inner,
                     srv,
-                    |inner, core, congestion, (dst_ll_addr, gn, pl)| {
+                    |inner, core, congestion, (dst_ll_addr, pkt)| {
                         respond(
                             inner,
                             core,
                             congestion,
                             PacketMeta::default(),
                             dst_ll_addr,
-                            GeonetPacket::new(GeonetRepr::Unsecured(gn), Some(pl)),
+                            pkt,
                         )
                     },
                 ),
@@ -1133,6 +1135,71 @@ impl InterfaceInner {
         packet: GeonetPacket,
         trc: &mut Congestion,
     ) -> Result<(), DispatchError> {
+        #[cfg(feature = "proto-security")]
+        let (packet, mut total_len) = match (&mut core.security, packet.repr()) {
+            (Some(sec_srv), GeonetRepr::ToSecure { repr, permission }) => {
+                // Packet has to be secured. Secured content consists of the common header, extended header and payload.
+
+                // Emit the common header, extended header and payload in a buffer.
+                let mut buffer =
+                    vec![0u8; repr.common_and_extended_header_len() + repr.payload_len()];
+
+                repr.emit_common_and_extended_header(&mut buffer);
+                let payload_buf = &mut buffer[repr.common_and_extended_header_len()..];
+                packet.emit_payload(payload_buf);
+
+                // Sign the emitted content.
+                match sec_srv.encap_packet(&buffer, permission.clone(), core.now) {
+                    Ok(encapsulated) => {
+                        let len = repr.basic_header_len() + encapsulated.len();
+                        let pkt = GeonetPacket::new(
+                            GeonetRepr::Secured {
+                                repr: repr.to_owned(),
+                                encapsulated,
+                            },
+                            packet.payload(),
+                        );
+                        (pkt, len)
+                    }
+                    Err(e) => return Err(DispatchError::Security(e)),
+                }
+            }
+            (
+                Some(_),
+                GeonetRepr::SecuredDecap {
+                    repr,
+                    secured_message,
+                    ..
+                },
+            ) => match secured_message.as_bytes() {
+                // Packet is already secured, we just need to emit it.
+                Ok(encapsulated) => {
+                    let len = repr.basic_header_len() + encapsulated.len();
+                    let pkt = GeonetPacket::new(
+                        GeonetRepr::Secured {
+                            repr: repr.to_owned(),
+                            encapsulated,
+                        },
+                        packet.payload(),
+                    );
+                    (pkt, len)
+                }
+                Err(e) => {
+                    return Err(DispatchError::Security(
+                        SecurityServiceError::InvalidContent(e),
+                    ))
+                }
+            },
+            _ => {
+                let len = packet.repr().inner().buffer_len();
+                let pkt = GeonetPacket::new(
+                    GeonetRepr::Unsecured(packet.repr().inner().to_owned()),
+                    packet.payload(),
+                );
+                (pkt, len)
+            }
+        };
+
         match trc.dispatch(&packet, dst_hw_addr, core.timestamp()) {
             Ok(CongestionSuccess::ImmediateTx) => {
                 // net_trace!("CongestionSuccess::ImmediateTx");
@@ -1147,11 +1214,12 @@ impl InterfaceInner {
             }
         }
 
-        let gn_repr = packet.repr().inner();
+        let gn_repr = packet.repr();
         let caps = self.caps.clone();
 
+        #[cfg(not(feature = "proto-security"))]
         // First we calculate the total length that we will have to emit.
-        let mut total_len = gn_repr.buffer_len();
+        let mut total_len = gn_repr.inner().buffer_len();
 
         // Add the size of the Ethernet header if the medium is Ethernet.
         #[cfg(feature = "medium-ethernet")]
@@ -1187,7 +1255,7 @@ impl InterfaceInner {
             frame_ctrl.set_sub_type(8); // QoS subtype
 
             let mut qos_ctrl = QoSControl::from_bytes(&[0, 0]);
-            let cat = gn_repr.traffic_class().access_category();
+            let cat = gn_repr.inner().traffic_class().access_category();
             qos_ctrl.set_access_category(cat);
             qos_ctrl.set_ack_policy(1); // No Ack
 
@@ -1217,10 +1285,22 @@ impl InterfaceInner {
         };
 
         // Emit function for the Geonetworking header and payload.
-        let emit_gn = |repr: &GeonetVariant, mut tx_buffer: &mut [u8]| {
-            gn_repr.emit(&mut tx_buffer);
+        let emit_gn = |gn_repr: &GeonetRepr<GeonetVariant>, mut tx_buffer: &mut [u8]| {
+            #[cfg(feature = "proto-security")]
+            let payload_buf = if let GeonetRepr::Secured { encapsulated, .. } = gn_repr {
+                // Emit the basic header.
+                gn_repr.inner().emit_basic_header(&mut tx_buffer);
+                // Put the encapsulated content in the tx buffer.
+                tx_buffer[gn_repr.inner().basic_header_len()..encapsulated.len()]
+                    .copy_from_slice(&encapsulated);
+                &mut tx_buffer[gn_repr.inner().basic_header_len() + encapsulated.len()..]
+            } else {
+                gn_repr.inner().emit(&mut tx_buffer);
+                &mut tx_buffer[gn_repr.inner().header_len()..]
+            };
 
-            let payload_buf = &mut tx_buffer[repr.header_len()..];
+            #[cfg(not(feature = "proto-security"))]
+            let payload_buf = &mut tx_buffer[gn_repr.inner().header_len()..];
             packet.emit_payload(payload_buf)
         };
 
@@ -1251,7 +1331,7 @@ impl InterfaceInner {
                 trc.controller
                     .inner_mut()
                     .notify_tx(core.now, Duration::from_micros(tx_duration_usec as u64));
-                self.defer_beacon(core, &gn_repr);
+                self.defer_beacon(core, &gn_repr.inner());
                 Ok(())
             })
     }
@@ -1267,11 +1347,14 @@ impl InterfaceInner {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[allow(unused)]
 enum DispatchError {
     /// Rate control returned an error on dispatch.
     #[cfg(feature = "proto-geonet")]
     RateControl,
+    /// Security service returned an error on dispatch.
+    #[cfg(feature = "proto-security")]
+    Security(SecurityServiceError),
 }

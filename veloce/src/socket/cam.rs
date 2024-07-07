@@ -2,6 +2,7 @@ use core::fmt;
 
 use crate::common::{PotiFix, PotiMode};
 use crate::config::BTP_MAX_PL_SIZE;
+use crate::iface::packet::GeonetPacket;
 use crate::iface::{Congestion, Context, ContextMeta};
 use crate::network::{GnCore, Transport};
 
@@ -190,7 +191,7 @@ impl<'a> Socket<'a> {
             &mut Context,
             &mut GnCore,
             &mut Congestion,
-            (EthernetAddress, GeonetVariant, &[u8]),
+            (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
         if !self.inner.is_open() {

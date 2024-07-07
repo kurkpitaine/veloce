@@ -2,6 +2,7 @@ use core::fmt;
 
 use crate::common::geo_area::GeoArea;
 use crate::config::{BTP_MAX_PL_SIZE, GN_DEFAULT_PACKET_LIFETIME};
+use crate::iface::packet::GeonetPacket;
 use crate::iface::{Congestion, Context, ContextMeta};
 use crate::network::{GnCore, Transport};
 
@@ -813,7 +814,7 @@ impl<'a> Socket<'a> {
             &mut Context,
             &mut GnCore,
             &mut Congestion,
-            (EthernetAddress, GeonetVariant, &[u8]),
+            (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
         if !self.inner.is_open() {
@@ -1315,53 +1316,52 @@ mod test {
 
         while s.socket.poll_at(&mut s.iface.inner) <= PollAt::Time(timestamp) {
             s.socket
-                .dispatch(
-                    &mut s.iface.inner,
-                    srv,
-                    |_, _core, _, (_eth_repr, gn_repr, buf)| {
-                        // Geonet parameters verification.
-                        let GeonetVariant::Broadcast(gn_inner) = gn_repr else {
-                            panic!("Should be geo-broadcast");
-                        };
+                .dispatch(&mut s.iface.inner, srv, |_, _core, _, (_eth_repr, pkt)| {
+                    let gn_repr = pkt.repr().inner();
+                    let buf = pkt.payload().unwrap();
 
-                        assert_eq!(
-                            gn_inner.common_header.header_type,
-                            GeonetPacketType::GeoBroadcastCircle
-                        );
-                        assert_eq!(
-                            gn_inner.extended_header.distance_a,
-                            Distance::new::<meter>(100.0)
-                        );
-                        assert_eq!(
-                            gn_inner.extended_header.distance_b,
-                            Distance::new::<meter>(0.0)
-                        );
+                    // Geonet parameters verification.
+                    let GeonetVariant::Broadcast(gn_inner) = gn_repr else {
+                        panic!("Should be geo-broadcast");
+                    };
 
-                        assert_eq!(
-                            gn_inner.extended_header.latitude,
-                            Latitude::new::<degree>(48.2764384)
-                        );
-                        assert_eq!(
-                            gn_inner.extended_header.longitude,
-                            Latitude::new::<degree>(-3.5519532)
-                        );
+                    assert_eq!(
+                        gn_inner.common_header.header_type,
+                        GeonetPacketType::GeoBroadcastCircle
+                    );
+                    assert_eq!(
+                        gn_inner.extended_header.distance_a,
+                        Distance::new::<meter>(100.0)
+                    );
+                    assert_eq!(
+                        gn_inner.extended_header.distance_b,
+                        Distance::new::<meter>(0.0)
+                    );
 
-                        // BTP parameters verification.
-                        let btp_hdr = btp::type_b::Header::new_unchecked(buf);
-                        let btp_repr = btp::type_b::Repr::parse(&btp_hdr).unwrap();
+                    assert_eq!(
+                        gn_inner.extended_header.latitude,
+                        Latitude::new::<degree>(48.2764384)
+                    );
+                    assert_eq!(
+                        gn_inner.extended_header.longitude,
+                        Latitude::new::<degree>(-3.5519532)
+                    );
 
-                        assert_eq!(btp_repr.dst_port, btp::ports::DENM);
-                        assert_eq!(btp_repr.dst_port_info, 0);
+                    // BTP parameters verification.
+                    let btp_hdr = btp::type_b::Header::new_unchecked(buf);
+                    let btp_repr = btp::type_b::Repr::parse(&btp_hdr).unwrap();
 
-                        // Deserialize emitted DENM.
-                        let decoded: denm::DENM =
-                            rasn::uper::decode(&buf[btp::type_b::HEADER_LEN..]).unwrap();
+                    assert_eq!(btp_repr.dst_port, btp::ports::DENM);
+                    assert_eq!(btp_repr.dst_port_info, 0);
 
-                        res = Some(decoded);
+                    // Deserialize emitted DENM.
+                    let decoded: denm::DENM =
+                        rasn::uper::decode(&buf[btp::type_b::HEADER_LEN..]).unwrap();
 
-                        Ok::<_, ()>(())
-                    },
-                )
+                    res = Some(decoded);
+
+                    Ok::<_, ()>(())
+                })
                 .ok();
 
             break;

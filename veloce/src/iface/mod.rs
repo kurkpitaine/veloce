@@ -14,7 +14,7 @@ mod location_service;
 mod location_table;
 mod socket_set;
 
-mod packet;
+pub(crate) mod packet;
 
 pub(crate) use self::congestion::Congestion;
 pub use self::interface::{

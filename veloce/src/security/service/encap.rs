@@ -27,7 +27,7 @@ impl SecurityService {
         self.sign_secured_message(&mut message, permissions, timestamp)?;
 
         message
-            .into_bytes()
+            .as_bytes()
             .map_err(SecurityServiceError::InvalidContent)
     }
 }

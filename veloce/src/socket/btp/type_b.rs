@@ -6,6 +6,7 @@ use uom::si::area::square_kilometer;
 use uom::si::f32::Area;
 
 use super::{BindError, Indication, RecvError, Request};
+use crate::iface::packet::GeonetPacket;
 use crate::iface::{Congestion, Context, ContextMeta};
 use crate::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, SingleHopReqMeta, TopoScopedReqMeta, Transport,
@@ -17,10 +18,7 @@ use crate::socket::{PollAt, SendError};
 use crate::{config, wire};
 
 use crate::storage::Empty;
-use crate::wire::{
-    BtpBHeader, BtpBRepr, EthernetAddress, GeonetGeoAnycast, GeonetGeoBroadcast, GeonetSingleHop,
-    GeonetTopoBroadcast, GeonetUnicast, GeonetVariant,
-};
+use crate::wire::{BtpBHeader, BtpBRepr, EthernetAddress};
 
 /// Packet metadata.
 pub type RxPacketMetadata = crate::storage::PacketMetadata<Indication>;
@@ -382,7 +380,7 @@ impl<'a> Socket<'a> {
             &mut Context,
             &mut GnCore,
             &mut Congestion,
-            (EthernetAddress, GeonetVariant, &[u8]),
+            (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
         let res = self.tx_buffer.dequeue_with(|req, payload_buf| {
@@ -414,9 +412,8 @@ impl<'a> Socket<'a> {
                         srv,
                         meta,
                         payload_buf,
-                        |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, uc_repr, pl)| {
-                            let gn_repr = GeonetUnicast::new(bh_repr, ch_repr, uc_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
+                        |cx, core, congestion, (dst_ll_addr, pkt)| {
+                            emit(cx, core, congestion, (dst_ll_addr, pkt))
                         },
                     )
                 }
@@ -445,9 +442,8 @@ impl<'a> Socket<'a> {
                         srv,
                         meta,
                         payload_buf,
-                        |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, gac_repr, pl)| {
-                            let gn_repr = GeonetGeoAnycast::new(bh_repr, ch_repr, gac_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
+                        |cx, core, congestion, (dst_ll_addr, pkt)| {
+                            emit(cx, core, congestion, (dst_ll_addr, pkt))
                         },
                     )
                 }
@@ -476,9 +472,8 @@ impl<'a> Socket<'a> {
                         srv,
                         meta,
                         payload_buf,
-                        |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, gac_repr, pl)| {
-                            let gn_repr = GeonetGeoBroadcast::new(bh_repr, ch_repr, gac_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
+                        |cx, core, congestion, (dst_ll_addr, pkt)| {
+                            emit(cx, core, congestion, (dst_ll_addr, pkt))
                         },
                     )
                 }
@@ -505,9 +500,8 @@ impl<'a> Socket<'a> {
                         srv,
                         meta,
                         payload_buf,
-                        |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, shb_repr, pl)| {
-                            let gn_repr = GeonetSingleHop::new(bh_repr, ch_repr, shb_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
+                        |cx, core, congestion, (dst_ll_addr, pkt)| {
+                            emit(cx, core, congestion, (dst_ll_addr, pkt))
                         },
                     )
                 }
@@ -534,9 +528,8 @@ impl<'a> Socket<'a> {
                         srv,
                         meta,
                         payload_buf,
-                        |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, tsb_repr, pl)| {
-                            let gn_repr = GeonetTopoBroadcast::new(bh_repr, ch_repr, tsb_repr);
-                            emit(cx, core, congestion, (dst_ll_addr, gn_repr.into(), pl))
+                        |cx, core, congestion, (dst_ll_addr, pkt)| {
+                            emit(cx, core, congestion, (dst_ll_addr, pkt))
                         },
                     )
                 }

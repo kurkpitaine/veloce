@@ -30,7 +30,7 @@ impl<'a> GeonetPacket<'a> {
     }
 
     /// Emits the payload inside buffer `buf`.
-    pub(crate) fn emit_payload(&self, buf: &mut [u8]) {
+    pub fn emit_payload(&self, buf: &mut [u8]) {
         if let Some(payload) = self.payload() {
             buf.copy_from_slice(&payload[..self.repr().inner().buffer_len()]);
         }

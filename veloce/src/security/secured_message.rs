@@ -194,8 +194,7 @@ impl SecuredMessage {
     }
 
     /// Get the secured message as bytes, encoded as Asn.1 COER.
-    /// This method consumes the secured message.
-    pub fn into_bytes(self) -> SecuredMessageResult<Vec<u8>> {
+    pub fn as_bytes(&self) -> SecuredMessageResult<Vec<u8>> {
         Self::encode(&self.inner)
     }
 

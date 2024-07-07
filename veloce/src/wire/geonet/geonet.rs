@@ -46,13 +46,17 @@ pub enum Repr<T: PacketBufferMeta> {
     /// Unsecured packet kind.
     Unsecured(T),
     #[cfg(feature = "proto-security")]
-    /// Secured packet keeps the original packet representation,
-    /// along with its security encapsulated representation (which does not contain the basic header).
-    Secured {
+    /// Secured Decapsulated packet keeps the original packet representation,
+    /// along with the secured message (which does not contain the basic header).
+    SecuredDecap {
         repr: T,
         secured_message: SecuredMessage,
         secured_message_size: usize,
     },
+    #[cfg(feature = "proto-security")]
+    /// Secured packet keeps the original packet representation,
+    /// along with its secured emitted representation (which does not contain the basic header).
+    Secured { repr: T, encapsulated: Vec<u8> },
     #[cfg(feature = "proto-security")]
     /// Packet to be secured (has to be signed),
     ToSecure { repr: T, permission: Permission },
@@ -63,7 +67,7 @@ impl<T: PacketBufferMeta> Repr<T> {
     pub(crate) fn is_secured(&self) -> bool {
         match self {
             #[cfg(feature = "proto-security")]
-            Repr::Secured { .. } => true,
+            Repr::SecuredDecap { .. } | Repr::Secured { .. } => true,
             _ => false,
         }
     }
@@ -72,6 +76,8 @@ impl<T: PacketBufferMeta> Repr<T> {
     pub(crate) fn inner(&self) -> &T {
         match self {
             Repr::Unsecured(repr) => repr,
+            #[cfg(feature = "proto-security")]
+            Repr::SecuredDecap { repr, .. } => repr,
             #[cfg(feature = "proto-security")]
             Repr::Secured { repr, .. } => repr,
             #[cfg(feature = "proto-security")]
@@ -83,6 +89,8 @@ impl<T: PacketBufferMeta> Repr<T> {
     pub(crate) fn inner_mut(&mut self) -> &mut T {
         match self {
             Repr::Unsecured(repr) => repr,
+            #[cfg(feature = "proto-security")]
+            Repr::SecuredDecap { repr, .. } => repr,
             #[cfg(feature = "proto-security")]
             Repr::Secured { repr, .. } => repr,
             #[cfg(feature = "proto-security")]
@@ -96,10 +104,11 @@ impl<T: PacketBufferMeta> PacketBufferMeta for Repr<T> {
         match self {
             Repr::Unsecured(repr) => repr.size(),
             #[cfg(feature = "proto-security")]
-            Repr::Secured {
+            Repr::SecuredDecap {
                 secured_message_size,
                 ..
             } => BASIC_HEADER_LEN + secured_message_size,
+            Repr::Secured { encapsulated, .. } => BASIC_HEADER_LEN + encapsulated.len(),
             #[cfg(feature = "proto-security")]
             Repr::ToSecure { repr, .. } => repr.size(),
         }
@@ -108,6 +117,8 @@ impl<T: PacketBufferMeta> PacketBufferMeta for Repr<T> {
     fn lifetime(&self) -> Duration {
         match self {
             Repr::Unsecured(repr) => repr.lifetime(),
+            #[cfg(feature = "proto-security")]
+            Repr::SecuredDecap { repr, .. } => repr.lifetime(),
             #[cfg(feature = "proto-security")]
             Repr::Secured { repr, .. } => repr.lifetime(),
             #[cfg(feature = "proto-security")]
@@ -168,6 +179,20 @@ macro_rules! make_repr {
                 let mut bh = BasicHeader::new_unchecked(buffer);
                 self.basic_header.emit(&mut bh);
                 let mut ch = CommonHeader::new_unchecked(bh.payload_mut());
+                self.common_header.emit(&mut ch);
+                let mut eh = $hdr::new_unchecked(ch.payload_mut());
+                self.extended_header.emit(&mut eh);
+            }
+
+            #[cfg(feature = "proto-security")]
+            pub fn emit_basic_header<T: AsRef<[u8]> + AsMut<[u8]>>(&self, buffer: T) {
+                let mut bh = BasicHeader::new_unchecked(buffer);
+                self.basic_header.emit(&mut bh);
+            }
+
+            #[cfg(feature = "proto-security")]
+            pub fn emit_common_and_extended_header<T: AsRef<[u8]> + AsMut<[u8]>>(&self, buffer: T) {
+                let mut ch = CommonHeader::new_unchecked(buffer);
                 self.common_header.emit(&mut ch);
                 let mut eh = $hdr::new_unchecked(ch.payload_mut());
                 self.extended_header.emit(&mut eh);
@@ -584,6 +609,72 @@ impl Variant {
         }
     }
 
+    #[cfg(feature = "proto-security")]
+    /// Emit the common header into a buffer.
+    pub fn emit_basic_header<T: AsRef<[u8]> + AsMut<[u8]>>(&self, buffer: T) {
+        match self {
+            Self::Beacon(repr) => repr.emit_basic_header(buffer),
+            Self::Unicast(repr) => repr.emit_basic_header(buffer),
+            Self::Anycast(repr) => repr.emit_basic_header(buffer),
+            Self::Broadcast(repr) => repr.emit_basic_header(buffer),
+            Self::SingleHopBroadcast(repr) => repr.emit_basic_header(buffer),
+            Self::TopoBroadcast(repr) => repr.emit_basic_header(buffer),
+            Self::LocationServiceRequest(repr) => repr.emit_basic_header(buffer),
+            Self::LocationServiceReply(repr) => repr.emit_basic_header(buffer),
+        }
+    }
+
+    /// Get the basic header length.
+    pub const fn basic_header_len(&self) -> usize {
+        BASIC_HEADER_LEN
+    }
+
+    #[cfg(feature = "proto-security")]
+    /// Emit the common header into a buffer.
+    pub fn emit_common_and_extended_header<T: AsRef<[u8]> + AsMut<[u8]>>(&self, buffer: T) {
+        match self {
+            Self::Beacon(repr) => repr.emit_common_and_extended_header(buffer),
+            Self::Unicast(repr) => repr.emit_common_and_extended_header(buffer),
+            Self::Anycast(repr) => repr.emit_common_and_extended_header(buffer),
+            Self::Broadcast(repr) => repr.emit_common_and_extended_header(buffer),
+            Self::SingleHopBroadcast(repr) => repr.emit_common_and_extended_header(buffer),
+            Self::TopoBroadcast(repr) => repr.emit_common_and_extended_header(buffer),
+            Self::LocationServiceRequest(repr) => repr.emit_common_and_extended_header(buffer),
+            Self::LocationServiceReply(repr) => repr.emit_common_and_extended_header(buffer),
+        }
+    }
+
+    #[cfg(feature = "proto-security")]
+    /// Return the length of the common and extended header that will be emitted from this high-level representation.
+    pub fn common_and_extended_header_len(&self) -> usize {
+        match self {
+            Self::Beacon(repr) => {
+                repr.common_header.buffer_len() + repr.extended_header.buffer_len()
+            }
+            Self::Unicast(repr) => {
+                repr.common_header.buffer_len() + repr.extended_header.buffer_len()
+            }
+            Self::Anycast(repr) => {
+                repr.common_header.buffer_len() + repr.extended_header.buffer_len()
+            }
+            Self::Broadcast(repr) => {
+                repr.common_header.buffer_len() + repr.extended_header.buffer_len()
+            }
+            Self::SingleHopBroadcast(repr) => {
+                repr.common_header.buffer_len() + repr.extended_header.buffer_len()
+            }
+            Self::TopoBroadcast(repr) => {
+                repr.common_header.buffer_len() + repr.extended_header.buffer_len()
+            }
+            Self::LocationServiceRequest(repr) => {
+                repr.common_header.buffer_len() + repr.extended_header.buffer_len()
+            }
+            Self::LocationServiceReply(repr) => {
+                repr.common_header.buffer_len() + repr.extended_header.buffer_len()
+            }
+        }
+    }
+
     /// Return the total length of a packet that will be emitted from this
     /// high-level representation.
     ///
@@ -625,14 +716,22 @@ pub(crate) fn unicast_to_variant_repr(unicast: &Repr<GeonetUnicast>) -> Repr<Var
     match unicast {
         Repr::Unsecured(u) => Repr::Unsecured(Variant::Unicast(u.to_owned())),
         #[cfg(feature = "proto-security")]
-        Repr::Secured {
+        Repr::SecuredDecap {
             repr: u,
             secured_message,
             secured_message_size,
-        } => Repr::Secured {
+        } => Repr::SecuredDecap {
             repr: Variant::Unicast(u.to_owned()),
             secured_message: secured_message.to_owned(),
             secured_message_size: *secured_message_size,
+        },
+        #[cfg(feature = "proto-security")]
+        Repr::Secured {
+            repr: u,
+            encapsulated,
+        } => Repr::Secured {
+            repr: Variant::Unicast(u.to_owned()),
+            encapsulated: encapsulated.to_owned(),
         },
         #[cfg(feature = "proto-security")]
         Repr::ToSecure {

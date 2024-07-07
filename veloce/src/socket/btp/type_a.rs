@@ -6,6 +6,7 @@ use uom::si::area::square_kilometer;
 use uom::si::f32::Area;
 
 use super::{BindError, Endpoint, Indication, ListenEndpoint, RecvError, Request};
+use crate::iface::packet::GeonetPacket;
 use crate::iface::{Congestion, Context, ContextMeta};
 use crate::network::{GnCore, Transport, UnicastReqMeta, UpperProtocol};
 #[cfg(feature = "async")]
@@ -489,7 +490,7 @@ impl<'a> Socket<'a> {
             &mut Context,
             &mut GnCore,
             &mut Congestion,
-            (EthernetAddress, GeonetUnicast, &[u8]),
+            (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
         let res = self.tx_buffer.dequeue_with(|req, payload_buf| {
@@ -527,9 +528,8 @@ impl<'a> Socket<'a> {
                 srv,
                 meta,
                 payload_buf,
-                |cx, core, congestion, (dst_ll_addr, bh_repr, ch_repr, uc_repr, pl)| {
-                    let uc_repr = GeonetUnicast::new(bh_repr, ch_repr, uc_repr);
-                    emit(cx, core, congestion, (dst_ll_addr, uc_repr, pl))
+                |cx, core, congestion, (dst_ll_addr, pkt)| {
+                    emit(cx, core, congestion, (dst_ll_addr, pkt))
                 },
             )
         });

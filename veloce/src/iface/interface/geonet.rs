@@ -9,7 +9,7 @@ use crate::config::{
 };
 use crate::iface::location_service::LocationServiceRequest;
 use crate::iface::location_table::LocationTableG5Extension;
-use crate::iface::packet::GeonetPacket;
+use crate::iface::packet::{self, GeonetPacket};
 use crate::iface::{Congestion, SocketSet};
 use crate::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, SingleHopReqMeta,
@@ -1527,13 +1527,7 @@ impl InterfaceInner {
             &mut InterfaceInner,
             &mut GnCore,
             &mut Congestion,
-            (
-                EthernetAddress,
-                BasicHeaderRepr,
-                CommonHeaderRepr,
-                UnicastRepr,
-                &[u8],
-            ),
+            (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
         /* Step 1a: set the fields of the basic header */
@@ -1572,7 +1566,7 @@ impl InterfaceInner {
                 let metadata = if ctx.core.security.is_some() {
                     GeonetRepr::ToSecure {
                         repr: buf_packet.into(),
-                        permission: Permission::GnMgmt,
+                        permission: metadata.its_aid,
                     }
                 } else {
                     GeonetRepr::Unsecured(buf_packet.into())
@@ -1592,23 +1586,37 @@ impl InterfaceInner {
                 let buf_packet = GeonetUnicast::new(bh_repr, ch_repr, uc_repr);
 
                 #[cfg(feature = "proto-security")]
-                let metadata = if ctx.core.security.is_some() {
+                let packet_meta = if ctx.core.security.is_some() {
                     GeonetRepr::ToSecure {
                         repr: buf_packet.into(),
-                        permission: Permission::GnMgmt,
+                        permission: metadata.its_aid,
                     }
                 } else {
                     GeonetRepr::Unsecured(buf_packet.into())
                 };
                 #[cfg(not(feature = "proto-security"))]
-                let metadata = GeonetRepr::Unsecured(buf_packet.into());
+                let packet_meta = GeonetRepr::Unsecured(buf_packet.into());
 
                 ctx.uc_forwarding_buffer
-                    .enqueue(metadata, payload, ctx.core.now)
+                    .enqueue(packet_meta, payload, ctx.core.now)
                     .ok();
 
                 return Ok(());
             }
+
+            let buf_packet = GeonetUnicast::new(bh_repr.clone(), ch_repr.clone(), uc_repr.clone());
+
+            #[cfg(feature = "proto-security")]
+            let packet_meta = if ctx.core.security.is_some() {
+                GeonetRepr::ToSecure {
+                    repr: buf_packet.into(),
+                    permission: metadata.its_aid,
+                }
+            } else {
+                GeonetRepr::Unsecured(buf_packet.into())
+            };
+            #[cfg(not(feature = "proto-security"))]
+            let packet_meta = GeonetRepr::Unsecured(buf_packet.into());
 
             /* Step 4: forwarding algorithm */
             let nh_ll_addr = if GN_NON_AREA_FORWARDING_ALGORITHM
@@ -1616,11 +1624,9 @@ impl InterfaceInner {
             {
                 EthernetAddress::BROADCAST
             } else {
-                let packet = GeonetUnicast::new(bh_repr.clone(), ch_repr.clone(), uc_repr.clone());
-                let packet = GeonetRepr::Unsecured(packet.into());
-
                 /* Step 5: check if packet is buffered */
-                let Some(addr) = self.non_area_greedy_forwarding(&mut ctx, &packet, payload) else {
+                let Some(addr) = self.non_area_greedy_forwarding(&mut ctx, &packet_meta, payload)
+                else {
                     return Ok(());
                 };
 
@@ -1631,12 +1637,8 @@ impl InterfaceInner {
             /* Step 7: TODO: repetition */
             /* Step 8: media dependent procedures: done at lower level */
             /* Step 9: pass packet to access layer */
-            emit(
-                self,
-                ctx.core,
-                ctx.congestion_control,
-                (nh_ll_addr, bh_repr, ch_repr, uc_repr, payload),
-            )?;
+            let packet = GeonetPacket::new(packet_meta, Some(payload));
+            emit(self, ctx.core, ctx.congestion_control, (nh_ll_addr, packet))?;
         } else {
             /* Step 2a: invoke location service for this destination */
             let Ok(handle) = ctx.ls.request(metadata.destination, ctx.core.now) else {
@@ -1663,7 +1665,19 @@ impl InterfaceInner {
 
             /* Add packet into the LS buffer */
             let buf_packet = GeonetUnicast::new(bh_repr, ch_repr, uc_repr);
-            let metadata = GeonetRepr::Unsecured(buf_packet);
+
+            #[cfg(feature = "proto-security")]
+            let metadata = if ctx.core.security.is_some() {
+                GeonetRepr::ToSecure {
+                    repr: buf_packet.into(),
+                    permission: metadata.its_aid,
+                }
+            } else {
+                GeonetRepr::Unsecured(buf_packet.into())
+            };
+            #[cfg(not(feature = "proto-security"))]
+            let metadata = GeonetRepr::Unsecured(buf_packet.into());
+
             ctx.ls_buffer.enqueue(metadata, payload, ctx.core.now).ok();
         }
 
@@ -1683,13 +1697,7 @@ impl InterfaceInner {
             &mut InterfaceInner,
             &mut GnCore,
             &mut Congestion,
-            (
-                EthernetAddress,
-                BasicHeaderRepr,
-                CommonHeaderRepr,
-                TopoBroadcastRepr,
-                &[u8],
-            ),
+            (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
         /* Step 1a: set the fields of the basic header */
@@ -1718,13 +1726,24 @@ impl InterfaceInner {
 
         /* Step 2: security sign packet: done at lower level */
 
+        let buf_packet = GeonetTopoBroadcast::new(bh_repr, ch_repr, tsb_repr);
+        #[cfg(feature = "proto-security")]
+        let packet_meta = if ctx.core.security.is_some() {
+            GeonetRepr::ToSecure {
+                repr: buf_packet.into(),
+                permission: metadata.its_aid,
+            }
+        } else {
+            GeonetRepr::Unsecured(buf_packet.into())
+        };
+        #[cfg(not(feature = "proto-security"))]
+        let packet_meta = GeonetRepr::Unsecured(buf_packet.into());
+
         /* Step 3: check if we should buffer the packet */
         if !self.location_table.has_neighbour() && metadata.traffic_class.store_carry_forward() {
             /* Buffer the packet into the broadcast buffer */
-            let buf_packet = GeonetTopoBroadcast::new(bh_repr, ch_repr, tsb_repr);
-            let metadata = GeonetRepr::Unsecured(buf_packet.into());
             ctx.bc_forwarding_buffer
-                .enqueue(metadata, payload, ctx.core.now)
+                .enqueue(packet_meta, payload, ctx.core.now)
                 .ok();
 
             return Ok(());
@@ -1733,17 +1752,12 @@ impl InterfaceInner {
         /* Step 4: TODO: packet repetition */
         /* Step 5: media dependent procedures: done at lower level */
         /* Step 6: pass packet to access layer */
+        let packet = GeonetPacket::new(packet_meta, Some(payload));
         emit(
             self,
             ctx.core,
             ctx.congestion_control,
-            (
-                EthernetAddress::BROADCAST,
-                bh_repr,
-                ch_repr,
-                tsb_repr,
-                payload,
-            ),
+            (EthernetAddress::BROADCAST, packet),
         )?;
 
         Ok(())
@@ -1762,13 +1776,7 @@ impl InterfaceInner {
             &mut InterfaceInner,
             &mut GnCore,
             &mut Congestion,
-            (
-                EthernetAddress,
-                BasicHeaderRepr,
-                CommonHeaderRepr,
-                SingleHopHeaderRepr,
-                &[u8],
-            ),
+            (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
         /* Step 1a: set the fields of the basic header */
@@ -1809,13 +1817,24 @@ impl InterfaceInner {
 
         /* Step 2: security sign packet: done at lower level */
 
+        let buf_packet = GeonetSingleHop::new(bh_repr, ch_repr, shb_repr);
+        #[cfg(feature = "proto-security")]
+        let packet_meta = if ctx.core.security.is_some() {
+            GeonetRepr::ToSecure {
+                repr: buf_packet.into(),
+                permission: metadata.its_aid,
+            }
+        } else {
+            GeonetRepr::Unsecured(buf_packet.into())
+        };
+        #[cfg(not(feature = "proto-security"))]
+        let packet_meta = GeonetRepr::Unsecured(buf_packet.into());
+
         /* Step 3: check if we should buffer the packet */
         if !self.location_table.has_neighbour() && metadata.traffic_class.store_carry_forward() {
             /* Buffer the packet into the broadcast buffer */
-            let buf_packet = GeonetSingleHop::new(bh_repr, ch_repr, shb_repr).into();
-            let metadata = GeonetRepr::Unsecured(buf_packet);
             ctx.bc_forwarding_buffer
-                .enqueue(metadata, payload, ctx.core.now)
+                .enqueue(packet_meta, payload, ctx.core.now)
                 .ok();
 
             return Ok(());
@@ -1824,17 +1843,12 @@ impl InterfaceInner {
         /* Step 4: TODO: packet repetition */
         /* Step 5: media dependent procedures: done at lower level */
         /* Step 6: pass packet to access layer */
+        let packet = GeonetPacket::new(packet_meta, Some(payload));
         emit(
             self,
             ctx.core,
             ctx.congestion_control,
-            (
-                EthernetAddress::BROADCAST,
-                bh_repr,
-                ch_repr,
-                shb_repr,
-                payload,
-            ),
+            (EthernetAddress::BROADCAST, packet),
         )?;
 
         Ok(())
@@ -1853,13 +1867,7 @@ impl InterfaceInner {
             &mut InterfaceInner,
             &mut GnCore,
             &mut Congestion,
-            (
-                EthernetAddress,
-                BasicHeaderRepr,
-                CommonHeaderRepr,
-                GeoBroadcastRepr,
-                &[u8],
-            ),
+            (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
         /* Step 1a: set the fields of the basic header */
@@ -1896,8 +1904,19 @@ impl InterfaceInner {
         };
 
         /* Step 2: check if we should buffer the packet */
-        let buf_packet = GeonetGeoBroadcast::new(bh_repr, ch_repr, gbc_repr).into();
-        let packet_meta = GeonetRepr::Unsecured(buf_packet);
+        let buf_packet = GeonetGeoBroadcast::new(bh_repr, ch_repr, gbc_repr);
+
+        #[cfg(feature = "proto-security")]
+        let packet_meta = if ctx.core.security.is_some() {
+            GeonetRepr::ToSecure {
+                repr: buf_packet.into(),
+                permission: metadata.its_aid,
+            }
+        } else {
+            GeonetRepr::Unsecured(buf_packet.into())
+        };
+        #[cfg(not(feature = "proto-security"))]
+        let packet_meta = GeonetRepr::Unsecured(buf_packet.into());
 
         if !self.location_table.has_neighbour() && metadata.traffic_class.store_carry_forward() {
             /* Buffer the packet into the broadcast buffer */
@@ -1921,12 +1940,8 @@ impl InterfaceInner {
         /* Step 7: media dependent procedures: done at lower level */
 
         /* Step 8: pass packet to access layer */
-        emit(
-            self,
-            ctx.core,
-            ctx.congestion_control,
-            (dst_addr, bh_repr, ch_repr, gbc_repr, payload),
-        )?;
+        let packet = GeonetPacket::new(packet_meta, Some(payload));
+        emit(self, ctx.core, ctx.congestion_control, (dst_addr, packet))?;
 
         Ok(())
     }
@@ -1944,13 +1959,7 @@ impl InterfaceInner {
             &mut InterfaceInner,
             &mut GnCore,
             &mut Congestion,
-            (
-                EthernetAddress,
-                BasicHeaderRepr,
-                CommonHeaderRepr,
-                GeoAnycastRepr,
-                &[u8],
-            ),
+            (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
         /* Step 1a: set the fields of the basic header */
@@ -1987,8 +1996,19 @@ impl InterfaceInner {
         };
 
         /* Step 2: check if we should buffer the packet */
-        let buf_packet = GeonetGeoAnycast::new(bh_repr, ch_repr, gbc_repr).into();
-        let packet_meta = GeonetRepr::Unsecured(buf_packet);
+        let buf_packet = GeonetGeoAnycast::new(bh_repr, ch_repr, gbc_repr);
+
+        #[cfg(feature = "proto-security")]
+        let packet_meta = if ctx.core.security.is_some() {
+            GeonetRepr::ToSecure {
+                repr: buf_packet.into(),
+                permission: metadata.its_aid,
+            }
+        } else {
+            GeonetRepr::Unsecured(buf_packet.into())
+        };
+        #[cfg(not(feature = "proto-security"))]
+        let packet_meta = GeonetRepr::Unsecured(buf_packet.into());
 
         if !self.location_table.has_neighbour() && metadata.traffic_class.store_carry_forward() {
             /* Buffer the packet into the broadcast buffer */
@@ -2012,12 +2032,8 @@ impl InterfaceInner {
         /* Step 7: media dependent procedures: done at lower level */
 
         /* Step 8: pass packet to access layer */
-        emit(
-            self,
-            ctx.core,
-            ctx.congestion_control,
-            (dst_addr, bh_repr, ch_repr, gbc_repr, payload),
-        )?;
+        let packet = GeonetPacket::new(packet_meta, Some(payload));
+        emit(self, ctx.core, ctx.congestion_control, (dst_addr, packet))?;
 
         Ok(())
     }
@@ -2089,11 +2105,10 @@ impl InterfaceInner {
             meta.set_lifetime(expiry - ctx.core.now);
 
             // For unsecured packets, update position only if we are the origin.
-            if !secured {
-                if meta.source_position_vector().address.mac_addr() == ctx.core.address().mac_addr()
-                {
-                    meta.set_source_position_vector(ctx.core.ego_position_vector());
-                }
+            if !secured
+                && meta.source_position_vector().address.mac_addr() == ctx.core.address().mac_addr()
+            {
+                meta.set_source_position_vector(ctx.core.ego_position_vector());
             }
 
             // Convert to variant.
@@ -2132,11 +2147,10 @@ impl InterfaceInner {
             meta.set_lifetime(expiry - ctx.core.now);
 
             // For unsecured packets, update position only if we are the origin.
-            if !secured {
-                if meta.source_position_vector().address.mac_addr() == ctx.core.address().mac_addr()
-                {
-                    meta.set_source_position_vector(ctx.core.ego_position_vector());
-                }
+            if !secured
+                && meta.source_position_vector().address.mac_addr() == ctx.core.address().mac_addr()
+            {
+                meta.set_source_position_vector(ctx.core.ego_position_vector());
             }
 
             emit(
@@ -2177,12 +2191,11 @@ impl InterfaceInner {
                 meta.set_lifetime(expiry - ctx.core.now);
 
                 // For unsecured packets, update position only if we are the origin
-                if !secured {
-                    if meta.source_position_vector().address.mac_addr()
+                if !secured
+                    && meta.source_position_vector().address.mac_addr()
                         == ctx.core.address().mac_addr()
-                    {
-                        meta.set_source_position_vector(ctx.core.ego_position_vector());
-                    }
+                {
+                    meta.set_source_position_vector(ctx.core.ego_position_vector());
                 }
 
                 emit(
@@ -2287,11 +2300,11 @@ impl InterfaceInner {
                         let buf_packet = match packet {
                             GeonetRepr::Unsecured(_) => GeonetRepr::Unsecured(u.to_owned()),
                             #[cfg(feature = "proto-security")]
-                            GeonetRepr::Secured {
+                            GeonetRepr::SecuredDecap {
                                 secured_message,
                                 secured_message_size,
                                 ..
-                            } => GeonetRepr::Secured {
+                            } => GeonetRepr::SecuredDecap {
                                 repr: u.to_owned(),
                                 secured_message: secured_message.to_owned(),
                                 secured_message_size: *secured_message_size,
@@ -2301,6 +2314,12 @@ impl InterfaceInner {
                                 repr: u.to_owned(),
                                 permission: permission.to_owned(),
                             },
+                            GeonetRepr::Secured { encapsulated, .. } => {
+                                GeonetRepr::Secured {
+                                    repr: u.to_owned(),
+                                    encapsulated: encapsulated.to_owned(),
+                                }
+                            }
                         };
                         ctx.uc_forwarding_buffer
                             .enqueue(buf_packet, payload, ctx.core.now)
