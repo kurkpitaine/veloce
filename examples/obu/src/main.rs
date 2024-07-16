@@ -1,5 +1,6 @@
 use std::io;
 use std::os::fd::AsRawFd;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use clap::Parser;
@@ -8,13 +9,16 @@ use log::{/* debug,*/ error, info, trace};
 use mio::event::Source;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
+use veloce::common::{PotiConfidence, PotiMotion, PotiPosition, PotiPositionConfidence};
 use veloce::iface::{Config, CongestionControl, Interface, SocketSet};
+use veloce::network::core::SecurityConfig;
 use veloce::network::{GnAddrConfigMode, GnCore, GnCoreGonfig};
 use veloce::phy::{Medium, RawSocket as VeloceRawSocket};
+use veloce::security::{SecurityBackend, TrustChain};
 use veloce::socket;
 use veloce::socket::denm::EventParameters;
-use veloce::time::Instant;
-use veloce::types::Pseudonym;
+use veloce::time::{Instant, TAI2004};
+use veloce::types::{degree, Latitude, Longitude, Pseudonym};
 use veloce::utils;
 use veloce::wire::{EthernetAddress, StationType};
 use veloce_gnss::Gpsd;
@@ -22,6 +26,16 @@ use veloce_ipc::denm::{ApiResult, ApiResultCode, Handle as ApiHandle};
 use veloce_ipc::prelude::zmq;
 use veloce_ipc::{IpcEvent, IpcEventType};
 use veloce_ipc::{ZmqPublisher, ZmqReplier};
+
+use veloce_asn1::{defs::etsi_103097_v211::etsi_ts103097Module, prelude::rasn};
+
+use veloce::security::{
+    backend::openssl::{OpensslBackend, OpensslBackendConfig},
+    certificate::{
+        AuthorizationAuthorityCertificate, AuthorizationTicketCertificate, ExplicitCertificate,
+        RootCertificate,
+    },
+};
 
 #[derive(Parser, Default, Debug)]
 struct Arguments {
@@ -63,16 +77,37 @@ fn main() {
         .register(&mut ipc_rep_src, IPC_REP_TOKEN, Interest::READABLE)
         .unwrap();
 
+    // Load certificates.
+    let backend = openssl_backend();
+    let raw_root_cert = load_root_cert();
+    let raw_aa_cert = load_aa_cert();
+    let raw_at_cert = load_at_cert();
+
+    let root_cert = RootCertificate::from_etsi_cert(raw_root_cert.0, &backend).unwrap();
+    let aa_cert =
+        AuthorizationAuthorityCertificate::from_etsi_cert(raw_aa_cert.0, &backend).unwrap();
+    let at_cert = AuthorizationTicketCertificate::from_etsi_cert(raw_at_cert.0, &backend).unwrap();
+
+    let mut own_chain = TrustChain::new(root_cert.into_with_hash_container(&backend).unwrap());
+    own_chain.set_aa_cert(aa_cert.into_with_hash_container(&backend).unwrap());
+    own_chain.set_at_cert(at_cert.into_with_hash_container(&backend).unwrap());
+
+    let security_config = SecurityConfig {
+        security_backend: SecurityBackend::Openssl(backend),
+        own_trust_chain: own_chain,
+    };
+
     // Build GnCore
     let mut router_config = GnCoreGonfig::new(StationType::PassengerCar, Pseudonym(0xabcd));
     router_config.random_seed = 0xfadecafedeadbeef;
     router_config.addr_config_mode = GnAddrConfigMode::Managed(ll_addr);
+    router_config.security = Some(security_config);
     let mut router = GnCore::new(router_config, Instant::now());
 
     // Configure interface
     let config = Config::new(ll_addr.into());
     let mut iface = Interface::new(config, device.inner_mut());
-    iface.set_congestion_control(CongestionControl::LimericDualAlpha);
+    //iface.set_congestion_control(CongestionControl::LimericDualAlpha);
 
     let mut sockets = SocketSet::new(vec![]);
 
@@ -109,6 +144,18 @@ fn main() {
         GPSD_TOKEN,
     )
     .expect("malformed GPSD server address");
+
+    router.set_position(veloce::common::PotiFix {
+        mode: veloce::common::PotiMode::Fix2d,
+        timestamp: TAI2004::from_unix_instant(Instant::now()),
+        position: PotiPosition {
+            latitude: Some(Latitude::new::<degree>(48.2764384)),
+            longitude: Some(Longitude::new::<degree>(-3.5519532)),
+            altitude: None,
+        },
+        motion: PotiMotion::default(),
+        confidence: PotiConfidence::default(),
+    });
 
     loop {
         // Update timestamp.
@@ -229,6 +276,7 @@ fn main() {
                         socket::denm::ApiError::ActionIdInOrigMsgtable => {
                             (ApiResultCode::ActionIdInOrigMsgtable, None)
                         }
+                        socket::denm::ApiError::Unauthorized => (ApiResultCode::Unauthorized, None),
                     };
                     let res = ApiResult {
                         id: id_req,
@@ -289,4 +337,44 @@ impl Source for RawSocket {
     fn deregister(&mut self, registry: &mio::Registry) -> std::io::Result<()> {
         SourceFd(&self.inner.as_raw_fd()).deregister(registry)
     }
+}
+
+pub fn openssl_backend() -> OpensslBackend {
+    let mut key_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    key_path.push("src/assets/AT.pem");
+    let key_path = std::fs::canonicalize(key_path).unwrap();
+
+    let config = OpensslBackendConfig {
+        canonical_key_path: String::new(),
+        canonical_key_passwd: String::new(),
+        signing_cert_secret_key_path: Some(key_path.into_os_string().into_string().unwrap()),
+        signing_cert_secret_key_passwd: Some("test1234".to_string()),
+    };
+
+    OpensslBackend::new(config).unwrap()
+}
+
+pub fn load_root_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+    let input_root = include_bytes!("assets/RCA.cert");
+    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_root).unwrap()
+}
+
+pub fn load_ea_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+    let input_ea = include_bytes!("assets/EA.cert");
+    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_ea).unwrap()
+}
+
+pub fn load_aa_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+    let input_aa = include_bytes!("assets/AA.cert");
+    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_aa).unwrap()
+}
+
+pub fn load_at_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+    let input_aa = include_bytes!("assets/AT.cert");
+    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_aa).unwrap()
+}
+
+pub fn load_tlm_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+    let input_tlm = include_bytes!("assets/TLM.cert");
+    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_tlm).unwrap()
 }

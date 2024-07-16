@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
+use uom::si::angle::degree;
+
 use crate::{
+    common::PotiPosition,
     security::{
         backend::openssl::{OpensslBackend, OpensslBackendConfig},
         certificate::{
@@ -10,10 +13,12 @@ use crate::{
         permission::Permission,
         secured_message::SecuredMessage,
         service::SecurityService,
+        ssp::cam::CamSsp,
         trust_chain::TrustChain,
         SecurityBackend,
     },
     time::Instant,
+    types::{Latitude, Longitude},
 };
 
 use super::certificate;
@@ -101,14 +106,16 @@ fn test_sign_message() {
 
     let mut service = SecurityService::new(own_chain, SecurityBackend::Openssl(backend));
 
-    let permissions = Permission::Unknown {
-        aid: 36,
-        ssp: Some(vec![0x01, 0x00, 0x00]),
-        mask: None,
+    let permissions = Permission::CAM(CamSsp::new().into());
+
+    let position = PotiPosition {
+        latitude: Some(Latitude::new::<degree>(48.2764384)),
+        longitude: Some(Longitude::new::<degree>(-3.5519532)),
+        altitude: None,
     };
 
     let res = service
-        .encap_packet(&BTP_CAM, permissions, Instant::now())
+        .encap_packet(&BTP_CAM, permissions, Instant::now(), position)
         .unwrap();
 
     assert!(res.len() > 0);

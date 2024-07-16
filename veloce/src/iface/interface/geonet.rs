@@ -9,7 +9,7 @@ use crate::config::{
 };
 use crate::iface::location_service::LocationServiceRequest;
 use crate::iface::location_table::LocationTableG5Extension;
-use crate::iface::packet::{self, GeonetPacket};
+use crate::iface::packet::GeonetPacket;
 use crate::iface::{Congestion, SocketSet};
 use crate::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, SingleHopReqMeta,
@@ -49,9 +49,7 @@ use crate::{
 #[cfg(feature = "proto-security")]
 use crate::security::permission::Permission;
 
-use super::{
-    check, next_sequence_number, to_gn_repr, InterfaceContext, InterfaceInner, SecuredDataBuffer,
-};
+use super::{check, next_sequence_number, InterfaceContext, InterfaceInner, SecuredDataBuffer};
 
 impl InterfaceInner {
     /// Defer the beaconing retransmission if the packet source address is ours.
@@ -379,6 +377,13 @@ impl InterfaceInner {
             /* Step 8: create LS reply packet */
             let reply_bh_repr = BasicHeaderRepr {
                 version: GN_PROTOCOL_VERSION,
+                #[cfg(feature = "proto-security")]
+                next_header: ctx
+                    .core
+                    .security
+                    .as_ref()
+                    .map_or(BHNextHeader::CommonHeader, |_| BHNextHeader::SecuredHeader),
+                #[cfg(not(feature = "proto-security"))]
                 next_header: BHNextHeader::CommonHeader,
                 lifetime: GN_DEFAULT_PACKET_LIFETIME,
                 remaining_hop_limit: GN_DEFAULT_HOP_LIMIT,
@@ -473,7 +478,10 @@ impl InterfaceInner {
 
             /* Step 12: Return packet. */
             let packet = GeonetLocationServiceRequest::new(reply_bh_repr, ch_repr, ls_req_repr);
-            let packet = to_gn_repr(packet.into(), ctx.decap_context);
+            #[cfg(feature = "proto-security")]
+            let packet = super::to_gn_repr(packet.into(), ctx.decap_context);
+            #[cfg(not(feature = "proto-security"))]
+            let packet = GeonetRepr::Unsecured(packet.into());
 
             Some((
                 ctx,
@@ -780,7 +788,10 @@ impl InterfaceInner {
         if !self.location_table.has_neighbour() && ch_repr.traffic_class.store_carry_forward() {
             /* Buffer the packet into the broadcast buffer */
             let buf_packet = GeonetTopoBroadcast::new(fwd_bh_repr, ch_repr, tsb_repr).into();
-            let metadata = to_gn_repr(buf_packet, ctx.decap_context);
+            #[cfg(feature = "proto-security")]
+            let metadata = super::to_gn_repr(buf_packet, ctx.decap_context);
+            #[cfg(not(feature = "proto-security"))]
+            let metadata = GeonetRepr::Unsecured(buf_packet);
 
             ctx.bc_forwarding_buffer
                 .enqueue(metadata, payload, ctx.core.now)
@@ -791,7 +802,10 @@ impl InterfaceInner {
 
         // Packet is sent with a broadcast link layer destination address.
         let packet = GeonetTopoBroadcast::new(fwd_bh_repr, ch_repr, tsb_repr).into();
-        let packet = to_gn_repr(packet, ctx.decap_context);
+        #[cfg(feature = "proto-security")]
+        let packet = super::to_gn_repr(packet, ctx.decap_context);
+        #[cfg(not(feature = "proto-security"))]
+        let packet = GeonetRepr::Unsecured(packet);
 
         /* Step 11: TODO: execute media dependent procedures */
         /* Step 12: return packet */
@@ -958,7 +972,11 @@ impl InterfaceInner {
         if !self.location_table.has_neighbour() && ch_repr.traffic_class.store_carry_forward() {
             /* Buffer the packet into the unicast buffer */
             let fwd_packet = GeonetUnicast::new(fwd_bh_repr, ch_repr, uc_repr);
-            let metadata = to_gn_repr(fwd_packet, ctx.decap_context);
+            #[cfg(feature = "proto-security")]
+            let metadata = super::to_gn_repr(fwd_packet, ctx.decap_context);
+            #[cfg(not(feature = "proto-security"))]
+            let metadata = GeonetRepr::Unsecured(fwd_packet);
+
             ctx.uc_forwarding_buffer
                 .enqueue(metadata, payload, ctx.core.now)
                 .ok();
@@ -972,7 +990,10 @@ impl InterfaceInner {
             GeonetUnicast::new(fwd_bh_repr, ch_repr, uc_repr).into()
         };
 
-        let packet = to_gn_repr(packet, ctx.decap_context);
+        #[cfg(feature = "proto-security")]
+        let packet = super::to_gn_repr(packet, ctx.decap_context);
+        #[cfg(not(feature = "proto-security"))]
+        let packet = GeonetRepr::Unsecured(packet);
 
         /* Step 12: execute forwarding algorithm. */
         let addr_opt = if GN_NON_AREA_FORWARDING_ALGORITHM == GnNonAreaForwardingAlgorithm::Cbf {
@@ -1188,7 +1209,10 @@ impl InterfaceInner {
         };
 
         let packet = GeonetGeoBroadcast::new(fwd_bh_repr, ch_repr, gbc_repr);
-        let packet = to_gn_repr(packet.into(), ctx.decap_context);
+        #[cfg(feature = "proto-security")]
+        let packet = super::to_gn_repr(packet.into(), ctx.decap_context);
+        #[cfg(not(feature = "proto-security"))]
+        let packet = GeonetRepr::Unsecured(packet.into());
 
         /* Step 10: check if we should buffer the packet */
         if !self.location_table.has_neighbour() && ch_repr.traffic_class.store_carry_forward() {
@@ -1322,7 +1346,10 @@ impl InterfaceInner {
         };
 
         let packet = GeonetGeoAnycast::new(fwd_bh_repr, ch_repr, gac_repr);
-        let packet = to_gn_repr(packet.into(), ctx.decap_context);
+        #[cfg(feature = "proto-security")]
+        let packet = super::to_gn_repr(packet.into(), ctx.decap_context);
+        #[cfg(not(feature = "proto-security"))]
+        let packet = GeonetRepr::Unsecured(packet.into());
 
         /* Step 10b: check if we should buffer the packet */
         if !self.location_table.has_neighbour() && ch_repr.traffic_class.store_carry_forward() {
@@ -1365,6 +1392,13 @@ impl InterfaceInner {
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
+            #[cfg(feature = "proto-security")]
+            next_header: ctx
+                .core
+                .security
+                .as_ref()
+                .map_or(BHNextHeader::CommonHeader, |_| BHNextHeader::SecuredHeader),
+            #[cfg(not(feature = "proto-security"))]
             next_header: BHNextHeader::CommonHeader,
             lifetime: GN_DEFAULT_PACKET_LIFETIME,
             remaining_hop_limit: 1,
@@ -1447,6 +1481,15 @@ impl InterfaceInner {
 
                         let bh_repr = BasicHeaderRepr {
                             version: GN_PROTOCOL_VERSION,
+                            #[cfg(feature = "proto-security")]
+                            next_header: ctx
+                                .core
+                                .security
+                                .as_ref()
+                                .map_or(BHNextHeader::CommonHeader, |_| {
+                                    BHNextHeader::SecuredHeader
+                                }),
+                            #[cfg(not(feature = "proto-security"))]
                             next_header: BHNextHeader::CommonHeader,
                             lifetime: GN_DEFAULT_PACKET_LIFETIME,
                             remaining_hop_limit: GN_DEFAULT_HOP_LIMIT,
@@ -1533,6 +1576,13 @@ impl InterfaceInner {
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
+            #[cfg(feature = "proto-security")]
+            next_header: ctx
+                .core
+                .security
+                .as_ref()
+                .map_or(BHNextHeader::CommonHeader, |_| BHNextHeader::SecuredHeader),
+            #[cfg(not(feature = "proto-security"))]
             next_header: BHNextHeader::CommonHeader,
             lifetime: metadata.max_lifetime,
             remaining_hop_limit: metadata.max_hop_limit,
@@ -1703,6 +1753,13 @@ impl InterfaceInner {
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
+            #[cfg(feature = "proto-security")]
+            next_header: ctx
+                .core
+                .security
+                .as_ref()
+                .map_or(BHNextHeader::CommonHeader, |_| BHNextHeader::SecuredHeader),
+            #[cfg(not(feature = "proto-security"))]
             next_header: BHNextHeader::CommonHeader,
             lifetime: metadata.max_lifetime,
             remaining_hop_limit: metadata.max_hop_limit,
@@ -1782,6 +1839,13 @@ impl InterfaceInner {
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
+            #[cfg(feature = "proto-security")]
+            next_header: ctx
+                .core
+                .security
+                .as_ref()
+                .map_or(BHNextHeader::CommonHeader, |_| BHNextHeader::SecuredHeader),
+            #[cfg(not(feature = "proto-security"))]
             next_header: BHNextHeader::CommonHeader,
             lifetime: metadata.max_lifetime,
             remaining_hop_limit: 1,
@@ -1873,6 +1937,13 @@ impl InterfaceInner {
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
+            #[cfg(feature = "proto-security")]
+            next_header: ctx
+                .core
+                .security
+                .as_ref()
+                .map_or(BHNextHeader::CommonHeader, |_| BHNextHeader::SecuredHeader),
+            #[cfg(not(feature = "proto-security"))]
             next_header: BHNextHeader::CommonHeader,
             lifetime: metadata.max_lifetime,
             remaining_hop_limit: metadata.max_hop_limit,
@@ -1965,6 +2036,13 @@ impl InterfaceInner {
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
+            #[cfg(feature = "proto-security")]
+            next_header: ctx
+                .core
+                .security
+                .as_ref()
+                .map_or(BHNextHeader::CommonHeader, |_| BHNextHeader::SecuredHeader),
+            #[cfg(not(feature = "proto-security"))]
             next_header: BHNextHeader::CommonHeader,
             lifetime: metadata.max_lifetime,
             remaining_hop_limit: metadata.max_hop_limit,
@@ -2314,12 +2392,11 @@ impl InterfaceInner {
                                 repr: u.to_owned(),
                                 permission: permission.to_owned(),
                             },
-                            GeonetRepr::Secured { encapsulated, .. } => {
-                                GeonetRepr::Secured {
-                                    repr: u.to_owned(),
-                                    encapsulated: encapsulated.to_owned(),
-                                }
-                            }
+                            #[cfg(feature = "proto-security")]
+                            GeonetRepr::Secured { encapsulated, .. } => GeonetRepr::Secured {
+                                repr: u.to_owned(),
+                                encapsulated: encapsulated.to_owned(),
+                            },
                         };
                         ctx.uc_forwarding_buffer
                             .enqueue(buf_packet, payload, ctx.core.now)

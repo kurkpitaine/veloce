@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::security::{EcdsaKeyType, KeyPair, PublicKey};
 
 use super::{signature::EcdsaSignature, EcdsaKey, EciesKey};
@@ -29,6 +31,23 @@ pub enum BackendError {
     NotOnCurve,
     /// Signature and key type mismatch.
     AlgorithmMismatch,
+}
+
+impl fmt::Display for BackendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BackendError::Io(e) => write!(f, "IO error: {}", e),
+            BackendError::OpenSSL(e) => write!(f, "OpenSSL error: {}", e),
+            BackendError::UnsupportedKeyType => write!(f, "Unsupported key type"),
+            BackendError::InvalidKeyFormat => write!(f, "Invalid key format"),
+            BackendError::NoSigningCertSecretKey => write!(f, "No signing certificate secret key"),
+            BackendError::InvalidKey => write!(f, "Invalid key"),
+            BackendError::InternalError => write!(f, "Internal error"),
+            BackendError::UnsupportedCompression => write!(f, "Unsupported compression"),
+            BackendError::NotOnCurve => write!(f, "Point not on curve"),
+            BackendError::AlgorithmMismatch => write!(f, "Signature and key type mismatch"),
+        }
+    }
 }
 
 pub type BackendResult<T> = Result<T, BackendError>;

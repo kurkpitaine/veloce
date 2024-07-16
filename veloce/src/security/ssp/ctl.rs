@@ -1,4 +1,4 @@
-use super::{SspContainer, SspError, SspResult, SspTrait, SSP_VERSION};
+use super::{SspContainer, SspError, SspResult, SspTrait, SSP_VERSION_1};
 
 /// ECTL permissions.
 pub const TLM_CTL: CtlSsp = CtlSsp::from_raw_permissions(0xc8);
@@ -50,56 +50,23 @@ impl CtlSsp {
 
     /// Constructs a [CtlSsp] from the provided `permissions` value.
     pub const fn from_raw_permissions(permissions: u8) -> CtlSsp {
-        CtlSsp(SspContainer::from_slice([SSP_VERSION, permissions]))
+        CtlSsp(SspContainer::from_slice([SSP_VERSION_1, permissions]))
     }
 
     /// Constructs a [CtlSsp] from bytes, ensuring length and
     /// version are supported.
     pub fn parse(buf: &[u8]) -> SspResult<CtlSsp> {
         // Ensure no panics.
-        if buf.len() != CTL_SSP_LEN {
+        if buf.len() < CTL_SSP_LEN {
             return Err(SspError::Length);
         }
 
         // Ensure version is supported.
-        if buf[0] != SSP_VERSION {
+        if buf[0] != SSP_VERSION_1 {
             return Err(SspError::Version);
         }
 
         Ok(CtlSsp(SspContainer::from_bytes(buf)))
-    }
-
-    /// Query whether the inner SSP contains the provided `permission`.
-    pub const fn has_permission(&self, permission: CtlPermission) -> bool {
-        match permission {
-            CtlPermission::DistributionCenter => self.0.read_bit::<1, { field::DC }>(),
-            CtlPermission::AuthorizationAuthority => self.0.read_bit::<1, { field::AA }>(),
-            CtlPermission::EnrollmentAuthority => self.0.read_bit::<1, { field::EA }>(),
-            CtlPermission::Root => self.0.read_bit::<1, { field::RCA }>(),
-            CtlPermission::TrustedListManager => self.0.read_bit::<1, { field::TLM }>(),
-        }
-    }
-
-    /// Set the corresponding `permission` bit in the SSP.
-    pub fn set_permission(&mut self, permission: CtlPermission) {
-        match permission {
-            CtlPermission::DistributionCenter => self.0.write_bit::<1, { field::DC }>(true),
-            CtlPermission::AuthorizationAuthority => self.0.write_bit::<1, { field::AA }>(true),
-            CtlPermission::EnrollmentAuthority => self.0.write_bit::<1, { field::EA }>(true),
-            CtlPermission::Root => self.0.write_bit::<1, { field::RCA }>(true),
-            CtlPermission::TrustedListManager => self.0.write_bit::<1, { field::TLM }>(true),
-        }
-    }
-
-    /// Clear the corresponding `permission` bit in the SSP.
-    pub fn clear_permission(&mut self, permission: CtlPermission) {
-        match permission {
-            CtlPermission::DistributionCenter => self.0.write_bit::<1, { field::DC }>(false),
-            CtlPermission::AuthorizationAuthority => self.0.write_bit::<1, { field::AA }>(false),
-            CtlPermission::EnrollmentAuthority => self.0.write_bit::<1, { field::EA }>(false),
-            CtlPermission::Root => self.0.write_bit::<1, { field::RCA }>(false),
-            CtlPermission::TrustedListManager => self.0.write_bit::<1, { field::TLM }>(false),
-        }
     }
 
     /// Verifies the SSP combination for a TLM CTL certificate, according to the
@@ -129,8 +96,42 @@ impl CtlSsp {
 
 impl SspTrait for CtlSsp {
     type SspType = CtlSsp;
+    type PermissionType = CtlPermission;
 
     fn contains_permissions_of(&self, other: &Self::SspType) -> bool {
         self.0.inner[1] | other.0.inner[1] == self.0.inner[1]
+    }
+
+    /// Query whether the inner SSP contains the provided `permission`.
+    fn has_permission(&self, permission: Self::PermissionType) -> bool {
+        match permission {
+            CtlPermission::DistributionCenter => self.0.read_bit::<1, { field::DC }>(),
+            CtlPermission::AuthorizationAuthority => self.0.read_bit::<1, { field::AA }>(),
+            CtlPermission::EnrollmentAuthority => self.0.read_bit::<1, { field::EA }>(),
+            CtlPermission::Root => self.0.read_bit::<1, { field::RCA }>(),
+            CtlPermission::TrustedListManager => self.0.read_bit::<1, { field::TLM }>(),
+        }
+    }
+
+    /// Set the corresponding `permission` bit in the SSP.
+    fn set_permission(&mut self, permission: Self::PermissionType) {
+        match permission {
+            CtlPermission::DistributionCenter => self.0.write_bit::<1, { field::DC }>(true),
+            CtlPermission::AuthorizationAuthority => self.0.write_bit::<1, { field::AA }>(true),
+            CtlPermission::EnrollmentAuthority => self.0.write_bit::<1, { field::EA }>(true),
+            CtlPermission::Root => self.0.write_bit::<1, { field::RCA }>(true),
+            CtlPermission::TrustedListManager => self.0.write_bit::<1, { field::TLM }>(true),
+        }
+    }
+
+    /// Clear the corresponding `permission` bit in the SSP.
+    fn clear_permission(&mut self, permission: Self::PermissionType) {
+        match permission {
+            CtlPermission::DistributionCenter => self.0.write_bit::<1, { field::DC }>(false),
+            CtlPermission::AuthorizationAuthority => self.0.write_bit::<1, { field::AA }>(false),
+            CtlPermission::EnrollmentAuthority => self.0.write_bit::<1, { field::EA }>(false),
+            CtlPermission::Root => self.0.write_bit::<1, { field::RCA }>(false),
+            CtlPermission::TrustedListManager => self.0.write_bit::<1, { field::TLM }>(false),
+        }
     }
 }

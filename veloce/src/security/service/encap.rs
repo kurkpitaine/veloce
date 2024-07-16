@@ -1,6 +1,7 @@
 //! SN-ENCAP service as defined in ETSI TS 102 723-8 V1.1.1 paragraph 5.2.12.
 
 use crate::{
+    common::PotiPosition,
     security::{permission::Permission, secured_message::SecuredMessage},
     time::Instant,
 };
@@ -21,10 +22,11 @@ impl SecurityService {
         packet: &[u8],
         permissions: Permission,
         timestamp: Instant,
+        position: PotiPosition,
     ) -> EncapResult {
         let mut message = SecuredMessage::new(packet);
 
-        self.sign_secured_message(&mut message, permissions, timestamp)?;
+        self.sign_secured_message(&mut message, permissions, timestamp, position)?;
 
         message
             .as_bytes()

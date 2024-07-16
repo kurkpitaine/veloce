@@ -9,8 +9,8 @@ use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2::{
     ToBeSignedData,
 };
 use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2Base_types::{
-    EccP256CurvePoint, EcdsaP256Signature, HashAlgorithm, Opaque, Psid, Signature, Time64, Uint64,
-    Uint8,
+    EccP256CurvePoint, EcdsaP256Signature, HashAlgorithm, Opaque, Psid, Signature, ThreeDLocation,
+    Time64, Uint64, Uint8,
 };
 use veloce_asn1::prelude::rasn::types::FixedOctetString;
 use veloce_asn1::prelude::rasn::{self, error::DecodeError};
@@ -242,6 +242,20 @@ impl SecuredMessage {
         };
 
         sd.tbs_data.header_info.psid = Psid(aid.into());
+
+        Ok(())
+    }
+
+    /// Set the generation location of the secured message.
+    pub fn set_generation_location(
+        &mut self,
+        location: ThreeDLocation,
+    ) -> SecuredMessageResult<()> {
+        let Ieee1609Dot2Content::signedData(sd) = &mut self.inner.0 .0.content else {
+            return Err(SecuredMessageError::NotSigned);
+        };
+
+        sd.tbs_data.header_info.generation_location = Some(location);
 
         Ok(())
     }

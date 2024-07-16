@@ -32,11 +32,9 @@ use crate::phy::{
     Device, DeviceCapabilities, MacFilterCapabilities, Medium, PacketMeta, RxToken, TxToken,
 };
 
-use crate::security::secured_message::SecuredMessage;
 #[cfg(feature = "proto-security")]
-use crate::security::service::decap::DecapConfirm;
+use crate::security::service::{decap::DecapConfirm, SecurityServiceError};
 
-use crate::security::service::{encap, SecurityServiceError};
 use crate::socket::geonet::Socket as GeonetSocket;
 use crate::socket::*;
 use crate::time::{Duration, Instant};
@@ -74,9 +72,10 @@ macro_rules! next_sequence_number {
 }
 
 #[cfg(all(feature = "proto-geonet", feature = "proto-security"))]
+#[inline]
 pub(super) fn to_gn_repr<T>(variant: T, ctx: &mut DecapContext) -> GeonetRepr<T>
 where
-    T: PacketBufferMeta,
+    T: crate::common::PacketBufferMeta,
 {
     if let Some(d) = ctx.decap_confirm.take() {
         GeonetRepr::SecuredDecap {
@@ -586,8 +585,8 @@ impl Interface {
 
             match result {
                 Err(EgressError::Exhausted) => break, // Device buffer full.
-                Err(EgressError::Dispatch(_)) => {
-                    net_trace!("failed to transmit geonet packet: dispatch error");
+                Err(EgressError::Dispatch(d)) => {
+                    net_trace!("failed to transmit geonet packet: dispatch error - {:?}", d);
                 }
                 Ok(()) => {}
             }
@@ -657,8 +656,8 @@ impl Interface {
 
         match result {
             Err(EgressError::Exhausted) => {} // Device buffer full.
-            Err(EgressError::Dispatch(_)) => {
-                net_debug!("failed to transmit beacon packet: dispatch error");
+            Err(EgressError::Dispatch(d)) => {
+                net_debug!("failed to transmit beacon packet: dispatch error - {:?}", d);
             }
             Ok(()) => {}
         }
@@ -729,8 +728,11 @@ impl Interface {
 
         match result {
             Err(EgressError::Exhausted) => {} // Device buffer full.
-            Err(EgressError::Dispatch(_)) => {
-                net_debug!("failed to transmit location service packet: dispatch error");
+            Err(EgressError::Dispatch(d)) => {
+                net_debug!(
+                    "failed to transmit location service packet: dispatch error - {:?}",
+                    d
+                );
             }
             Ok(()) => {}
         }
@@ -809,8 +811,11 @@ impl Interface {
                     // Device buffer full.
                     break;
                 }
-                Err(EgressError::Dispatch(_)) => {
-                    net_debug!("failed to transmit LS buffered packet: dispatch error");
+                Err(EgressError::Dispatch(d)) => {
+                    net_debug!(
+                        "failed to transmit LS buffered packet: dispatch error - {:?}",
+                        d
+                    );
                     break;
                 }
                 Ok(()) => {}
@@ -891,8 +896,11 @@ impl Interface {
                     // Device buffer full.
                     break;
                 }
-                Err(EgressError::Dispatch(_)) => {
-                    net_debug!("failed to transmit unicast buffered packet: dispatch error");
+                Err(EgressError::Dispatch(d)) => {
+                    net_debug!(
+                        "failed to transmit unicast buffered packet: dispatch error - {:?}",
+                        d
+                    );
                     break;
                 }
                 Ok(()) => {}
@@ -973,8 +981,11 @@ impl Interface {
                     // Device buffer full.
                     break;
                 }
-                Err(EgressError::Dispatch(_)) => {
-                    net_debug!("failed to transmit broadcast buffered packet: dispatch error");
+                Err(EgressError::Dispatch(d)) => {
+                    net_debug!(
+                        "failed to transmit broadcast buffered packet: dispatch error - {:?}",
+                        d
+                    );
                     break;
                 }
                 Ok(()) => {}
@@ -1055,8 +1066,11 @@ impl Interface {
                     // Device buffer full.
                     break;
                 }
-                Err(EgressError::Dispatch(_)) => {
-                    net_debug!("failed to transmit contention buffered packet: dispatch error");
+                Err(EgressError::Dispatch(d)) => {
+                    net_debug!(
+                        "failed to transmit contention buffered packet: dispatch error - {:?}",
+                        d
+                    );
                     break;
                 }
                 Ok(()) => {}
@@ -1135,6 +1149,10 @@ impl InterfaceInner {
         packet: GeonetPacket,
         trc: &mut Congestion,
     ) -> Result<(), DispatchError> {
+        self.defer_beacon(core, &packet.repr().inner());
+
+        #[cfg(feature = "proto-security")]
+        let position = core.position().position;
         #[cfg(feature = "proto-security")]
         let (packet, mut total_len) = match (&mut core.security, packet.repr()) {
             (Some(sec_srv), GeonetRepr::ToSecure { repr, permission }) => {
@@ -1149,7 +1167,8 @@ impl InterfaceInner {
                 packet.emit_payload(payload_buf);
 
                 // Sign the emitted content.
-                match sec_srv.encap_packet(&buffer, permission.clone(), core.now) {
+
+                match sec_srv.encap_packet(&buffer, permission.clone(), core.now, position) {
                     Ok(encapsulated) => {
                         let len = repr.basic_header_len() + encapsulated.len();
                         let pkt = GeonetPacket::new(
@@ -1285,22 +1304,22 @@ impl InterfaceInner {
         };
 
         // Emit function for the Geonetworking header and payload.
+        #[allow(unused_mut)]
         let emit_gn = |gn_repr: &GeonetRepr<GeonetVariant>, mut tx_buffer: &mut [u8]| {
             #[cfg(feature = "proto-security")]
-            let payload_buf = if let GeonetRepr::Secured { encapsulated, .. } = gn_repr {
+            if let GeonetRepr::Secured { encapsulated, .. } = gn_repr {
                 // Emit the basic header.
                 gn_repr.inner().emit_basic_header(&mut tx_buffer);
                 // Put the encapsulated content in the tx buffer.
-                tx_buffer[gn_repr.inner().basic_header_len()..encapsulated.len()]
-                    .copy_from_slice(&encapsulated);
-                &mut tx_buffer[gn_repr.inner().basic_header_len() + encapsulated.len()..]
+                tx_buffer[gn_repr.inner().basic_header_len()..].copy_from_slice(&encapsulated);
             } else {
                 gn_repr.inner().emit(&mut tx_buffer);
-                &mut tx_buffer[gn_repr.inner().header_len()..]
+                packet.emit_payload(&mut tx_buffer[gn_repr.inner().header_len()..]);
             };
 
             #[cfg(not(feature = "proto-security"))]
             let payload_buf = &mut tx_buffer[gn_repr.inner().header_len()..];
+            #[cfg(not(feature = "proto-security"))]
             packet.emit_payload(payload_buf)
         };
 
@@ -1331,7 +1350,6 @@ impl InterfaceInner {
                 trc.controller
                     .inner_mut()
                     .notify_tx(core.now, Duration::from_micros(tx_duration_usec as u64));
-                self.defer_beacon(core, &gn_repr.inner());
                 Ok(())
             })
     }

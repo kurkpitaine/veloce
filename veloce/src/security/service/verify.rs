@@ -121,7 +121,7 @@ impl SecurityService {
 
         let res = backend
             .verify_signature(signature, signer_pubkey, &hash)
-            .map_err(|_| SecurityServiceError::Backend)?;
+            .map_err(SecurityServiceError::Backend)?;
 
         if res {
             Ok(VerifyConfirm {

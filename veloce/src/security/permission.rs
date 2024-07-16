@@ -7,7 +7,9 @@ use veloce_asn1::{
     prelude::rasn::types::Integer,
 };
 
-use super::ssp::{crl::CrlSsp, ctl::CtlSsp, scr::ScrSsp, SspError, SspTrait};
+use super::ssp::{
+    cam::CamSsp, crl::CrlSsp, ctl::CtlSsp, denm::DenmSsp, scr::ScrSsp, SspError, SspTrait,
+};
 
 enum_with_unknown! {
     /// ITS Application Object Identifier Registration numbers, as ETSI TS 102 965 V2.1.1.
@@ -127,6 +129,10 @@ impl fmt::Display for PermissionError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Permission {
+    /// Cooperative Awareness message service permission.
+    CAM(PermissionSspContainer<CamSsp>),
+    /// Decentralized Event Notification message service permission.
+    DENM(PermissionSspContainer<DenmSsp>),
     /// Certificate Revocation List service permission.
     CRL(PermissionSspContainer<CrlSsp>),
     /// Certificate Trust List service permission.
@@ -157,6 +163,8 @@ impl Permission {
     /// Get the AID of the permission.
     pub fn aid(&self) -> AID {
         match self {
+            Permission::CAM(_) => AID::CA,
+            Permission::DENM(_) => AID::DEN,
             Permission::CRL(_) => AID::CRL,
             Permission::CTL(_) => AID::CTL,
             Permission::GnMgmt => AID::GnMgmt,
@@ -165,8 +173,11 @@ impl Permission {
         }
     }
 
+    /// Check if the permission contains the other permissions.
     pub fn contains_permissions_of(&self, other: &Permission) -> bool {
         match (self, other) {
+            (Permission::CAM(l), Permission::CAM(r)) => l.ssp.contains_permissions_of(&r.ssp),
+            (Permission::DENM(l), Permission::DENM(r)) => l.ssp.contains_permissions_of(&r.ssp),
             (Permission::CRL(l), Permission::CRL(r)) => l.ssp.contains_permissions_of(&r.ssp),
             (Permission::CTL(l), Permission::CTL(r)) => l.ssp.contains_permissions_of(&r.ssp),
             (Permission::GnMgmt, Permission::GnMgmt) => true,
@@ -176,6 +187,17 @@ impl Permission {
                 Permission::Unknown { ssp: Some(r), .. },
             ) if l.len() == r.len() => l.iter().zip(r.iter()).all(|(lv, rv)| lv | *rv == *lv),
             _ => false,
+        }
+    }
+
+    /// Get a reference on the inner [DenmSsp].
+    ///
+    /// # Panics
+    /// This method panics of the inner SSP is not [DenmSsp] type.
+    pub fn denm_or_panic(&self) -> &DenmSsp {
+        match self {
+            Permission::DENM(ssp) => &ssp.ssp,
+            _ => panic!("Permission is not DENM type."),
         }
     }
 }
@@ -201,6 +223,16 @@ impl<'a> TryFrom<&'a PsidSsp> for Permission {
             AID::try_from(&value.psid.0).map_err(|_| PermissionError::UnsupportedAIDFormat)?;
 
         let res = match aid {
+            AID::CA => {
+                let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let ssp = CamSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
+                Permission::CAM(PermissionSspContainer { ssp, mask: None })
+            }
+            AID::DEN => {
+                let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let ssp = DenmSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
+                Permission::DENM(PermissionSspContainer { ssp, mask: None })
+            }
             AID::CRL => {
                 let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CrlSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
@@ -260,6 +292,20 @@ impl<'a> TryFrom<&'a PsidSspRange> for Permission {
             AID::try_from(&value.psid.0).map_err(|_| PermissionError::UnsupportedAIDFormat)?;
 
         let res = match aid {
+            AID::CA => {
+                let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let ssp = CamSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
+                let mask = Some(range.ssp_bitmask.to_vec());
+
+                Permission::CAM(PermissionSspContainer { ssp, mask })
+            }
+            AID::DEN => {
+                let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let ssp = DenmSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
+                let mask = Some(range.ssp_bitmask.to_vec());
+
+                Permission::DENM(PermissionSspContainer { ssp, mask })
+            }
             AID::CRL => {
                 let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CrlSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;

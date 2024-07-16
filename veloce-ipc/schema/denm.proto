@@ -118,6 +118,8 @@ enum ApiResultCode {
    NotFound = 18;
    // Action Id exists in originating message table.
    ActionIdInOrigMsgtable = 19;
+   // Unauthorized DENM cause code, ie: we don't have permission to send it.
+   Unauthorized = 20;
 }
 
 /// Parameters for a DENM request.

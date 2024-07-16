@@ -7,8 +7,8 @@ pub mod core;
 pub mod request;
 
 use crate::common::geo_area::GeoArea;
-use crate::security::permission::Permission;
-use crate::security::HashedId8;
+#[cfg(feature = "proto-security")]
+use crate::security::{permission::Permission, HashedId8};
 use crate::time::Duration;
 use crate::wire::GnProtocol;
 use crate::wire::{GnAddress, GnTrafficClass};

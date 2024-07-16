@@ -3,9 +3,14 @@ use core::fmt::{self, Formatter};
 use crate::{time::Instant, types::Pseudonym, wire::EthernetAddress};
 
 use super::{
-    certificate::CertificateError, certificate_cache::CertificateCache,
-    secured_message::SecuredMessageError, trust_chain::TrustChain,
-    trust_store::Store as TrustStore, SecurityBackend,
+    backend::BackendError,
+    certificate::{CertificateError, ExplicitCertificate},
+    certificate_cache::CertificateCache,
+    permission::Permission,
+    secured_message::SecuredMessageError,
+    trust_chain::TrustChain,
+    trust_store::Store as TrustStore,
+    SecurityBackend,
 };
 
 pub(crate) mod decap;
@@ -47,7 +52,7 @@ pub enum SecurityServiceError {
     /// Message decryption has failed.
     DecryptionError,
     /// Backend error.
-    Backend,
+    Backend(BackendError),
 }
 
 impl fmt::Display for SecurityServiceError {
@@ -78,13 +83,13 @@ impl fmt::Display for SecurityServiceError {
             }
             SecurityServiceError::UnencryptedMessage => write!(f, "unencrypted message"),
             SecurityServiceError::DecryptionError => write!(f, "decryption error"),
-            SecurityServiceError::Backend => write!(f, "backend error"),
+            SecurityServiceError::Backend(e) => write!(f, "backend error: {}", e),
         }
     }
 }
 
 pub struct SecurityService {
-    /// Instant at which to include the certificate in a CAM message signature.
+    /// Instant at which to include the full AT certificate in a CAM message signature.
     next_cert_in_cam_at: Instant,
     /// AT Certificates cache.
     cache: CertificateCache,
@@ -118,6 +123,20 @@ impl SecurityService {
     /// Get a mutable reference to the [TrustStore].
     pub fn store_mut(&mut self) -> &mut TrustStore {
         &mut self.store
+    }
+
+    /// Get the application permissions contained in the AT certificate used to sign the messages.
+    pub fn application_permissions(&self) -> Result<Vec<Permission>, SecurityServiceError> {
+        self.store
+            .own_chain()
+            .at_cert()
+            .as_ref()
+            .ok_or(SecurityServiceError::NoSigningCertificate)
+            .and_then(|at| {
+                at.certificate()
+                    .application_permissions()
+                    .map_err(SecurityServiceError::InvalidCertificate)
+            })
     }
 
     /// Get the pseudonym of the local station.

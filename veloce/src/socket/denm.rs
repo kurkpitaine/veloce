@@ -6,10 +6,18 @@ use crate::iface::packet::GeonetPacket;
 use crate::iface::{Congestion, Context, ContextMeta};
 use crate::network::{GnCore, Transport};
 
+#[cfg(feature = "proto-security")]
+use crate::security::{
+    permission::{Permission, AID},
+    ssp::{
+        denm::{DenmPermission, DenmSsp},
+        SspTrait,
+    },
+};
 use crate::socket::{self, btp::SocketB as BtpBSocket, PollAt};
 use crate::time::{Duration, Instant, TAI2004};
 use crate::types::Pseudonym;
-use crate::wire::{self, ports, EthernetAddress, GeonetVariant, GnTrafficClass};
+use crate::wire::{self, ports, EthernetAddress, GnTrafficClass};
 
 use crate::storage::PacketBuffer;
 
@@ -105,6 +113,8 @@ pub enum ApiError {
     NotFound,
     /// Action Id exists in originating message table.
     ActionIdInOrigMsgtable,
+    /// Unauthorized DENM cause code, ie: we don't have permission to send it.
+    Unauthorized,
 }
 
 impl core::fmt::Display for ApiError {
@@ -126,6 +136,7 @@ impl core::fmt::Display for ApiError {
             ApiError::ActionIdInOrigMsgtable => {
                 write!(f, "Action Id exists in originating message table")
             }
+            ApiError::Unauthorized => write!(f, "Unauthorized DENM cause code"),
         }
     }
 }
@@ -223,6 +234,9 @@ struct Event {
     retransmit_at: Option<Instant>,
     /// DENM retransmission metadata (if any).
     retransmission: Option<RetransmissionMeta>,
+    #[cfg(feature = "proto-security")]
+    /// DENM permission.
+    permission: Permission,
 }
 
 /// Retransmission metadata for a DENM.
@@ -340,7 +354,7 @@ const DENM_RX_BUF_SIZE: usize = DENM_RX_BUF_NUM * BTP_MAX_PL_SIZE;
 /// An ETSI DENM type socket.
 ///
 /// A DENM socket executes the Decentralized Event Notification Message protocol,
-/// as described in ETSI TS 103 831 V2.1.1 (2022-11).
+/// as described in ETSI TS 103 831 V2.2.1.
 ///
 /// The socket sends/receive DENM autonomously.
 /// You must query the last processing event with `.poll()` after every call to
@@ -596,6 +610,44 @@ impl<'a> Socket<'a> {
             None => None,
         };
 
+        #[cfg(feature = "proto-security")]
+        let permission = if let Some(sec) = &core.security {
+            // Check if we have permission to send this DENM.
+            let sign_permissions = sec
+                .application_permissions()
+                .map_err(|_| ApiError::Unauthorized)?;
+
+            let sign_permission = sign_permissions
+                .iter()
+                .find(|p| p.aid() == AID::DEN)
+                .map(|p| p.denm_or_panic())
+                .ok_or(ApiError::Unauthorized)?;
+
+            let mut saved_perm = if sign_permission.is_v1() {
+                DenmSsp::new_v1()
+            } else {
+                DenmSsp::new_v2()
+            };
+
+            let authorized = if let Some(situation) = &event.situation_container {
+                let cause_code = &situation.event_type.cc_and_scc;
+                let permission =
+                    DenmPermission::try_from(cause_code).map_err(|_| ApiError::Unauthorized)?;
+                saved_perm.set_permission(permission);
+                sign_permission.has_permission(permission)
+            } else {
+                true
+            };
+
+            if !authorized {
+                return Err(ApiError::Unauthorized);
+            } else {
+                Permission::DENM(saved_perm.into())
+            }
+        } else {
+            Default::default()
+        };
+
         // Assign unused actionId value.
         let (action_id, reference_time) = if let TerminationType::Negation((id, rt)) = termination {
             (id, rt)
@@ -666,6 +718,8 @@ impl<'a> Socket<'a> {
                 encoded,
                 retransmit_at: Some(Instant::ZERO),
                 retransmission,
+                #[cfg(feature = "proto-security")]
+                permission,
             },
         });
 
@@ -716,13 +770,39 @@ impl<'a> Socket<'a> {
             }
         };
 
+        let action_id = ActionId::from(decoded.denm.management.action_id.clone());
+
+        #[cfg(feature = "proto-security")]
+        if srv.core.security.is_some() {
+            let authorized = match (&decoded.denm.situation, &_ind.its_aid) {
+                (None, Permission::DENM(_)) => true,
+                (Some(s), Permission::DENM(p)) => {
+                    match DenmPermission::try_from(&s.event_type.cc_and_scc) {
+                        Ok(code) => p.ssp.has_permission(code),
+                        Err(_) => false,
+                    }
+                }
+                (_, _) => {
+                    net_debug!(
+                        "Cannot process DENM {} - unexpected permission type",
+                        action_id
+                    );
+                    return;
+                }
+            };
+
+            if !authorized {
+                net_debug!("Cannot process DENM {} - not authorized", action_id);
+                return;
+            }
+        }
+
         let now = srv.core.now;
         let termination = decoded.denm.management.termination.clone();
         let detection_time = TAI2004::from(decoded.denm.management.detection_time.clone());
         let reference_time = TAI2004::from(decoded.denm.management.reference_time.clone());
         let expires_at = detection_time.as_unix_instant()
             + Duration::from_secs(decoded.denm.management.validity_duration.0.into());
-        let action_id = ActionId::from(decoded.denm.management.action_id.clone());
 
         if expires_at < now {
             net_debug!(
@@ -886,6 +966,8 @@ impl<'a> Socket<'a> {
                 transport: Transport::Broadcast(event.geo_area),
                 max_lifetime: GN_DEFAULT_PACKET_LIFETIME,
                 traffic_class: event.traffic_class,
+                #[cfg(feature = "proto-security")]
+                its_aid: event.permission.clone(),
                 ..Default::default()
             };
 
@@ -1258,6 +1340,7 @@ mod test {
     use uom::si::angle::degree;
     use uom::si::f32::Angle;
     use uom::si::length::meter;
+    use wire::GeonetVariant;
 
     use super::*;
 

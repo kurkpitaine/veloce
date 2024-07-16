@@ -6,10 +6,18 @@ use crate::iface::packet::GeonetPacket;
 use crate::iface::{Congestion, Context, ContextMeta};
 use crate::network::{GnCore, Transport};
 
+#[cfg(feature = "proto-security")]
+use crate::security::{
+    permission::Permission,
+    ssp::{
+        cam::{CamPermission, CamSsp},
+        SspTrait,
+    },
+};
 use crate::socket::{self, btp::SocketB as BtpBSocket, PollAt};
 use crate::time::{Duration, Instant, TAI2004};
 use crate::types::Pseudonym;
-use crate::wire::{self, ports, GeonetVariant, GnTrafficClass};
+use crate::wire::{self, ports, GnTrafficClass};
 
 use crate::storage::PacketBuffer;
 use crate::wire::{EthernetAddress, StationType};
@@ -175,6 +183,21 @@ impl<'a> Socket<'a> {
             }
         };
 
+        #[cfg(feature = "proto-security")]
+        if srv.core.security.is_some() {
+            let authorized = if let Permission::CAM(p) = &_ind.its_aid {
+                Self::check_permissions(&decoded, &p.ssp)
+            } else {
+                net_debug!("Cannot process CAM - unexpected permission type");
+                return;
+            };
+
+            if !authorized {
+                net_debug!("Cannot process CAM - not authorized");
+                return;
+            }
+        }
+
         if let Some(rx_cb) = &mut self.rx_callback {
             rx_cb(buf, &decoded);
         };
@@ -258,18 +281,26 @@ impl<'a> Socket<'a> {
             return Ok(());
         };
 
+        #[cfg(feature = "proto-security")]
+        let ssp = CamSsp::new();
+
         let meta = Request {
             transport: Transport::SingleHopBroadcast,
             max_lifetime: Duration::from_millis(1000),
             traffic_class: GnTrafficClass::new(false, 2), // pCamTrafficClass in C2C vehicle profile.
+            #[cfg(feature = "proto-security")]
+            its_aid: Permission::CAM(ssp.into()),
             ..Default::default()
         };
 
         // TODO: FixMe
-        let Ok(_) = self.inner.send_slice(&raw_cam, meta) else {
-            net_trace!("CAM slice cannot be sent");
-            return Ok(());
-        };
+        match self.inner.send_slice(&raw_cam, meta) {
+            Ok(_) => {}
+            Err(e) => {
+                net_trace!("CAM slice cannot be sent: {}", e);
+                return Ok(());
+            }
+        }
 
         self.inner.dispatch(cx, srv, emit).map(|res| {
             if self.has_low_dynamic_container(&cam) {
@@ -413,8 +444,88 @@ impl<'a> Socket<'a> {
         cam::CAM::new(header, coop_awareness)
     }
 
+    /// Check if the CAM contains a low dynamic container.
     fn has_low_dynamic_container(&self, cam: &cam::CAM) -> bool {
         cam.cam.cam_parameters.low_frequency_container.is_some()
             || cam.cam.cam_parameters.special_vehicle_container.is_some()
+    }
+
+    #[cfg(feature = "proto-security")]
+    /// Check if the CAM content is authorized vs `permission`.
+    fn check_permissions(cam: &cam::CAM, permission: &CamSsp) -> bool {
+        use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::TrafficRule;
+        let mut expected = CamSsp::new();
+
+        match &cam.cam.cam_parameters.high_frequency_container {
+            cam::HighFrequencyContainer::basicVehicleContainerHighFrequency(hfc) => {
+                hfc.cen_dsrc_tolling_zone.as_ref().map(|_| {
+                    expected.set_permission(
+                        CamPermission::CenDsrcTollingZoneOrProtectedCommunicationZonesRSU,
+                    )
+                });
+            }
+            cam::HighFrequencyContainer::rsuContainerHighFrequency(hfc) => {
+                hfc.protected_communication_zones_r_s_u.as_ref().map(|_| {
+                    expected.set_permission(
+                        CamPermission::CenDsrcTollingZoneOrProtectedCommunicationZonesRSU,
+                    )
+                });
+            }
+            _ => {}
+        }
+
+        if let Some(svc) = &cam.cam.cam_parameters.special_vehicle_container {
+            match svc {
+                cam::SpecialVehicleContainer::publicTransportContainer(_) => {
+                    expected.set_permission(CamPermission::PublicTransport)
+                }
+                cam::SpecialVehicleContainer::specialTransportContainer(_) => {
+                    expected.set_permission(CamPermission::SpecialTransport)
+                }
+                cam::SpecialVehicleContainer::dangerousGoodsContainer(_) => {
+                    expected.set_permission(CamPermission::DangerousGoods)
+                }
+                cam::SpecialVehicleContainer::roadWorksContainerBasic(rc) => {
+                    expected.set_permission(CamPermission::Roadwork);
+                    rc.closed_lanes
+                        .as_ref()
+                        .map(|_| expected.set_permission(CamPermission::ClosedLanes));
+                }
+                cam::SpecialVehicleContainer::rescueContainer(_) => {
+                    expected.set_permission(CamPermission::Rescue)
+                }
+                cam::SpecialVehicleContainer::emergencyContainer(ec) => {
+                    expected.set_permission(CamPermission::Emergency);
+                    ec.emergency_priority.as_ref().map(|ep| {
+                        ep.0.get(0)
+                            .map(|_| expected.set_permission(CamPermission::RequestForRightOfWay));
+                        ep.0.get(1).map(|_| {
+                            expected.set_permission(
+                                CamPermission::RequestForFreeCrossingAtATrafficLight,
+                            )
+                        });
+                    });
+                }
+                cam::SpecialVehicleContainer::safetyCarContainer(scc) => {
+                    expected.set_permission(CamPermission::SafetyCar);
+                    scc.speed_limit
+                        .as_ref()
+                        .map(|_| expected.set_permission(CamPermission::SpeedLimit));
+
+                    match scc.traffic_rule {
+                        Some(TrafficRule::noPassing) => {
+                            expected.set_permission(CamPermission::NoPassing)
+                        }
+                        Some(TrafficRule::noPassingForTrucks) => {
+                            expected.set_permission(CamPermission::NoPassingForTrucks)
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        permission.contains_permissions_of(&expected)
     }
 }

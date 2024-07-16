@@ -1,7 +1,7 @@
 //! Secured Certificate Request messages SSP definition.
 //! See ETSI TS 102 941 V2.2.1 section B.4.
 
-use super::{SspContainer, SspError, SspResult, SspTrait, SSP_VERSION};
+use super::{SspContainer, SspError, SspResult, SspTrait, SSP_VERSION_1};
 
 mod field {
     /// SCR CA Certificate Request signing permission bit position.
@@ -56,88 +56,23 @@ impl ScrSsp {
 
     /// Constructs a [ScrSsp] from the provided `permissions` value.
     pub const fn from_raw_permissions(permissions: u8) -> ScrSsp {
-        ScrSsp(SspContainer::from_slice([SSP_VERSION, permissions]))
+        ScrSsp(SspContainer::from_slice([SSP_VERSION_1, permissions]))
     }
 
     /// Constructs a [ScrSsp] from bytes, ensuring length and
     /// version are supported.
     pub fn parse(buf: &[u8]) -> SspResult<ScrSsp> {
         // Ensure no panics.
-        if buf.len() != SCR_SSP_LEN {
+        if buf.len() < SCR_SSP_LEN {
             return Err(SspError::Length);
         }
 
         // Ensure version is supported.
-        if buf[0] != SSP_VERSION {
+        if buf[0] != SSP_VERSION_1 {
             return Err(SspError::Version);
         }
 
         Ok(ScrSsp(SspContainer::from_bytes(buf)))
-    }
-
-    /// Query whether the inner SSP contains the provided `permission`.
-    pub const fn has_permission(&self, permission: ScrPermission) -> bool {
-        match permission {
-            ScrPermission::CACertReq => self.0.read_bit::<1, { field::CA_REQ }>(),
-            ScrPermission::EnrollmentReq => self.0.read_bit::<1, { field::ENROLLMENT_REQ }>(),
-            ScrPermission::EnrollmentResp => self.0.read_bit::<1, { field::ENROLLMENT_RESP }>(),
-            ScrPermission::AuthorizationValidationReq => {
-                self.0.read_bit::<1, { field::AUTHORIZATION_VAL_REQ }>()
-            }
-            ScrPermission::AuthorizationValidationResp => {
-                self.0.read_bit::<1, { field::AUTHORIZATION_VAL_RESP }>()
-            }
-            ScrPermission::AuthorizationReq => self.0.read_bit::<1, { field::AUTHORIZATION_REQ }>(),
-            ScrPermission::AuthorizationResp => {
-                self.0.read_bit::<1, { field::AUTHORIZATION_RESP }>()
-            }
-        }
-    }
-
-    /// Set the corresponding `permission` bit in the SSP.
-    pub fn set_permission(&mut self, permission: ScrPermission) {
-        match permission {
-            ScrPermission::CACertReq => self.0.write_bit::<1, { field::CA_REQ }>(true),
-            ScrPermission::EnrollmentReq => self.0.write_bit::<1, { field::ENROLLMENT_REQ }>(true),
-            ScrPermission::EnrollmentResp => {
-                self.0.write_bit::<1, { field::ENROLLMENT_RESP }>(true)
-            }
-            ScrPermission::AuthorizationValidationReq => self
-                .0
-                .write_bit::<1, { field::AUTHORIZATION_VAL_REQ }>(true),
-            ScrPermission::AuthorizationValidationResp => self
-                .0
-                .write_bit::<1, { field::AUTHORIZATION_VAL_RESP }>(true),
-            ScrPermission::AuthorizationReq => {
-                self.0.write_bit::<1, { field::AUTHORIZATION_REQ }>(true)
-            }
-            ScrPermission::AuthorizationResp => {
-                self.0.write_bit::<1, { field::AUTHORIZATION_RESP }>(true)
-            }
-        }
-    }
-
-    /// Clear the corresponding `permission` bit in the SSP.
-    pub fn clear_permission(&mut self, permission: ScrPermission) {
-        match permission {
-            ScrPermission::CACertReq => self.0.write_bit::<1, { field::CA_REQ }>(false),
-            ScrPermission::EnrollmentReq => self.0.write_bit::<1, { field::ENROLLMENT_REQ }>(false),
-            ScrPermission::EnrollmentResp => {
-                self.0.write_bit::<1, { field::ENROLLMENT_RESP }>(false)
-            }
-            ScrPermission::AuthorizationValidationReq => self
-                .0
-                .write_bit::<1, { field::AUTHORIZATION_VAL_REQ }>(false),
-            ScrPermission::AuthorizationValidationResp => self
-                .0
-                .write_bit::<1, { field::AUTHORIZATION_VAL_RESP }>(false),
-            ScrPermission::AuthorizationReq => {
-                self.0.write_bit::<1, { field::AUTHORIZATION_REQ }>(false)
-            }
-            ScrPermission::AuthorizationResp => {
-                self.0.write_bit::<1, { field::AUTHORIZATION_RESP }>(false)
-            }
-        }
     }
 
     /// Verifies the SSP combination for a TLM Secured Certificate Request, according to the
@@ -213,8 +148,71 @@ impl ScrSsp {
 
 impl SspTrait for ScrSsp {
     type SspType = ScrSsp;
+    type PermissionType = ScrPermission;
 
     fn contains_permissions_of(&self, other: &Self::SspType) -> bool {
         self.0.inner[1] | other.0.inner[1] == self.0.inner[1]
+    }
+
+    fn has_permission(&self, permission: Self::PermissionType) -> bool {
+        match permission {
+            ScrPermission::CACertReq => self.0.read_bit::<1, { field::CA_REQ }>(),
+            ScrPermission::EnrollmentReq => self.0.read_bit::<1, { field::ENROLLMENT_REQ }>(),
+            ScrPermission::EnrollmentResp => self.0.read_bit::<1, { field::ENROLLMENT_RESP }>(),
+            ScrPermission::AuthorizationValidationReq => {
+                self.0.read_bit::<1, { field::AUTHORIZATION_VAL_REQ }>()
+            }
+            ScrPermission::AuthorizationValidationResp => {
+                self.0.read_bit::<1, { field::AUTHORIZATION_VAL_RESP }>()
+            }
+            ScrPermission::AuthorizationReq => self.0.read_bit::<1, { field::AUTHORIZATION_REQ }>(),
+            ScrPermission::AuthorizationResp => {
+                self.0.read_bit::<1, { field::AUTHORIZATION_RESP }>()
+            }
+        }
+    }
+
+    fn set_permission(&mut self, permission: Self::PermissionType) {
+        match permission {
+            ScrPermission::CACertReq => self.0.write_bit::<1, { field::CA_REQ }>(true),
+            ScrPermission::EnrollmentReq => self.0.write_bit::<1, { field::ENROLLMENT_REQ }>(true),
+            ScrPermission::EnrollmentResp => {
+                self.0.write_bit::<1, { field::ENROLLMENT_RESP }>(true)
+            }
+            ScrPermission::AuthorizationValidationReq => self
+                .0
+                .write_bit::<1, { field::AUTHORIZATION_VAL_REQ }>(true),
+            ScrPermission::AuthorizationValidationResp => self
+                .0
+                .write_bit::<1, { field::AUTHORIZATION_VAL_RESP }>(true),
+            ScrPermission::AuthorizationReq => {
+                self.0.write_bit::<1, { field::AUTHORIZATION_REQ }>(true)
+            }
+            ScrPermission::AuthorizationResp => {
+                self.0.write_bit::<1, { field::AUTHORIZATION_RESP }>(true)
+            }
+        }
+    }
+
+    fn clear_permission(&mut self, permission: Self::PermissionType) {
+        match permission {
+            ScrPermission::CACertReq => self.0.write_bit::<1, { field::CA_REQ }>(false),
+            ScrPermission::EnrollmentReq => self.0.write_bit::<1, { field::ENROLLMENT_REQ }>(false),
+            ScrPermission::EnrollmentResp => {
+                self.0.write_bit::<1, { field::ENROLLMENT_RESP }>(false)
+            }
+            ScrPermission::AuthorizationValidationReq => self
+                .0
+                .write_bit::<1, { field::AUTHORIZATION_VAL_REQ }>(false),
+            ScrPermission::AuthorizationValidationResp => self
+                .0
+                .write_bit::<1, { field::AUTHORIZATION_VAL_RESP }>(false),
+            ScrPermission::AuthorizationReq => {
+                self.0.write_bit::<1, { field::AUTHORIZATION_REQ }>(false)
+            }
+            ScrPermission::AuthorizationResp => {
+                self.0.write_bit::<1, { field::AUTHORIZATION_RESP }>(false)
+            }
+        }
     }
 }

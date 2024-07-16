@@ -18,8 +18,10 @@
 
 use core::fmt;
 
+pub mod cam;
 pub mod crl;
 pub mod ctl;
+pub mod denm;
 pub mod scr;
 
 /// SSP result type.
@@ -35,6 +37,8 @@ pub enum SspError {
     Version,
     /// Illegal permissions.
     Illegal,
+    /// Malformed SSP.
+    Malformed,
 }
 
 impl fmt::Display for SspError {
@@ -43,12 +47,15 @@ impl fmt::Display for SspError {
             SspError::Length => write!(f, "Length mismatch"),
             SspError::Version => write!(f, "Unsupported version"),
             SspError::Illegal => write!(f, "Illegal permissions"),
+            SspError::Malformed => write!(f, "Malformed permissions"),
         }
     }
 }
 
-/// SSP version implemented in this module.
-const SSP_VERSION: u8 = 1;
+/// SSP version 1.
+const SSP_VERSION_1: u8 = 1;
+/// SSP version 2.
+const SSP_VERSION_2: u8 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -59,10 +66,10 @@ pub struct SspContainer<const N: usize> {
 
 impl<const N: usize> SspContainer<N> {
     /// Constructs an SSP container with zero values.
-    /// Sets the version byte to [SSP_VERSION].
-    pub const fn new() -> Self {
+    /// Sets the version byte to `version`.
+    pub const fn new(version: u8) -> Self {
         let mut inner = [0u8; N];
-        inner[0] = SSP_VERSION;
+        inner[0] = version;
 
         Self { inner }
     }
@@ -106,7 +113,17 @@ impl<const N: usize> SspContainer<N> {
 
 pub trait SspTrait {
     type SspType;
+    type PermissionType;
 
     /// Check if SSP contains the permissions of `other`.
     fn contains_permissions_of(&self, other: &Self::SspType) -> bool;
+
+    /// Query whether the inner SSP contains the provided `permission`.
+    fn has_permission(&self, permission: Self::PermissionType) -> bool;
+
+    /// Set the corresponding `permission` bit in the SSP.
+    fn set_permission(&mut self, permission: Self::PermissionType);
+
+    /// Clear the corresponding `permission` bit in the SSP.
+    fn clear_permission(&mut self, permission: Self::PermissionType);
 }

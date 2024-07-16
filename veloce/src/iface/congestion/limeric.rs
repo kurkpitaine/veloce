@@ -181,7 +181,7 @@ impl Limeric {
     /// Returns the smoothed CBR for step n, ie: equation (1) in
     /// Limerick publication.
     fn smoothed_cbr(&self) -> f32 {
-        if self.cbr_hist.is_full() {
+        if self.cbr_hist.len() == self.cbr_hist.capacity() {
             0.5 * self.cbr_hist_average() + 0.5 * self.channel_load
         } else {
             self.channel_load
@@ -242,7 +242,7 @@ impl RateController for Limeric {
             return;
         }
 
-        let full = self.cbr_hist.is_full();
+        let full = self.cbr_hist.len() == self.cbr_hist.capacity();
         self.cbr_hist.write(cbr.as_ratio());
 
         if !full {

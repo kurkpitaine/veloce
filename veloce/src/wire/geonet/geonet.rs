@@ -108,6 +108,7 @@ impl<T: PacketBufferMeta> PacketBufferMeta for Repr<T> {
                 secured_message_size,
                 ..
             } => BASIC_HEADER_LEN + secured_message_size,
+            #[cfg(feature = "proto-security")]
             Repr::Secured { encapsulated, .. } => BASIC_HEADER_LEN + encapsulated.len(),
             #[cfg(feature = "proto-security")]
             Repr::ToSecure { repr, .. } => repr.size(),

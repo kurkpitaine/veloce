@@ -11,7 +11,7 @@ description = "A V2x stack for embedded devices"
 byteorder = "1.4.3"
 defmt = { version = "0.3.5", optional = true }
 env_logger = "0.10"
-heapless = { git = "https://github.com/kurkpitaine/heapless.git", branch = "linked_list" }
+heapless = "0.8.0"
 libc = { version = "0.2", optional = true }
 log = { version = "0.4.20", default-features = false, optional = true }
 managed = { version = "0.8", default-features = false, features = ["map"] }

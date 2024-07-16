@@ -3,6 +3,9 @@
 
 use uom::si::f32::Length;
 
+#[cfg(feature = "proto-security")]
+use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2Base_types::ThreeDLocation;
+
 use crate::{
     time::TAI2004,
     types::{Heading, Latitude, Longitude, Speed},
@@ -104,6 +107,44 @@ impl Position {
             let val = alt.get::<centimeter>() as i32;
             AltitudeValue(val.clamp(-100_000, 800_000))
         })
+    }
+
+    #[cfg(feature = "proto-security")]
+    /// Get the [Position] as a [ThreeDLocation] for use in security..
+    pub fn as_3d_location(&self) -> ThreeDLocation {
+        use crate::types::tenth_of_microdegree;
+        use uom::si::length::decimeter;
+        use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2Base_types::{
+            Elevation, Latitude, Longitude, NinetyDegreeInt, OneEightyDegreeInt, ThreeDLocation,
+            Uint16,
+        };
+
+        let latitude = self
+            .latitude
+            .map_or(Latitude(NinetyDegreeInt(900_000_001)), |lat| {
+                let val = lat.get::<tenth_of_microdegree>() as i32;
+                Latitude(NinetyDegreeInt(val))
+            });
+
+        let longitude =
+            self.longitude
+                .map_or(Longitude(OneEightyDegreeInt(1_800_000_001)), |lon| {
+                    let val = lon.get::<tenth_of_microdegree>() as i32;
+                    Longitude(OneEightyDegreeInt(val))
+                });
+
+        let elevation = self.altitude.map_or(Elevation(Uint16(0)), |alt| {
+            // The 16-bit value is interpreted as an integer number of decimeters representing the height above a
+            // minimum height of −409.5 m, with the maximum height being 6143.9 m.
+            let val = (alt.get::<decimeter>().clamp(-4095.0, 61439.0) + 4095.0) as u16;
+            Elevation(Uint16(val))
+        });
+
+        ThreeDLocation {
+            latitude,
+            longitude,
+            elevation,
+        }
     }
 }
 
