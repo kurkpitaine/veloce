@@ -375,6 +375,7 @@ impl From<LocationTableG5Extension> for LocationTableAnyExtension {
 
 /// Decentralized Congestion Control for G5 (802.11p) Medium Location Table extension.
 #[cfg(feature = "medium-ieee80211p")]
+#[allow(unused)]
 #[derive(Debug, Clone)]
 pub struct LocationTableG5Extension {
     /// Local timestamp of the last update of this extension.

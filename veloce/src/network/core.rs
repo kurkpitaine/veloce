@@ -5,7 +5,7 @@ use uom::si::velocity::meter_per_second;
 /// - Geonetworking Address
 /// - Maintenance of the Ego Position Vector
 use crate::common::geo_area::GeoPosition;
-use crate::common::{Poti, PotiFix};
+use crate::common::{Poti, PotiError, PotiFix, PotiPositionHistory};
 use crate::config;
 use crate::rand::Rand;
 use crate::time::{Instant, TAI2004};
@@ -258,40 +258,50 @@ impl Core {
 
     /// Returns the position of the local ITS Station.
     pub fn position(&self) -> PotiFix {
-        self.poti.fix
+        self.poti.fix().to_owned()
+    }
+
+    /// Returns the position of the local ITS Station, along with the path history.
+    pub fn position_and_history(&self) -> (PotiFix, PotiPositionHistory) {
+        (
+            self.poti.fix().to_owned(),
+            self.poti.path_history().to_owned(),
+        )
     }
 
     /// Set the position of the local ITS Station.
-    pub fn set_position(&mut self, fix: PotiFix) {
-        self.poti.fix = fix;
-        self.ego_position_vector.timestamp = TAI2004::now().into();
-        self.ego_position_vector.latitude = fix
-            .position
-            .latitude
-            .map_or(Latitude::new::<degree>(0.0), |lat| lat);
-        self.ego_position_vector.longitude = fix
-            .position
-            .longitude
-            .map_or(Longitude::new::<degree>(0.0), |lon| lon);
-        self.ego_position_vector.heading = fix
-            .motion
-            .heading
-            .map_or(Heading::new::<degree>(0.0), |hdg| hdg);
+    pub fn set_position(&mut self, fix: PotiFix) -> Result<(), PotiError> {
+        self.poti.push_fix(fix).and_then(|fix| {
+            self.ego_position_vector.timestamp = TAI2004::now().into();
+            self.ego_position_vector.latitude = fix
+                .position
+                .latitude
+                .map_or(Latitude::new::<degree>(0.0), |lat| lat);
+            self.ego_position_vector.longitude = fix
+                .position
+                .longitude
+                .map_or(Longitude::new::<degree>(0.0), |lon| lon);
+            self.ego_position_vector.heading = fix
+                .motion
+                .heading
+                .map_or(Heading::new::<degree>(0.0), |hdg| hdg);
 
-        self.ego_position_vector.speed = fix
-            .motion
-            .speed
-            .map_or(Speed::new::<meter_per_second>(0.0), |spd| spd);
+            self.ego_position_vector.speed = fix
+                .motion
+                .speed
+                .map_or(Speed::new::<meter_per_second>(0.0), |spd| spd);
 
-        if let Some(major_confidence) = fix.confidence.position.semi_major {
-            if major_confidence.get::<meter>() < (config::GN_PAI_INTERVAL / 2.0) {
-                self.ego_position_vector.is_accurate = true;
+            if let Some(major_confidence) = fix.confidence.position.semi_major {
+                if major_confidence.get::<meter>() < (config::GN_PAI_INTERVAL / 2.0) {
+                    self.ego_position_vector.is_accurate = true;
+                } else {
+                    self.ego_position_vector.is_accurate = false;
+                }
             } else {
                 self.ego_position_vector.is_accurate = false;
             }
-        } else {
-            self.ego_position_vector.is_accurate = false;
-        }
+            Ok(())
+        })
     }
 }
 

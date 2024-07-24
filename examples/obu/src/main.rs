@@ -139,23 +139,11 @@ fn main() {
 
     // Create GPSD client
     let mut gpsd = Gpsd::new(
-        "10.29.2.229:2947".to_string(),
+        "127.0.0.1:2947".to_string(),
         poll.registry().try_clone().unwrap(),
         GPSD_TOKEN,
     )
     .expect("malformed GPSD server address");
-
-    router.set_position(veloce::common::PotiFix {
-        mode: veloce::common::PotiMode::Fix2d,
-        timestamp: TAI2004::from_unix_instant(Instant::now()),
-        position: PotiPosition {
-            latitude: Some(Latitude::new::<degree>(48.2764384)),
-            longitude: Some(Longitude::new::<degree>(-3.5519532)),
-            altitude: None,
-        },
-        motion: PotiMotion::default(),
-        confidence: PotiConfidence::default(),
-    });
 
     loop {
         // Update timestamp.
@@ -169,13 +157,14 @@ fn main() {
         for event in events.iter() {
             match event.token() {
                 GPSD_TOKEN => {
-                    gpsd.ready(event);
-                    gpsd.fetch_position()
-                        .try_into()
-                        .map(|fix| {
-                            router.set_position(fix);
-                        })
-                        .ok();
+                    gpsd.ready(event).then(|| {
+                        gpsd.fetch_position()
+                            .try_into()
+                            .map(|fix| {
+                                router.set_position(fix).ok();
+                            })
+                            .ok();
+                    });
                 }
                 DEV_TOKEN => {
                     //debug!("Rx available");

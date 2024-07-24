@@ -32,7 +32,7 @@ pub struct CartesianPosition {
 }
 
 /// A geographic position, defined with latitude and longitude coordinates.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GeoPosition {
     /// Latitude of the position.
     pub latitude: Latitude,
@@ -41,6 +41,7 @@ pub struct GeoPosition {
 }
 
 impl GeoPosition {
+    /// Compute the distance to `other` position.
     pub fn distance_to(&self, rhs: &GeoPosition) -> Length {
         let r = Length::new::<meter>(6371008.8); // Mean earth radius in meters.
         let haversine = |theta: Angle| (theta / 2.0).sin().powi(P2::new());

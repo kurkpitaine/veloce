@@ -309,7 +309,7 @@ impl<'a> Socket<'a> {
             (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
-        let res = self.tx_buffer.dequeue_with(|req, payload_buf| {
+        let res = self.tx_buffer.dequeue().map(|(req, payload_buf)| {
             net_trace!("gn: sending {} octets", payload_buf.len());
 
             match req.transport {

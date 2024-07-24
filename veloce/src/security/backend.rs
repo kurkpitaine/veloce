@@ -67,6 +67,7 @@ impl Backend {
         }
     }
 
+    #[allow(unused)]
     #[inline]
     pub(super) fn inner_mut(&mut self) -> &mut dyn BackendTrait {
         match self {

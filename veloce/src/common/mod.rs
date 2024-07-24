@@ -8,6 +8,7 @@ mod poti;
 mod wgs;
 
 pub use self::poti::{
-    Confidence as PotiConfidence, Fix as PotiFix, Mode as PotiMode, Motion as PotiMotion,
-    Position as PotiPosition, PositionConfidence as PotiPositionConfidence, Poti,
+    Confidence as PotiConfidence, Error as PotiError, Fix as PotiFix, FixError as PotiFixError,
+    Mode as PotiMode, Motion as PotiMotion, PathPoint as PotiPathPoint, Position as PotiPosition,
+    PositionConfidence as PotiPositionConfidence, PositionHistory as PotiPositionHistory, Poti,
 };

@@ -493,7 +493,7 @@ impl<'a> Socket<'a> {
             (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
-        let res = self.tx_buffer.dequeue_with(|req, payload_buf| {
+        let res = self.tx_buffer.dequeue().map(|(req, payload_buf)| {
             let endpoint = self.endpoint;
             let (packet_meta, req) = req;
 

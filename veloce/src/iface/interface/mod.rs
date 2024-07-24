@@ -20,7 +20,7 @@ use super::packet::*;
 
 use super::socket_set::SocketSet;
 
-use crate::common::{ContentionBuffer, PacketBuffer, PacketBufferMeta};
+use crate::common::{ContentionBuffer, PacketBuffer};
 use crate::config::{
     GN_BC_FORWARDING_PACKET_BUFFER_SIZE as BC_BUF_SIZE, GN_CBF_PACKET_BUFFER_SIZE as CBF_BUF_SIZE,
     GN_LOCATION_SERVICE_PACKET_BUFFER_SIZE as LS_BUF_SIZE,

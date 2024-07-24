@@ -93,6 +93,7 @@ impl CertificateCache {
     }
 
     /// Removes all the entries of the Certificate Cache.
+    #[allow(unused)]
     pub fn clear(&mut self) {
         self.storage.clear();
     }

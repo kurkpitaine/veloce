@@ -21,7 +21,7 @@ use crate::{
     types::{Latitude, Longitude},
 };
 
-use super::certificate;
+use super::certificate::{self, valid_timestamp};
 
 const SECURITY_ENVELOPE: [u8; 313] = [
     0x03, 0x81, 0x00, 0x40, 0x03, 0x80, 0x42, 0x20, 0x50, 0x02, 0x00, 0x00, 0x1e, 0x01, 0x00, 0x3c,
@@ -70,7 +70,7 @@ fn verify_secured_message() {
     let msg = SecuredMessage::from_bytes(&SECURITY_ENVELOPE).unwrap();
 
     service
-        .verify_secured_message(&msg, Instant::now())
+        .verify_secured_message(&msg, valid_timestamp())
         .unwrap();
 }
 
@@ -115,7 +115,7 @@ fn test_sign_message() {
     };
 
     let res = service
-        .encap_packet(&BTP_CAM, permissions, Instant::now(), position)
+        .encap_packet(&BTP_CAM, permissions, valid_timestamp(), position)
         .unwrap();
 
     assert!(res.len() > 0);

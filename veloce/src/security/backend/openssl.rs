@@ -272,11 +272,25 @@ impl BackendTrait for OpensslBackend {
             return Err(BackendError::NoSigningCertSecretKey);
         };
 
+        let sig_size = match key.group().curve_name() {
+            Some(Nid::BRAINPOOL_P256R1) | Some(Nid::X9_62_PRIME256V1) => 32,
+            Some(Nid::BRAINPOOL_P384R1) | Some(Nid::SECP384R1) => 48,
+            _ => return Err(BackendError::UnsupportedKeyType),
+        };
+
         let signature = EcdsaSig::sign(data, key).map_err(BackendError::OpenSSL)?;
+        let r_padded = signature
+            .r()
+            .to_vec_padded(sig_size)
+            .map_err(BackendError::OpenSSL)?;
+        let s_padded = signature
+            .s()
+            .to_vec_padded(sig_size)
+            .map_err(BackendError::OpenSSL)?;
 
         Ok(EcdsaSignature::NistP256r1(EcdsaSignatureInner {
-            r: EccPoint::XCoordinateOnly(signature.r().to_vec()),
-            s: signature.s().to_vec(),
+            r: EccPoint::XCoordinateOnly(r_padded),
+            s: s_padded,
         }))
     }
 

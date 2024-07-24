@@ -1,6 +1,7 @@
 use crate::{
     phy::ChannelBusyRatio,
     time::{Duration, Instant},
+    wire::ieee80211::AccessCategory,
 };
 
 use super::RateController;
@@ -16,11 +17,7 @@ impl RateController for NoControl {
         Instant::from_micros_const(i64::MAX)
     }
 
-    fn can_tx(&self, _timestamp: Instant) -> bool {
-        true
-    }
-
-    fn tx_allowed_at(&self, _prio: Option<crate::wire::ieee80211::AccessCategory>) -> Instant {
+    fn tx_allowed_at(&self, _prio: Option<AccessCategory>) -> Instant {
         Instant::ZERO
     }
 

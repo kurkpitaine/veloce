@@ -216,10 +216,6 @@ impl RateController for Limeric {
         self.next_run_at.min(self.next_cbr_read_at)
     }
 
-    fn can_tx(&self, timestamp: Instant) -> bool {
-        self.next_tx_allowed_at <= timestamp
-    }
-
     fn tx_allowed_at(&self, _: Option<AccessCategory>) -> Instant {
         self.next_tx_allowed_at
     }

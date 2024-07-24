@@ -1338,8 +1338,9 @@ mod ipc {
 #[cfg(test)]
 mod test {
     use uom::si::angle::degree;
-    use uom::si::f32::Angle;
-    use uom::si::length::meter;
+    use uom::si::f32::{Angle, Length};
+    use uom::si::length::{centimeter, meter};
+    use uom::si::velocity::{centimeter_per_second, meter_per_second};
     use wire::GeonetVariant;
 
     use super::*;
@@ -1528,31 +1529,31 @@ mod test {
     #[cfg(feature = "proto-security")]
     use crate::iface::DecapContext;
     use crate::iface::Interface;
-    use crate::types::{Distance, Latitude, Longitude};
+    use crate::types::{decidegree, Distance, Heading, Latitude, Longitude, Speed};
 
     fn station_pos_fix(timestamp: Instant) -> PotiFix {
         PotiFix {
-            mode: PotiMode::Fix2d,
+            mode: PotiMode::Fix3d,
             timestamp: TAI2004::from_unix_instant(timestamp),
             position: PotiPosition {
                 latitude: Some(Latitude::new::<degree>(48.2764384)),
                 longitude: Some(Longitude::new::<degree>(-3.5519532)),
-                altitude: None,
+                altitude: Some(Length::new::<meter>(120.23)),
             },
             motion: PotiMotion {
-                speed: None,
+                speed: Some(Speed::new::<meter_per_second>(0.0)),
                 vertical_speed: None,
-                heading: None,
+                heading: Some(Heading::new::<degree>(140.0)),
             },
             confidence: PotiConfidence {
                 position: PotiPositionConfidence {
-                    semi_major: None,
-                    semi_minor: None,
-                    semi_major_orientation: None,
+                    semi_major: Some(Length::new::<centimeter>(123.0)),
+                    semi_minor: Some(Length::new::<centimeter>(123.0)),
+                    semi_major_orientation: Some(Heading::new::<decidegree>(10.0)),
                 },
-                altitude: None,
-                speed: None,
-                heading: None,
+                altitude: Some(Length::new::<meter>(3.7)),
+                speed: Some(Speed::new::<centimeter_per_second>(5.0)),
+                heading: Some(Heading::new::<decidegree>(10.0)),
             },
         }
     }
@@ -1761,7 +1762,7 @@ mod test {
 
         let mut now = Instant::now();
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         let mut params = evt_params(now);
         params.repetition = None;
@@ -1789,7 +1790,7 @@ mod test {
         // Jump at the expiration of the event to check there is no retransmission.
         now += params.validity_duration.unwrap_or(DEFAULT_VALIDITY);
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         assert!(send(&mut s, now).is_none());
     }
@@ -1800,7 +1801,7 @@ mod test {
 
         let mut now = Instant::now();
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         let params = evt_params(now);
         let handle = s.socket.trigger(&s.core, params.clone()).unwrap();
@@ -1830,7 +1831,7 @@ mod test {
 
             now += repet.interval;
             s.core.now = now;
-            s.core.set_position(station_pos_fix(now));
+            s.core.set_position(station_pos_fix(now)).unwrap();
         }
 
         // Should not have any retransmission now
@@ -1843,7 +1844,7 @@ mod test {
 
         let mut now = Instant::now();
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         let mut params = evt_params(now);
         params.repetition = None;
@@ -1860,7 +1861,7 @@ mod test {
         // Jump 10 secs in the future and update the DENM.
         now += Duration::from_secs(10);
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         let mut params = evt_params(now);
         params.repetition = None;
@@ -1886,7 +1887,7 @@ mod test {
         // Jump at the expiration of the event to check there is no retransmission.
         now += params.validity_duration.unwrap_or(DEFAULT_VALIDITY);
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         assert!(send(&mut s, now).is_none());
 
@@ -1910,7 +1911,7 @@ mod test {
         // Jump past the expiration of the event to check api rejects us.
         now += Duration::from_secs(1);
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         assert!(send(&mut s, now).is_none());
         assert!(matches!(
@@ -1925,7 +1926,7 @@ mod test {
 
         let mut now = Instant::now();
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         let mut params = evt_params(now);
         params.repetition = None;
@@ -1942,7 +1943,7 @@ mod test {
         // Jump 10 secs in the future and cancel the DENM.
         now += Duration::from_secs(10);
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         let mut params = evt_params(now);
         params.repetition = None;
@@ -1967,7 +1968,7 @@ mod test {
         // Jump at the expiration of the event to check there is no retransmission.
         now += params.validity_duration.unwrap_or(DEFAULT_VALIDITY);
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         assert!(send(&mut s, now).is_none());
 
@@ -2002,7 +2003,7 @@ mod test {
 
         let mut now = Instant::now();
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         let denm_evt = denm_evt(now);
 
@@ -2030,7 +2031,7 @@ mod test {
         // Check repetitions are filtered.
         now += Duration::from_secs(1);
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         recv(&mut s, now, (new_ind(), denm_evt.clone()));
 
@@ -2042,7 +2043,7 @@ mod test {
         // Check update.
         now += Duration::from_secs(1);
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         let mut denm_evt = denm_evt.clone();
         denm_evt.denm.management.detection_time.0 += 1500;
@@ -2072,7 +2073,7 @@ mod test {
         // Check cancellation.
         now += Duration::from_secs(1);
         s.core.now = now;
-        s.core.set_position(station_pos_fix(now));
+        s.core.set_position(station_pos_fix(now)).unwrap();
 
         denm_evt.denm.management.detection_time.0 += 500;
         denm_evt.denm.management.reference_time.0 += 500;

@@ -20,8 +20,6 @@ pub(crate) trait RateController {
     fn run(&mut self, timestamp: Instant);
     /// Return the instant the Rate Control algorithm should be run at.
     fn run_at(&self) -> Instant;
-    /// Return whether Rate Control algorithm allows for transmission.
-    fn can_tx(&self, timestamp: Instant) -> bool;
     /// Get next instant where transmission is allowed,
     /// for corresponding priority queue. If `prio` is none, it
     /// returns the minimal waiting time between all the queues.

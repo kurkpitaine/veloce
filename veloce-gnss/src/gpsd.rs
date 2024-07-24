@@ -3,7 +3,7 @@ use std::mem;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use gpsd_proto::{Mode as GpsdMode, UnifiedResponse as GpsdResponse};
 use log::{debug, error, info, trace};
 use mio::event::Event;
@@ -17,6 +17,8 @@ use uom::si::velocity::meter_per_second;
 use crate::{FixMode, GpsInfo};
 
 const RETRY: Duration = Duration::from_secs(5);
+/// Allowed time difference between several GPSD frames.
+const ALLOWED_TIME_DIFF: TimeDelta = TimeDelta::milliseconds(50);
 
 #[derive(Debug)]
 struct ConnectingState {
@@ -125,13 +127,16 @@ impl Gpsd {
         Ok(())
     }
 
-    pub fn ready(&mut self, event: &Event) {
+    /// Query whether the GPSD client is ready to receive data.
+    /// Returns `true` if there is new position data to be fetched.
+    pub fn ready(&mut self, event: &Event) -> bool {
         if event.token() != self.token {
             error!("event token does not match");
-            return;
+            return false;
         }
 
         let timestamp = Instant::now();
+        let mut position_updated = false;
 
         if event.is_readable() {
             // Move state into a local variable to be able to change it.
@@ -144,7 +149,7 @@ impl Gpsd {
                     "unexpected disconnect from GPSD server, restarting connection in {} secs",
                     RETRY.as_secs()
                 );
-                return;
+                return false;
             }
 
             let maybe_resp = match client_state {
@@ -187,11 +192,13 @@ impl Gpsd {
             };
 
             let Some(resp) = maybe_resp else {
-                return;
+                return false;
             };
 
             debug!("cache updated: {}", self.update_cache(resp));
-            debug!("position updated: {}", self.update_position());
+
+            position_updated = self.update_position();
+            debug!("position updated: {}", position_updated);
         }
 
         if event.is_writable() {
@@ -222,6 +229,8 @@ impl Gpsd {
                 state => self.state = state,
             }
         }
+
+        position_updated
     }
 
     fn try_connect_and_register(&self) -> Result<TcpStream> {
@@ -296,7 +305,7 @@ impl Gpsd {
 
         // Only update of we have time, latitude, longitude, speed and track.
         match self.cache.fix.time_position_and_kinematics_values() {
-            Some((time, ..)) if time > self.last_rx_time => {
+            Some((time, ..)) if time >= self.last_rx_time => {
                 trace!("time > last_rx_time : {} > {}", time, self.last_rx_time);
 
                 // Update last reception time.
@@ -305,15 +314,17 @@ impl Gpsd {
                 // Fill confidence values.
                 self.cache.self_confidence();
 
-                // Set values into position.
-                self.position = self.cache;
+                let changed = self.position != self.cache;
 
-                // Reset cache
-                self.cache = GpsInfo::default();
-                true
+                if changed {
+                    // Set values into position.
+                    self.position = self.cache;
+                }
+
+                changed
             }
             Some((time, ..)) => {
-                trace!("time <= last_rx_time : {} <= {}", time, self.last_rx_time);
+                trace!("time < last_rx_time : {} <= {}", time, self.last_rx_time);
                 false
             }
             _ => {
@@ -324,10 +335,36 @@ impl Gpsd {
     }
 
     /// Fill a [GpsInfo] from a [GpsdResponse].
+    /// Cache is valid for a fix timestamp. When fix timestamp changes, cache is cleared.
     /// Returns `true` if cache is updated.
     fn update_cache(&mut self, data: GpsdResponse) -> bool {
         match data {
             GpsdResponse::Tpv(tpv) => {
+                let tpv_time = match tpv.time {
+                    Some(datetime_str) => {
+                        let utc_time = match DateTime::parse_from_rfc3339(&datetime_str) {
+                            Ok(datetime) => datetime.to_utc(),
+                            Err(_) => {
+                                error!("failed to parse TPV time - using system time");
+                                Utc::now()
+                            }
+                        };
+                        utc_time
+                    }
+                    None => {
+                        // If no fix time info from GPSD, get the local system time.
+                        Utc::now()
+                    }
+                };
+
+                // Detect a new fix from GPSD using the time info.
+                match self.cache.gst.time {
+                    Some(gst_time) if (tpv_time - gst_time).abs() > ALLOWED_TIME_DIFF => {
+                        self.cache = GpsInfo::default();
+                    }
+                    _ => {}
+                }
+
                 // Reset cache if no signal from GPS.
                 match (tpv.mode, tpv.status) {
                     (GpsdMode::NoFix, _) | (_, Some(0)) => {
@@ -339,22 +376,7 @@ impl Gpsd {
                     }
                 }
 
-                match tpv.time {
-                    Some(datetime_str) => {
-                        let utc_time = match DateTime::parse_from_rfc3339(&datetime_str) {
-                            Ok(datetime) => datetime.to_utc(),
-                            Err(_) => {
-                                error!("failed to parse TPV time - using system time");
-                                Utc::now()
-                            }
-                        };
-                        self.cache.fix.time = Some(utc_time);
-                    }
-                    None => {
-                        // If no fix time info from GPSD, get the local system time.
-                        self.cache.fix.time = Some(Utc::now());
-                    }
-                }
+                self.cache.fix.time = Some(tpv_time);
 
                 self.cache.fix.ept = tpv.ept.map(|ept| Duration::from_secs_f32(ept));
                 self.cache.fix.latitude = tpv
@@ -365,6 +387,7 @@ impl Gpsd {
                     .lon
                     .map(|longitude| Angle::new::<degree>(longitude as f32));
                 self.cache.fix.epx = tpv.epx.map(|epx| Length::new::<meter>(epx as f32));
+                self.cache.fix.eph = tpv.eph.map(|eph| Length::new::<meter>(eph as f32));
                 self.cache.fix.altitude = tpv.alt_hae.map(|alt| Length::new::<meter>(alt as f32));
                 self.cache.fix.epv = tpv.epv.map(|epv| Length::new::<meter>(epv as f32));
                 self.cache.fix.track = tpv.track.map(|track| Angle::new::<degree>(track));
@@ -381,14 +404,24 @@ impl Gpsd {
                 true
             }
             GpsdResponse::Gst(gst) => {
-                self.cache.gst.time = if let Some(datetime_str) = gst.time {
+                let gst_time = if let Some(datetime_str) = gst.time {
                     match DateTime::parse_from_rfc3339(&datetime_str) {
-                        Ok(datetime) => Some(datetime.to_utc()),
-                        Err(_) => None,
+                        Ok(datetime) => datetime.to_utc(),
+                        Err(_) => Utc::now(),
                     }
                 } else {
-                    None
+                    Utc::now()
                 };
+
+                // Detect a new fix from GPSD using the time info.
+                match self.cache.fix.time {
+                    Some(tpv_time) if (tpv_time - gst_time).abs() > ALLOWED_TIME_DIFF => {
+                        self.cache = GpsInfo::default();
+                    }
+                    _ => {}
+                }
+
+                self.cache.gst.time = Some(gst_time);
 
                 self.cache.gst.rms_deviation = gst.rms;
                 self.cache.gst.major_deviation =

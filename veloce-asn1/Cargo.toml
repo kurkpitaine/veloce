@@ -11,8 +11,7 @@ description = "Veloce ASN1 formats"
 doctest = false
 
 [dependencies]
-#rasn = "0.14"
-rasn = { path = "../../rasn" }
+rasn = "0.15"
 lazy_static = "1.4.0"          # This should not be a dependency.
 
 [build-dependencies]

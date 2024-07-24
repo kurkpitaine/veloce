@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::common::{PotiFix, PotiMode};
+use crate::common::{PotiFix, PotiFixError, PotiMode, PotiPathPoint, PotiPositionHistory};
 use crate::config::BTP_MAX_PL_SIZE;
 use crate::iface::packet::GeonetPacket;
 use crate::iface::{Congestion, Context, ContextMeta};
@@ -16,48 +16,80 @@ use crate::security::{
 };
 use crate::socket::{self, btp::SocketB as BtpBSocket, PollAt};
 use crate::time::{Duration, Instant, TAI2004};
-use crate::types::Pseudonym;
+use crate::types::{Heading, Pseudonym, Speed};
 use crate::wire::{self, ports, GnTrafficClass};
 
 use crate::storage::PacketBuffer;
 use crate::wire::{EthernetAddress, StationType};
 
+use uom::si::angle::degree;
+use uom::si::f32::Length;
+use uom::si::length::meter;
+use uom::si::velocity::meter_per_second;
 use veloce_asn1::defs::c_a_m__p_d_u__descriptions as cam;
 use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d as cdd;
 use veloce_asn1::prelude::rasn::{self, error::DecodeError, types::SequenceOf};
 
 use super::btp::{Indication, RecvError, Request};
 
-/// Error returned by [`Socket::recv`]
+/// CAM module error type.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum CamError {
+pub enum Error {
     Buffer(RecvError),
     Asn1(DecodeError),
+    Fix(PotiFixError),
+    RateLimited,
+    Overriden(TxPeriodOverride),
 }
 
-impl core::fmt::Display for CamError {
+impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            CamError::Buffer(b) => write!(f, "Buffer: {}", b),
-            CamError::Asn1(d) => write!(f, "Asn1: {}", d),
+            Error::Buffer(b) => write!(f, "Buffer: {}", b),
+            Error::Asn1(d) => write!(f, "Asn1: {}", d),
+            Error::Fix(e) => write!(f, "GNSS fix: {}", e),
+            Error::RateLimited => write!(f, "Rate limited"),
+            Error::Overriden(p) => write!(f, "Overriden tx period: {}", p),
         }
     }
 }
 
 #[cfg(feature = "std")]
-impl std::error::Error for CamError {}
+impl std::error::Error for Error {}
 
 /// Maximum number of CAMs in receive buffer.
 const CAM_RX_BUF_NUM: usize = 5;
 /// Maximum size of data in receive buffer.
 const CAM_RX_BUF_SIZE: usize = CAM_RX_BUF_NUM * BTP_MAX_PL_SIZE;
-/// Retransmission delay for a mobile station type.
-const CAM_VEH_RETRANSMIT_DELAY: Duration = Duration::from_millis(100);
-/// Retransmission delay for an RSU station type.
-const CAM_RSU_RETRANSMIT_DELAY: Duration = Duration::from_millis(1000);
+/// Maximum allowed number of trace points in CAMs. pCamTraceMaxPoints in C2C Vehicle Profile spec.
+const CAM_TRACE_MAX_POINTS: usize = 23;
+/// The default and maximum value of N_GenCam shall be 3
+const CAM_N_GEN_CAM: u8 = 3;
+/// Minimum allowed period between two CAM messages.
+const CAM_GEN_CAM_MIN: Duration = Duration::from_millis(100);
+/// Maximum allowed period between two CAM messages.
+const CAM_GEN_CAM_MAX: Duration = Duration::from_millis(1000);
+/// CAM generation check period. Shall be equal or less than CAM_GEN_CAM_MIN.
+const CAM_CHECK_CAM_GEN: Duration = CAM_GEN_CAM_MIN;
 /// Retransmission delay for the Low Frequency Container of a CAM message.
 const CAM_LF_RETRANSMIT_DELAY: Duration = Duration::from_millis(500);
+
+/// CAM transmission period override parameters.
+#[derive(Debug, Copy, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct TxPeriodOverride {
+    /// Transmission period.
+    period: Duration,
+    /// Number of generations where the period is overridden.
+    num_tx: u8,
+}
+
+impl fmt::Display for TxPeriodOverride {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "period: {}, num_tx: {}", self.period, self.num_tx)
+    }
+}
 
 /// An ETSI CAM type socket.
 ///
@@ -78,9 +110,17 @@ pub struct Socket<'a> {
     retransmit_at: Instant,
     /// Delay of retransmission.
     retransmit_delay: Duration,
+    /// Last instant at which a CAM was transmitted.
+    prev_cam_at: Instant,
     /// Last instant at which a CAM with a low dynamic container
     /// was successfully transmitted to the lower layer.
     prev_low_dynamic_at: Instant,
+    /// Previous position. Used to check if the CAM generation trigger conditions are met.
+    prev_pos: PotiPathPoint,
+    /// Number of "accelerated" CAM generations.
+    n_gen_cam: u8,
+    /// CAM transmission period override parameters.
+    generation_override: Option<TxPeriodOverride>,
     /// Function to call when a CAM message is successfully received.
     rx_callback: Option<Box<dyn FnMut(&[u8], &cam::CAM)>>,
     /// Function to call when a CAM message is successfully transmitted to the lower layer.
@@ -118,8 +158,12 @@ impl<'a> Socket<'a> {
         Socket {
             inner,
             retransmit_at: Instant::ZERO,
-            retransmit_delay: CAM_VEH_RETRANSMIT_DELAY,
+            retransmit_delay: CAM_GEN_CAM_MAX,
             prev_low_dynamic_at: Instant::ZERO,
+            prev_cam_at: Instant::ZERO,
+            prev_pos: PotiPathPoint::default(),
+            n_gen_cam: 0,
+            generation_override: None,
             rx_callback: None,
             tx_callback: None,
         }
@@ -139,6 +183,40 @@ impl<'a> Socket<'a> {
     /// at a lower layer before any transmission occur.
     pub fn register_send_callback(&mut self, tx_cb: impl FnMut(&[u8], &cam::CAM) + 'static) {
         self.tx_callback = Some(Box::new(tx_cb));
+    }
+
+    /// Override the transmission `period` of CAM messages for a number of generations `num_tx`.
+    /// Enables ITS applications to increase the CAM generation frequency for a limited time.
+    /// This value takes precedence over motion triggering, but not over the DCC rate limiting.
+    /// Returns an error if there is already an existing override with a lower period.
+    pub fn override_tx_period(
+        &mut self,
+        core: &GnCore,
+        period: Duration,
+        num_tx: u8,
+    ) -> Result<(), Error> {
+        let period = period.clamp(CAM_GEN_CAM_MIN, CAM_GEN_CAM_MAX);
+
+        if let Some(params) = &mut self.generation_override {
+            if params.period < period {
+                return Err(Error::Overriden(params.to_owned()));
+            } else {
+                *params = TxPeriodOverride { period, num_tx };
+            }
+        }
+
+        // Check for transmission.
+        let elapsed = core.now - self.prev_cam_at;
+        if elapsed > period {
+            self.retransmit_at = core.now;
+        } else {
+            let wait = period - elapsed;
+            self.retransmit_at = core.now + wait;
+        }
+
+        self.retransmit_delay = period;
+
+        Ok(())
     }
 
     /// Query whether the CAM socket accepts the segment.
@@ -233,14 +311,28 @@ impl<'a> Socket<'a> {
         }
 
         let ego_station_type = srv.core.station_type();
-        let ego_position = srv.core.position();
+        let (ego_position, ego_position_history) = srv.core.position_and_history();
         let now_tai2004 = TAI2004::from_unix_instant(now);
         let diff_now_pos = now_tai2004 - ego_position.timestamp;
 
-        if let PotiMode::NoFix = ego_position.mode {
+        if let PotiMode::NoFix | PotiMode::Lost = ego_position.mode {
             net_debug!("CAM cannot be sent: no position fix");
             self.retransmit_at = now + self.retransmit_delay;
             return Ok(());
+        };
+
+        if ego_station_type != StationType::RoadSideUnit && !ego_position.confidence_available() {
+            net_debug!("CAM cannot be sent: required position confidence values unavailable");
+            self.retransmit_at = now + self.retransmit_delay;
+            return Ok(());
+        }
+
+        let ego_path_point = match PotiPathPoint::try_from(&ego_position) {
+            Ok(p) => p,
+            Err(e) => {
+                net_debug!("CAM cannot be sent: cannot create path point: {}", e);
+                return Ok(());
+            }
         };
 
         if diff_now_pos >= Duration::from_millis(32767) {
@@ -254,26 +346,64 @@ impl<'a> Socket<'a> {
             return Ok(());
         }
 
+        let elapsed = now - self.prev_cam_at;
+        let gen_cam_dcc = srv
+            .congestion_control
+            .controller
+            .inner()
+            .tx_interval()
+            .clamp(CAM_GEN_CAM_MIN, CAM_GEN_CAM_MAX);
+
+        // Rate limited by DCC.
+        if elapsed < gen_cam_dcc {
+            net_debug!("CAM cannot be sent: DCC rate limited");
+            return Ok(());
+        }
+
         // Fill CAM.
         let cam = self.fill_cam(
             now_tai2004,
             ego_station_type,
             ego_position,
+            ego_position_history,
             srv.core.pseudonym(),
         );
 
-        // T_GenCam_Dcc
-        let _gen_cam_dcc = srv.congestion_control.controller.inner().tx_interval();
+        if let Some(params) = &mut self.generation_override {
+            params.num_tx -= 1;
+            self.retransmit_at = now + params.period;
 
-        // TODO: Make retransmit delay dynamic for non-rsu station types.
-        // ie: check position, speed and heading vs values in prev cam.
-        if ego_station_type == StationType::RoadSideUnit {
-            self.retransmit_delay = CAM_RSU_RETRANSMIT_DELAY;
+            // Reset parameters if all generations have been sent.
+            if params.num_tx == 0 {
+                self.generation_override = None;
+                self.retransmit_delay = CAM_GEN_CAM_MAX;
+
+                if ego_station_type == StationType::RoadSideUnit {
+                    self.retransmit_at = now + self.retransmit_delay;
+                } else {
+                    self.retransmit_at = now + CAM_CHECK_CAM_GEN;
+                }
+            }
         } else {
-            self.retransmit_delay = CAM_VEH_RETRANSMIT_DELAY;
-        }
+            if ego_station_type == StationType::RoadSideUnit {
+                self.retransmit_delay = CAM_GEN_CAM_MAX;
+                self.retransmit_at = now + self.retransmit_delay;
+            } else {
+                self.retransmit_at = now + CAM_CHECK_CAM_GEN;
+                let motion_trigger = self.motion_trigger(ego_path_point);
 
-        self.retransmit_at = now + self.retransmit_delay;
+                if motion_trigger || elapsed >= self.retransmit_delay {
+                    if motion_trigger {
+                        self.retransmit_delay =
+                            (now - self.prev_cam_at).clamp(CAM_GEN_CAM_MIN, CAM_GEN_CAM_MAX);
+                        self.n_gen_cam = CAM_N_GEN_CAM;
+                    }
+                } else {
+                    net_debug!("CAM cannot be sent: wait time not exceeded");
+                    return Ok(());
+                }
+            }
+        }
 
         // TODO: FixMe
         let Ok(raw_cam) = rasn::uper::encode(&cam) else {
@@ -287,7 +417,7 @@ impl<'a> Socket<'a> {
         let meta = Request {
             transport: Transport::SingleHopBroadcast,
             max_lifetime: Duration::from_millis(1000),
-            traffic_class: GnTrafficClass::new(false, 2), // pCamTrafficClass in C2C vehicle profile.
+            traffic_class: Self::traffic_class(),
             #[cfg(feature = "proto-security")]
             its_aid: Permission::CAM(ssp.into()),
             ..Default::default()
@@ -307,6 +437,18 @@ impl<'a> Socket<'a> {
                 self.prev_low_dynamic_at = now;
             }
 
+            self.prev_cam_at = now;
+            self.prev_pos = ego_path_point;
+
+            if self.n_gen_cam > 0 {
+                self.n_gen_cam -= 1;
+
+                // n_gen_cam reached 0. Reset retransmit delay to the maximum value.
+                if self.n_gen_cam == 0 {
+                    self.retransmit_delay = CAM_GEN_CAM_MAX;
+                }
+            }
+
             if let Some(tx_cb) = &mut self.tx_callback {
                 tx_cb(&raw_cam, &cam);
             };
@@ -319,12 +461,45 @@ impl<'a> Socket<'a> {
         self.inner.poll_at(cx).min(PollAt::Time(self.retransmit_at))
     }
 
+    /// Get the traffic class for CAM messages.
+    #[inline]
+    const fn traffic_class() -> GnTrafficClass {
+        // C2C Consortium Vehicle C-ITS station profile, requirement RS_BSP_292.
+        // pCamTrafficClass = 2.
+        GnTrafficClass::new(false, 2)
+    }
+
+    /// Check if a CAM generation should be triggered based on the station motion.
+    #[inline]
+    fn motion_trigger(&self, pos: PotiPathPoint) -> bool {
+        let prev_hdg = self.prev_pos.heading;
+        let prev_spd = self.prev_pos.speed;
+        let fix_hdg = pos.heading;
+        let fix_spd = pos.speed;
+
+        if (prev_hdg - fix_hdg).abs() > Heading::new::<degree>(4.0) {
+            return true;
+        }
+
+        if (prev_spd - fix_spd).abs() > Speed::new::<meter_per_second>(0.5) {
+            return true;
+        }
+
+        if self.prev_pos.distance_to(&pos).abs() > Length::new::<meter>(4.0) {
+            return true;
+        }
+
+        false
+    }
+
     /// Fills a CAM message with basic content
+    #[inline]
     fn fill_cam(
         &self,
         timestamp: TAI2004,
         station_type: StationType,
         fix: PotiFix,
+        history: PotiPositionHistory,
         pseudo: Pseudonym,
     ) -> cam::CAM {
         use cam::*;
@@ -407,20 +582,18 @@ impl<'a> Socket<'a> {
                 >= CAM_LF_RETRANSMIT_DELAY =>
             {
                 let ext_lights = BitString::from_slice(&[0u8]);
-                let mut path_history = SequenceOf::new();
-                path_history.push(PathPoint {
-                    path_position: DeltaReferencePosition {
-                        delta_latitude: DeltaLatitude(0),
-                        delta_longitude: DeltaLongitude(0),
-                        delta_altitude: DeltaAltitude(0),
-                    },
-                    path_delta_time: None,
-                });
+                let mut path_history = history
+                    .as_etsi_path(&fix)
+                    .unwrap_or_else(|_| cdd::Path(SequenceOf::new()));
+
+                // Truncate the path history to the maximum number of points.
+                // C2C Consortium Vehicle C-ITS station profile, requirement RS_BSP_512.
+                path_history.0.truncate(CAM_TRACE_MAX_POINTS);
 
                 let vehicle_lf = BasicVehicleContainerLowFrequency {
                     vehicle_role: VehicleRole::default,
                     exterior_lights: ExteriorLights(ext_lights),
-                    path_history: Path(path_history),
+                    path_history: path_history,
                 };
 
                 Some(LowFrequencyContainer::basicVehicleContainerLowFrequency(

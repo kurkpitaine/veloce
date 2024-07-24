@@ -48,6 +48,11 @@ pub fn load_tlm_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
     rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_tlm).unwrap()
 }
 
+pub fn valid_timestamp() -> Instant {
+    // 2024-07-20 - 12h00m00s
+    Instant::from_secs(1721469600)
+}
+
 #[test]
 fn root_cert_valid() {
     let backend = openssl_backend();
@@ -55,7 +60,7 @@ fn root_cert_valid() {
     let root_cert = RootCertificate::from_etsi_cert(raw_cert.0, &backend).unwrap();
 
     assert!(root_cert
-        .check(Instant::now(), &backend, |_| { None::<RootCertificate> })
+        .check(valid_timestamp(), &backend, |_| { None::<RootCertificate> })
         .unwrap());
 }
 
@@ -74,7 +79,7 @@ fn ea_cert_valid() {
     let ea_cert = EnrollmentAuthorityCertificate::from_etsi_cert(raw_cert.0, &backend).unwrap();
 
     assert!(ea_cert
-        .check(Instant::now(), &backend, |_| Some(root_cert))
+        .check(valid_timestamp(), &backend, |_| Some(root_cert))
         .unwrap());
 }
 
@@ -86,7 +91,7 @@ fn aa_cert_valid() {
     let aa_cert = AuthorizationAuthorityCertificate::from_etsi_cert(raw_cert.0, &backend).unwrap();
 
     assert!(aa_cert
-        .check(Instant::now(), &backend, |_| Some(root_cert))
+        .check(valid_timestamp(), &backend, |_| Some(root_cert))
         .unwrap());
 }
 
@@ -99,6 +104,6 @@ fn at_cert_valid() {
     let at_cert = AuthorizationTicketCertificate::from_etsi_cert(raw_cert.0, &backend).unwrap();
 
     assert!(at_cert
-        .check(Instant::now(), &backend, |_| Some(aa_cert))
+        .check(valid_timestamp(), &backend, |_| Some(aa_cert))
         .unwrap());
 }

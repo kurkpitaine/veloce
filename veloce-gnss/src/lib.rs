@@ -19,7 +19,7 @@ pub use gpsd::Gpsd;
 
 /// Accumulated GPS data. Most of the nested fields are optional,
 /// due to GPSs not sending all the relevant data at once.
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct GpsInfo {
     /// Position fix data.
     fix: Fix,
@@ -60,27 +60,38 @@ impl GpsInfo {
         } else if self.fix.time.is_some_and(|fix_time| {
             (-29..30).contains(&Utc::now().signed_duration_since(fix_time).num_seconds())
         }) {
-            // GST frame does not contain the relevant data.
-            let (Some(epx), Some(epy)) = (self.fix.epx, self.fix.epy) else {
-                error!("no GST and no fix 'epx' or 'epy' - confidence unavailable");
-                return;
-            };
+            match (self.fix.epx, self.fix.epy, self.fix.eph) {
+                (Some(epx), Some(epy), _) => {
+                    trace!("GST data unavailable - using fix 'epx' and 'epy'");
 
-            trace!("GST data unavailable - using fix 'epx' and 'epy'");
+                    let semi_major_orientation = if epx > epy {
+                        Angle::new::<degree>(0.0)
+                    } else {
+                        Angle::new::<degree>(90.0)
+                    };
 
-            let semi_major_orientation = if epx > epy {
-                Angle::new::<degree>(0.0)
-            } else {
-                Angle::new::<degree>(90.0)
-            };
+                    // Estimation: ellipse major and minor axises are roughly half of the
+                    // epx and epy.
+                    self.confidence = Some(Confidence {
+                        semi_major_axis: Ratio::new::<ratio>(0.5) * epx,
+                        semi_minor_axis: Ratio::new::<ratio>(0.5) * epy,
+                        semi_major_orientation,
+                    });
+                }
+                (None, None, Some(eph)) => {
+                    trace!("GST data unavailable - using fix 'eph'");
 
-            // Estimation: ellipse major and minor axises are roughly half of the
-            // epx and epy.
-            self.confidence = Some(Confidence {
-                semi_major_axis: Ratio::new::<ratio>(0.5) * epx,
-                semi_minor_axis: Ratio::new::<ratio>(0.5) * epy,
-                semi_major_orientation,
-            });
+                    self.confidence = Some(Confidence {
+                        semi_major_axis: eph,
+                        semi_minor_axis: eph,
+                        semi_major_orientation: Angle::new::<degree>(0.0),
+                    });
+                }
+                _ => {
+                    error!("no GST and no fix 'epx' or 'epy' or 'eph' - confidence unavailable");
+                    return;
+                }
+            }
         } else {
             error!("no GST and fix too old - confidence unavailable");
         }
@@ -146,7 +157,7 @@ impl TryInto<PotiFix> for GpsInfo {
 /// A GPS fix.
 /// Mostly the same as `struct gps_fix_t` from GPSD, with
 /// less fields.
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct Fix {
     /// Mode of fix.
     pub mode: FixMode,
@@ -169,6 +180,9 @@ pub struct Fix {
     /// Present if mode is 2d or 3d and DOPs can be calculated from
     /// the satellite view.
     pub epx: Option<Length>,
+    /// Estimated horizontal Position (2D) Error.
+    /// Also known as Estimated Position Error (epe).
+    pub eph: Option<Length>,
     /// Altitude height above ellipsoid (ellipsoid is unspecified,
     /// but probably WGS84).
     pub altitude: Option<Length>,
@@ -221,7 +235,7 @@ impl Fix {
 }
 
 /// Position Confidence, ie: accuracy of [Fix] information.
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct Confidence {
     /// Standard deviation of semi-major axis of error ellipse.
     pub semi_major_axis: Length,
@@ -234,7 +248,7 @@ pub struct Confidence {
 
 /// Pseudorange noise report.
 /// Same as `struct gst_t` from GPSD, Rusted.
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct Gst {
     /// UTC time of measurement.
     pub time: Option<DateTime<Utc>>,
@@ -285,7 +299,7 @@ impl Gst {
 }
 
 /// Type of GPS fix.
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub enum FixMode {
     /// Not yet updated.

@@ -4,8 +4,6 @@ use core::fmt;
 
 pub(crate) use cfg::*;
 
-/// Maximum number of access handlers.
-pub(crate) const VELOCE_MAX_ACCESS_HANDLER_COUNT: usize = 2;
 /// Maximum number of retransmissions used in area advanced forwarding.
 pub(crate) const VELOCE_CBF_MAX_RETRANSMIT: u8 = 2;
 /// Geonetworking protocol version supported by Veloce.
@@ -26,11 +24,9 @@ pub(crate) const GN_DEFAULT_HOP_LIMIT: u8 = 10;
 pub(crate) const GN_DEFAULT_TRAFFIC_CLASS: GnTrafficClass = GnTrafficClass::from_byte(&0x00);
 pub(crate) const GN_MAX_PACKET_LIFETIME: Duration = Duration::from_secs(600);
 pub(crate) const GN_DEFAULT_PACKET_LIFETIME: Duration = Duration::from_secs(60);
-pub(crate) const GN_MAX_PACKET_DATA_RATE_KILO_BYTE_PER_SEC: u8 = 100;
 pub(crate) const GN_MAX_PACKET_DATA_RATE_EMA_BETA: f32 = 0.9;
 /// Maximum segment length carried by a Geonetworking packet.
 pub(crate) const GN_MAX_SDU_SIZE: usize = 1398;
-pub(crate) const GN_MAX_GEO_NETWORKING_HEADER_SIZE: usize = 88;
 /// Location service retransmission period.
 pub(crate) const GN_LOCATION_SERVICE_RETRANSMIT_TIMER: Duration = Duration::from_millis(1000);
 /// Location service maximum number of retransmissions.
@@ -56,8 +52,6 @@ pub(crate) const GN_PAI_INTERVAL: f32 = 80.0;
 
 /// Lifetime for the ITS-G5 extensions of the location table entry.
 pub(crate) const GN_LIFETIME_LOC_TE_X: Duration = Duration::from_secs(1);
-/// Value for the intended global channel busy ratio CBR_Target.
-pub(crate) const GN_CBR_TARGET: f32 = 0.62;
 /// Trigger interval for calculation of CBR_G.
 pub(crate) const GN_CBR_G_TRIGGER_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -67,8 +61,6 @@ pub(crate) const BTP_MAX_PL_SIZE: usize = GN_MAX_SDU_SIZE - 4;
 /// Maximum size of one DCC queue.
 pub(crate) const DCC_QUEUE_SIZE: usize = 10 * 1000;
 
-/// Maximum number of certificates in the security certificate cache.
-pub(crate) const SEC_CERT_CACHE_ENTRY_COUNT: usize = 16;
 /// Lifetime of a certificate cache entry.
 pub(crate) const SEC_CERT_CACHE_ENTRY_LIFETIME: Duration = Duration::from_secs(20);
 
