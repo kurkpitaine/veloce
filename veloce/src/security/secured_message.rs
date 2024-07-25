@@ -9,8 +9,8 @@ use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2::{
     ToBeSignedData,
 };
 use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2Base_types::{
-    EccP256CurvePoint, EcdsaP256Signature, HashAlgorithm, Opaque, Psid, Signature, ThreeDLocation,
-    Time64, Uint64, Uint8,
+    EccP256CurvePoint, EcdsaP256Signature, HashAlgorithm, HashedId3, Opaque, Psid,
+    SequenceOfHashedId3, Signature, ThreeDLocation, Time64, Uint64, Uint8,
 };
 use veloce_asn1::prelude::rasn::types::FixedOctetString;
 use veloce_asn1::prelude::rasn::{self, error::DecodeError};
@@ -331,6 +331,60 @@ impl SecuredMessage {
         };
 
         sd.signer = signer.into();
+
+        Ok(())
+    }
+
+    /// Get the list of p2p requested certificates.
+    pub fn p2p_requested_certificates(&self) -> SecuredMessageResult<Vec<HashedId3>> {
+        let Ieee1609Dot2Content::signedData(sd) = &self.inner.0 .0.content else {
+            return Err(SecuredMessageError::NotSigned);
+        };
+
+        let res = sd
+            .tbs_data
+            .header_info
+            .inline_p2pcd_request
+            .as_ref()
+            .map_or_else(|| Vec::new(), |p2pcd| p2pcd.0.clone());
+
+        Ok(res)
+    }
+
+    /// Sets the P2P requested certificates hashes if the provided `certs` is not empty.
+    /// Content should be of type [Ieee1609Dot2Content::signedData] otherwise an error is returned.
+    pub fn set_p2p_requested_certificates(
+        &mut self,
+        certs: Vec<HashedId3>,
+    ) -> SecuredMessageResult<()> {
+        let Ieee1609Dot2Content::signedData(sd) = &mut self.inner.0 .0.content else {
+            return Err(SecuredMessageError::NotSigned);
+        };
+
+        if !certs.is_empty() {
+            sd.tbs_data.header_info.inline_p2pcd_request = Some(SequenceOfHashedId3(certs));
+        }
+
+        Ok(())
+    }
+
+    /// Get the requested certificate contained in the secure message, if any.
+    pub fn requested_certificate(&self) -> SecuredMessageResult<Option<EtsiCertificate>> {
+        let Ieee1609Dot2Content::signedData(sd) = &self.inner.0 .0.content else {
+            return Err(SecuredMessageError::NotSigned);
+        };
+
+        Ok(sd.tbs_data.header_info.requested_certificate.clone())
+    }
+
+    /// Sets the requested certificate.
+    /// Content should be of type [Ieee1609Dot2Content::signedData] otherwise an error is returned.
+    pub fn set_requested_certificate(&mut self, cert: EtsiCertificate) -> SecuredMessageResult<()> {
+        let Ieee1609Dot2Content::signedData(sd) = &mut self.inner.0 .0.content else {
+            return Err(SecuredMessageError::NotSigned);
+        };
+
+        sd.tbs_data.header_info.requested_certificate = Some(cert);
 
         Ok(())
     }

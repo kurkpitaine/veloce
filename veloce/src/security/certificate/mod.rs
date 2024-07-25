@@ -584,7 +584,7 @@ pub trait ExplicitCertificate: CertificateTrait {
     ) -> CertificateResult<CertificateWithHashContainer<Self>>
     where
         Self: Sized,
-        B: BackendTrait,
+        B: BackendTrait + ?Sized,
     {
         let hash = self.hashed_id8(backend)?;
 

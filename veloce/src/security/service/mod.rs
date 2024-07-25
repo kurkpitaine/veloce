@@ -1,5 +1,7 @@
 use core::fmt::{self, Formatter};
 
+use cert_request::CertificateRequestError;
+
 use crate::{time::Instant, types::Pseudonym, wire::EthernetAddress};
 
 use super::{
@@ -10,9 +12,10 @@ use super::{
     secured_message::SecuredMessageError,
     trust_chain::TrustChain,
     trust_store::Store as TrustStore,
-    SecurityBackend,
+    HashedId8, SecurityBackend,
 };
 
+pub(self) mod cert_request;
 pub(crate) mod decap;
 pub(crate) mod encap;
 pub(crate) mod sign;
@@ -47,12 +50,17 @@ pub enum SecurityServiceError {
     /// Signer certificate not found, ie: AT certificate is not present
     /// in local cache.
     SignerCertificateNotFound,
+    /// Signer certificate signature is invalid.
+    SignerCertificateFalseSignature,
     /// Message is not encrypted.
     UnencryptedMessage,
     /// Message decryption has failed.
     DecryptionError,
     /// Backend error.
     Backend(BackendError),
+    /// Certificate Request error.
+    /// Used when a secured message contains a certificate request.
+    CertificateRequest(CertificateRequestError),
 }
 
 impl fmt::Display for SecurityServiceError {
@@ -81,16 +89,29 @@ impl fmt::Display for SecurityServiceError {
             SecurityServiceError::SignerCertificateNotFound => {
                 write!(f, "signer certificate not found")
             }
+            SecurityServiceError::SignerCertificateFalseSignature => {
+                write!(f, "signer certificate false signature")
+            }
             SecurityServiceError::UnencryptedMessage => write!(f, "unencrypted message"),
             SecurityServiceError::DecryptionError => write!(f, "decryption error"),
             SecurityServiceError::Backend(e) => write!(f, "backend error: {}", e),
+            SecurityServiceError::CertificateRequest(cr) => {
+                write!(f, "certificate request error: {}", cr)
+            }
         }
     }
 }
 
 pub struct SecurityService {
     /// Instant at which to include the full AT certificate in a CAM message signature.
-    next_cert_in_cam_at: Instant,
+    at_cert_in_cam_at: Instant,
+    /// Flag indicating whether the AA certificate should be included in the next CAM message.
+    /// [SecurityService::at_cert_in_cam_at] takes precedence over this flag and will delay AA
+    /// inclusion to the next transmitted CAM message without the full AT certificate.
+    aa_cert_in_cam: bool,
+    /// Requested certificates, ie: HashedId8 of certificates we don't have in our cache,
+    /// which should be included in the next CAM message.
+    p2p_requested_certs: Vec<HashedId8>,
     /// AT Certificates cache.
     cache: CertificateCache,
     /// Trust store for chain of trust.
@@ -102,7 +123,8 @@ pub struct SecurityService {
 impl fmt::Debug for SecurityService {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("SecurityService")
-            .field("next_cert_in_cam_at", &self.next_cert_in_cam_at)
+            .field("at_cert_in_cam_at", &self.at_cert_in_cam_at)
+            .field("aa_cert_in_cam", &self.aa_cert_in_cam)
             .field("cache", &self.cache)
             .field("store", &self.store)
             .finish()
@@ -113,7 +135,9 @@ impl SecurityService {
     /// Constructs a [SecurityService].
     pub fn new(own_chain: TrustChain, backend: SecurityBackend) -> Self {
         Self {
-            next_cert_in_cam_at: Instant::ZERO,
+            at_cert_in_cam_at: Instant::ZERO,
+            aa_cert_in_cam: false,
+            p2p_requested_certs: Vec::new(),
             cache: CertificateCache::new(),
             store: TrustStore::new(own_chain),
             backend,

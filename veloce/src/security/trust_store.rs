@@ -7,7 +7,18 @@ use alloc::collections::btree_map::BTreeMap;
 #[cfg(feature = "std")]
 use std::collections::BTreeMap;
 
-use super::{certificate::AuthorizationAuthorityCertificate, trust_chain::TrustChain, HashedId8};
+use super::{
+    certificate::{
+        AuthorizationAuthorityCertificate, CertificateWithHashContainer, RootCertificate,
+    },
+    trust_chain::TrustChain,
+    HashedId8,
+};
+
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// Error returned by [`TrustStore::set_remote_aa`].
+pub struct InexistentChainError;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -45,6 +56,18 @@ impl Store {
             .any(|(_, chain)| chain.is_revoked(hash))
     }
 
+    /// Lookup into the own and the remote chains for a [RootCertificate]
+    /// identified with `hash`.
+    pub fn lookup_root(&self, hash: HashedId8) -> Option<RootCertificate> {
+        if self.own_chain.root_cert().hashed_id8() == hash {
+            return Some(self.own_chain.root_cert().certificate().clone());
+        }
+
+        self.remote_chains
+            .get(&hash)
+            .map(|e| e.root_cert().certificate().clone())
+    }
+
     /// Lookup into the own and the remote chains for an [AuthorizationAuthorityCertificate]
     /// identified with `hash`.
     pub fn lookup_aa(&self, hash: HashedId8) -> Option<AuthorizationAuthorityCertificate> {
@@ -63,5 +86,19 @@ impl Store {
             });
 
         None
+    }
+
+    /// Set the [AuthorizationAuthorityCertificate] for the remote chain identified with `hash`.
+    pub fn set_remote_aa(
+        &mut self,
+        hash: HashedId8,
+        cert: CertificateWithHashContainer<AuthorizationAuthorityCertificate>,
+    ) -> Result<(), InexistentChainError> {
+        self.remote_chains
+            .get_mut(&hash)
+            .ok_or(InexistentChainError)?
+            .set_aa_cert(cert);
+
+        Ok(())
     }
 }

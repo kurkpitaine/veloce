@@ -27,10 +27,10 @@ pub struct TrustListManagerCertificate {
 }
 
 impl TrustListManagerCertificate {
-    pub fn from_etsi_cert(
-        cert: EtsiCertificate,
-        backend: &impl BackendTrait,
-    ) -> CertificateResult<Self> {
+    pub fn from_etsi_cert<B>(cert: EtsiCertificate, backend: &B) -> CertificateResult<Self>
+    where
+        B: BackendTrait + ?Sized,
+    {
         Certificate::verify_ieee_constraints(&cert)?;
         Certificate::verify_etsi_constraints(&cert)?;
         Self::verify_constraints(&cert)?;

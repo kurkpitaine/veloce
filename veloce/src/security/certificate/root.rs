@@ -28,10 +28,13 @@ impl RootCertificate {
     /// Constructs a Root certificate from an [EtsiCertificate].
     /// This method verifies if the certificate is valid relative to a Root certificate Asn.1 constraints.
     /// Certificate is also canonicalized if necessary.
-    pub fn from_etsi_cert(
+    pub fn from_etsi_cert<B>(
         cert: EtsiCertificate,
-        backend: &impl BackendTrait,
-    ) -> CertificateResult<RootCertificate> {
+        backend: &B,
+    ) -> CertificateResult<RootCertificate>
+    where
+        B: BackendTrait + ?Sized,
+    {
         Certificate::verify_ieee_constraints(&cert)?;
         Certificate::verify_etsi_constraints(&cert)?;
         Self::verify_constraints(&cert)?;

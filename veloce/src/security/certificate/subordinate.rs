@@ -9,7 +9,9 @@ use veloce_asn1::{
 
 use crate::security::backend::BackendTrait;
 
-use super::{Certificate, CertificateError, CertificateResult, CertificateTrait, ExplicitCertificate};
+use super::{
+    Certificate, CertificateError, CertificateResult, CertificateTrait, ExplicitCertificate,
+};
 
 /// Marker struct for a subordinate EA certificate.
 #[derive(Debug, Clone, PartialEq)]
@@ -42,10 +44,10 @@ impl<T> SubordinateCertificate<T> {
     /// Constructs from a raw ETSI Certificate.
     /// This method must verify if the certificate is valid relative to a Subordinate certificate Asn.1 constraints.
     /// Certificate has to be canonicalized if necessary.
-    pub fn from_etsi_cert(
-        cert: EtsiCertificate,
-        backend: &impl BackendTrait,
-    ) -> CertificateResult<Self> {
+    pub fn from_etsi_cert<B>(cert: EtsiCertificate, backend: &B) -> CertificateResult<Self>
+    where
+        B: BackendTrait + ?Sized,
+    {
         Certificate::verify_ieee_constraints(&cert)?;
         Certificate::verify_etsi_constraints(&cert)?;
         Self::verify_constraints(&cert)?;

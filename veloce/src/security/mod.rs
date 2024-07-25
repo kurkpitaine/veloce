@@ -161,6 +161,13 @@ impl Into<ieee1609Dot2Base_types::HashedId8> for HashedId8 {
     }
 }
 
+impl Into<ieee1609Dot2Base_types::HashedId3> for HashedId8 {
+    fn into(self) -> ieee1609Dot2Base_types::HashedId3 {
+        let hash = self.as_bytes();
+        ieee1609Dot2Base_types::HashedId3(FixedOctetString::<3>::new([hash[5], hash[6], hash[7]]))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Elliptic curve digital signature algorithm key type.
 pub enum EcdsaKeyType {

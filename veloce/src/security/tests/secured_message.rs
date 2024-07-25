@@ -17,7 +17,6 @@ use crate::{
         trust_chain::TrustChain,
         SecurityBackend,
     },
-    time::Instant,
     types::{Latitude, Longitude},
 };
 

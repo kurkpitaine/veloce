@@ -58,13 +58,49 @@ impl SecurityService {
             .map_err(SecurityServiceError::InvalidContent)?;
 
         let signer = match permission.aid() {
-            AID::CA if self.next_cert_in_cam_at > timestamp => {
-                // Fill Secured Message with the AT certificate HasedId8.
+            AID::CA if self.at_cert_in_cam_at > timestamp => {
+                // Add our AA certificate in the secured message, if necessary.
+                if self.aa_cert_in_cam {
+                    self.aa_cert_in_cam = false;
+                    self.store
+                        .own_chain()
+                        .aa_cert()
+                        .as_ref()
+                        .map_or(Ok(()), |own_aa| {
+                            message
+                                .set_requested_certificate(own_aa.certificate().inner().to_owned())
+                        })
+                        .map_err(SecurityServiceError::InvalidContent)?;
+                }
+
+                // Add P2P requested certificates in the secured message.
+                let p2p_hashes = self
+                    .p2p_requested_certs
+                    .drain(..)
+                    .map(|cert_hash| cert_hash.into())
+                    .collect();
+
+                message
+                    .set_p2p_requested_certificates(p2p_hashes)
+                    .map_err(SecurityServiceError::InvalidContent)?;
+
+                // Fill Secured Message with the AT certificate HashedId8.
                 SignerIdentifier::Digest(at.hashed_id8().into())
             }
             AID::CA => {
+                // Add P2P requested certificates in the secured message.
+                let p2p_hashes = self
+                    .p2p_requested_certs
+                    .drain(..)
+                    .map(|cert_hash| cert_hash.into())
+                    .collect();
+
+                message
+                    .set_p2p_requested_certificates(p2p_hashes)
+                    .map_err(SecurityServiceError::InvalidContent)?;
+
                 // Reset timer and fill Secured Message with the AT certificate.
-                self.next_cert_in_cam_at = timestamp + Duration::from_secs(1);
+                self.at_cert_in_cam_at = timestamp + Duration::from_secs(1);
                 SignerIdentifier::Certificate(at.certificate().inner().clone())
             }
             AID::DEN => {
