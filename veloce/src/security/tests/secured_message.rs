@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use approx::assert_relative_eq;
 use uom::si::angle::degree;
 
 use crate::{
@@ -11,13 +12,14 @@ use crate::{
             RootCertificate,
         },
         permission::Permission,
-        secured_message::SecuredMessage,
+        secured_message::{SecuredMessage, SignerIdentifier},
         service::SecurityService,
-        ssp::cam::CamSsp,
+        ssp::{cam::CamSsp, denm::DenmSsp},
         trust_chain::TrustChain,
         SecurityBackend,
     },
-    types::{Latitude, Longitude},
+    time::Duration,
+    types::{tenth_of_microdegree, Latitude, Longitude},
 };
 
 use super::certificate::{self, valid_timestamp};
@@ -52,29 +54,7 @@ const BTP_CAM: [u8; 64] = [
     0x49, 0xb2, 0xbf, 0xed, 0x49, 0xbe, 0x16, 0x06, 0x30, 0xa1, 0x40, 0x00, 0x33, 0x1a, 0x96, 0x80,
 ];
 
-#[test]
-fn verify_secured_message() {
-    let backend = certificate::openssl_backend();
-    let raw_root_cert = certificate::load_root_cert();
-    let raw_aa_cert = certificate::load_aa_cert();
-    let root_cert = RootCertificate::from_etsi_cert(raw_root_cert.0, &backend).unwrap();
-    let aa_cert =
-        AuthorizationAuthorityCertificate::from_etsi_cert(raw_aa_cert.0, &backend).unwrap();
-
-    let mut own_chain = TrustChain::new(root_cert.into_with_hash_container(&backend).unwrap());
-    own_chain.set_aa_cert(aa_cert.into_with_hash_container(&backend).unwrap());
-
-    let mut service = SecurityService::new(own_chain, SecurityBackend::Openssl(backend));
-
-    let msg = SecuredMessage::from_bytes(&SECURITY_ENVELOPE).unwrap();
-
-    service
-        .verify_secured_message(&msg, valid_timestamp())
-        .unwrap();
-}
-
-#[test]
-fn test_sign_message() {
+fn setup_security_service() -> SecurityService {
     let mut key_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     key_path.pop();
     key_path.push(file!());
@@ -103,7 +83,23 @@ fn test_sign_message() {
     own_chain.set_aa_cert(aa_cert.into_with_hash_container(&backend).unwrap());
     own_chain.set_at_cert(at_cert.into_with_hash_container(&backend).unwrap());
 
-    let mut service = SecurityService::new(own_chain, SecurityBackend::Openssl(backend));
+    SecurityService::new(own_chain, SecurityBackend::Openssl(backend))
+}
+
+#[test]
+fn verify_secured_message() {
+    let mut service = setup_security_service();
+
+    let msg = SecuredMessage::from_bytes(&SECURITY_ENVELOPE).unwrap();
+
+    service
+        .verify_secured_message(&msg, valid_timestamp())
+        .unwrap();
+}
+
+#[test]
+fn test_sign_message() {
+    let mut service = setup_security_service();
 
     let permissions = Permission::CAM(CamSsp::new().into());
 
@@ -118,4 +114,120 @@ fn test_sign_message() {
         .unwrap();
 
     assert!(res.len() > 0);
+}
+
+#[test]
+fn test_signer_digest_or_certificate_cam() {
+    let mut service = setup_security_service();
+
+    let permissions = Permission::CAM(CamSsp::new().into());
+
+    let position = PotiPosition {
+        latitude: Some(Latitude::new::<degree>(48.2764384)),
+        longitude: Some(Longitude::new::<degree>(-3.5519532)),
+        altitude: None,
+    };
+
+    let timestamp_start = valid_timestamp();
+    let mut message = SecuredMessage::new(&BTP_CAM);
+
+    service
+        .sign_secured_message(&mut message, permissions.clone(), timestamp_start, position)
+        .unwrap();
+
+    // First secured message should contain the full certificate.
+    let signer = message.signer_identifier().unwrap();
+    assert!(matches!(signer, SignerIdentifier::Certificate(_)));
+
+    let mut message = SecuredMessage::new(&BTP_CAM);
+
+    service
+        .sign_secured_message(
+            &mut message,
+            permissions.clone(),
+            timestamp_start + Duration::from_millis(500),
+            position,
+        )
+        .unwrap();
+
+    // 500 milliseconds after the inclusion of the full certificate, second secured message should contain the digest certificate.
+    let signer = message.signer_identifier().unwrap();
+    assert!(matches!(signer, SignerIdentifier::Digest(_)));
+
+    let mut message = SecuredMessage::new(&BTP_CAM);
+
+    service
+        .sign_secured_message(
+            &mut message,
+            permissions,
+            timestamp_start + Duration::from_millis(1000),
+            position,
+        )
+        .unwrap();
+
+    // 1 second after the inclusion of the full certificate, secured message should contain the full certificate.
+    let signer = message.signer_identifier().unwrap();
+    assert!(matches!(signer, SignerIdentifier::Certificate(_)));
+
+    // The previous behavior should only be valid for CAM messages.
+    let mut message = SecuredMessage::new(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    let permissions = Permission::DENM(DenmSsp::new_v1().into());
+
+    service
+        .sign_secured_message(
+            &mut message,
+            permissions,
+            timestamp_start + Duration::from_millis(1100),
+            position,
+        )
+        .unwrap();
+
+    // 1 second after the inclusion of the full certificate, secured message should contain the full certificate.
+    let signer = message.signer_identifier().unwrap();
+    assert!(matches!(signer, SignerIdentifier::Certificate(_)));
+}
+
+#[test]
+fn test_position_inclusion() {
+    let mut service = setup_security_service();
+    let permissions = Permission::DENM(DenmSsp::new_v1().into());
+
+    let position = PotiPosition {
+        latitude: Some(Latitude::new::<degree>(48.2764384)),
+        longitude: Some(Longitude::new::<degree>(-3.5519532)),
+        altitude: None,
+    };
+
+    // Position should be included only for DENM messages.
+    let timestamp = valid_timestamp();
+    let mut message = SecuredMessage::new(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
+    service
+        .sign_secured_message(&mut message, permissions, timestamp, position)
+        .unwrap();
+
+    let location = message.generation_location().unwrap().unwrap();
+    assert_relative_eq!(
+        location.latitude.0 .0 as f32,
+        position.latitude.unwrap().get::<tenth_of_microdegree>()
+    );
+    assert_relative_eq!(
+        location.longitude.0 .0 as f32,
+        position.longitude.unwrap().get::<tenth_of_microdegree>()
+    );
+
+    // Position should not be included for CAM messages.
+    let permissions = Permission::CAM(CamSsp::new().into());
+    let mut message = SecuredMessage::new(&BTP_CAM);
+
+    service
+        .sign_secured_message(
+            &mut message,
+            permissions.clone(),
+            timestamp + Duration::from_millis(500),
+            position,
+        )
+        .unwrap();
+
+    assert!(message.generation_location().unwrap().is_none());
 }

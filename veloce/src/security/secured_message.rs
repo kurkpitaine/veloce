@@ -246,6 +246,15 @@ impl SecuredMessage {
         Ok(())
     }
 
+    /// Get the generation location of the secured message.
+    pub fn generation_location(&self) -> SecuredMessageResult<Option<ThreeDLocation>> {
+        let Ieee1609Dot2Content::signedData(sd) = &self.inner.0 .0.content else {
+            return Err(SecuredMessageError::NotSigned);
+        };
+
+        Ok(sd.tbs_data.header_info.generation_location.clone())
+    }
+
     /// Set the generation location of the secured message.
     pub fn set_generation_location(
         &mut self,
