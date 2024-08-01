@@ -78,7 +78,6 @@ impl<'a> InterfaceSet<'a> {
 
         match &mut self.interfaces {
             ManagedSlice::Borrowed(_) => panic!("adding an interface to a full InterfaceSet"),
-            #[cfg(feature = "alloc")]
             ManagedSlice::Owned(interfaces) => {
                 interfaces.push(InterfaceStorage { inner: None });
                 let index = interfaces.len() - 1;

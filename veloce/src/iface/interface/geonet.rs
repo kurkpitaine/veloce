@@ -107,8 +107,10 @@ impl InterfaceInner {
         // Check Geonetworking protocol version.
         if bh_repr.version != GN_PROTOCOL_VERSION {
             net_trace!(
-                "network: {}",
-                stringify!(bh_repr.version != GN_PROTOCOL_VERSION)
+                "network: {} - Got {}, expected {}",
+                stringify!(bh_repr.version != GN_PROTOCOL_VERSION),
+                bh_repr.version,
+                GN_PROTOCOL_VERSION
             );
             return None;
         }
@@ -201,8 +203,8 @@ impl InterfaceInner {
         }
 
         // Step 2: TODO: process the BC forwarding packet buffer
-
         // TODO: Process the BC forwarding packet buffer and the forwarding algorithm having caused the buffering needs to be re-executed.
+
         let packet = ch.payload();
         match ch_repr.header_type {
             GeonetPacketType::Any => {
@@ -599,6 +601,11 @@ impl InterfaceInner {
 
         let packet = shb.payload();
 
+        /* Check if we are the sender of the packet */
+        if shb_repr.src_addr() == ctx.core.address() {
+            return None;
+        }
+
         /* Step 3: perform duplicate address detection. */
         ctx.core
             .duplicate_address_detection(link_layer.src_addr, shb_repr.src_addr())
@@ -698,6 +705,11 @@ impl InterfaceInner {
         let tsb_repr = check!(TopoBroadcastRepr::parse(&tsb));
 
         let payload = tsb.payload();
+
+        /* Check if we are the sender of the packet */
+        if tsb_repr.src_addr() == ctx.core.address() {
+            return None;
+        }
 
         /* Step 3: duplicate packet detection */
         let dup_opt = self
@@ -1113,6 +1125,11 @@ impl InterfaceInner {
 
         let payload = gbc.payload();
 
+        /* Check if we are the sender of the packet */
+        if gbc_repr.src_addr() == ctx.core.address() {
+            return None;
+        }
+
         /* Step 3: determine function F(x,y) */
         let dst_area = GeoArea::from_gbc(&ch_repr.header_type, &gbc_repr);
         let inside = dst_area.inside_or_at_border(ctx.core.geo_position());
@@ -1257,6 +1274,11 @@ impl InterfaceInner {
         let gac_repr = check!(GeoAnycastRepr::parse(&gac));
 
         let payload = gac.payload();
+
+        /* Check if we are the sender of the packet */
+        if gac_repr.src_addr() == ctx.core.address() {
+            return None;
+        }
 
         /* Step 3: duplicate packet detection */
         let dup_opt = self
@@ -2432,6 +2454,8 @@ impl InterfaceInner {
         payload: &[u8],
         link_layer: Option<EthernetRepr>,
     ) -> Option<EthernetAddress> {
+        net_trace!("non_area_contention_based_forwarding");
+
         let Some(EthernetRepr { src_addr, .. }) = link_layer else {
             return Some(EthernetAddress::BROADCAST.into());
         };
@@ -2505,6 +2529,8 @@ impl InterfaceInner {
         payload: &[u8],
         link_layer: Option<EthernetRepr>,
     ) -> Option<EthernetAddress> {
+        net_trace!("area_contention_based_forwarding");
+
         let Some(EthernetRepr { src_addr, .. }) = link_layer else {
             return Some(EthernetAddress::BROADCAST.into());
         };
@@ -2553,6 +2579,8 @@ impl InterfaceInner {
         payload: &[u8],
         link_layer: Option<EthernetRepr>,
     ) -> Option<EthernetAddress> {
+        net_trace!("area_advanced_forwarding");
+
         let Some(EthernetRepr {
             src_addr, dst_addr, ..
         }) = link_layer
@@ -2697,9 +2725,17 @@ impl InterfaceInner {
             transport: packet.transport(),
             ali_id: (),
             #[cfg(feature = "proto-security")]
-            its_aid: Default::default(),
+            its_aid: ctx
+                .decap_context
+                .decap_confirm
+                .as_ref()
+                .map_or_else(|| Default::default(), |d| d.permissions.clone()),
             #[cfg(feature = "proto-security")]
-            cert_id: Default::default(),
+            cert_id: ctx
+                .decap_context
+                .decap_confirm
+                .as_ref()
+                .map_or_else(|| Default::default(), |d| d.cert_id),
             rem_lifetime: packet.lifetime(),
             rem_hop_limit: packet.hop_limit(),
             traffic_class: packet.traffic_class(),

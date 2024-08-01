@@ -1,7 +1,7 @@
 //! Certificate cache stores received AT and PCA certificates
 //! in a map using the certificate HashedId8 (or digest) as the key.
 
-#[cfg(all(feature = "alloc", not(feature = "std")))]
+#[cfg(not(feature = "std"))]
 use alloc::collections::btree_map::BTreeMap;
 
 #[cfg(feature = "std")]

@@ -1,7 +1,7 @@
 //! The trust store contains the local chain of trust certificates as well as "remote" trust chains,
 //! ie: other PKIs the local station trusts.
 
-#[cfg(all(feature = "alloc", not(feature = "std")))]
+#[cfg(not(feature = "std"))]
 use alloc::collections::btree_map::BTreeMap;
 
 #[cfg(feature = "std")]

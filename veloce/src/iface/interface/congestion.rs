@@ -5,8 +5,8 @@ use crate::{
     time::{Duration, Instant},
     wire::{
         ieee80211::{FrameControl, QoSControl},
-        EthernetAddress, EthernetFrame, EthernetProtocol, GeonetVariant, Ieee80211Frame,
-        Ieee80211Repr, LlcFrame, LlcRepr,
+        EthernetAddress, EthernetFrame, EthernetProtocol, GeonetRepr, GeonetVariant,
+        Ieee80211Frame, Ieee80211Repr, LlcFrame, LlcRepr,
     },
 };
 
@@ -149,15 +149,22 @@ impl InterfaceInner {
     pub(super) fn dispatch_congestion_control<Tx: TxToken>(
         &mut self,
         mut tx_token: Tx,
-        core: &mut GnCore,
+        _: &mut GnCore,
         dst_hw_addr: EthernetAddress,
         packet: GeonetPacket,
     ) -> Result<usize, CongestionError> {
-        let gn_repr = packet.repr().inner();
-        let caps = self.caps.clone();
-
         // First we calculate the total length that we will have to emit.
-        let mut total_len = gn_repr.buffer_len();
+        let mut total_len = match packet.repr() {
+            #[cfg(feature = "proto-security")]
+            GeonetRepr::Secured { repr, encapsulated } => {
+                repr.basic_header_len() + encapsulated.len()
+            }
+            GeonetRepr::Unsecured(u) => u.buffer_len(),
+            _ => unreachable!(),
+        };
+
+        let gn_repr = packet.repr();
+        let caps = self.caps.clone();
 
         // Add the size of the Ethernet header if the medium is Ethernet.
         #[cfg(feature = "medium-ethernet")]
@@ -193,7 +200,7 @@ impl InterfaceInner {
             frame_ctrl.set_sub_type(8); // QoS subtype
 
             let mut qos_ctrl = QoSControl::from_bytes(&[0, 0]);
-            let cat = gn_repr.traffic_class().access_category();
+            let cat = gn_repr.inner().traffic_class().access_category();
             qos_ctrl.set_access_category(cat);
             qos_ctrl.set_ack_policy(1); // No Ack
 
@@ -223,37 +230,42 @@ impl InterfaceInner {
         };
 
         // Emit function for the Geonetworking header and payload.
-        let emit_gn = |repr: &GeonetVariant, mut tx_buffer: &mut [u8]| {
-            gn_repr.emit(&mut tx_buffer);
+        let emit_gn = |gn_repr: &GeonetRepr<GeonetVariant>, mut tx_buffer: &mut [u8]| {
+            #[cfg(feature = "proto-security")]
+            if let GeonetRepr::Secured { encapsulated, .. } = gn_repr {
+                // Emit the basic header.
+                gn_repr.inner().emit_basic_header(&mut tx_buffer);
+                // Put the encapsulated content in the tx buffer.
+                tx_buffer[gn_repr.inner().basic_header_len()..].copy_from_slice(&encapsulated);
+            } else {
+                gn_repr.inner().emit(&mut tx_buffer);
+                packet.emit_payload(&mut tx_buffer[gn_repr.inner().header_len()..]);
+            };
 
-            let payload_buf = &mut tx_buffer[repr.header_len()..];
+            #[cfg(not(feature = "proto-security"))]
+            let payload_buf = &mut tx_buffer[gn_repr.inner().header_len()..];
+            #[cfg(not(feature = "proto-security"))]
             packet.emit_payload(payload_buf)
         };
 
         tx_token.set_meta(Default::default());
-        tx_token
-            .consume(total_len, |mut tx_buffer| {
-                #[cfg(feature = "medium-ethernet")]
-                if matches!(caps.medium, Medium::Ethernet) {
-                    emit_ethernet(tx_buffer);
-                    tx_buffer = &mut tx_buffer[EthernetFrame::<&[u8]>::header_len()..];
-                }
+        tx_token.consume(total_len, |mut tx_buffer| {
+            #[cfg(feature = "medium-ethernet")]
+            if matches!(caps.medium, Medium::Ethernet) {
+                emit_ethernet(tx_buffer);
+                tx_buffer = &mut tx_buffer[EthernetFrame::<&[u8]>::header_len()..];
+            }
 
-                #[cfg(feature = "medium-ieee80211p")]
-                if matches!(caps.medium, Medium::Ieee80211p) {
-                    emit_ieee80211(tx_buffer);
-                    let pl_start =
-                        Ieee80211Frame::<&[u8]>::header_len() + LlcFrame::<&[u8]>::header_len();
-                    tx_buffer = &mut tx_buffer[pl_start..];
-                }
+            #[cfg(feature = "medium-ieee80211p")]
+            if matches!(caps.medium, Medium::Ieee80211p) {
+                emit_ieee80211(tx_buffer);
+                let pl_start =
+                    Ieee80211Frame::<&[u8]>::header_len() + LlcFrame::<&[u8]>::header_len();
+                tx_buffer = &mut tx_buffer[pl_start..];
+            }
 
-                emit_gn(&gn_repr, tx_buffer);
-                Ok(total_len)
-            })
-            .and_then(|r| {
-                // Not sure about that...
-                self.defer_beacon(core, &gn_repr);
-                Ok(r)
-            })
+            emit_gn(&gn_repr, tx_buffer);
+            Ok(total_len)
+        })
     }
 }

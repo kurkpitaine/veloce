@@ -4,7 +4,7 @@ use crate::security::{EcdsaKeyType, KeyPair, PublicKey};
 
 use super::{signature::EcdsaSignature, EcdsaKey, EciesKey};
 
-#[cfg(feature = "std")]
+#[cfg(feature = "security-openssl")]
 pub mod openssl;
 
 #[derive(Debug)]
@@ -12,7 +12,7 @@ pub enum BackendError {
     #[cfg(feature = "std")]
     /// IO error, ie: reading/writing a file failed.
     Io(std::io::Error),
-    #[cfg(feature = "std")]
+    #[cfg(feature = "security-openssl")]
     /// OpenSSL internal error.
     OpenSSL(::openssl::error::ErrorStack),
     /// Key type is not supported by crypto backend.
@@ -37,6 +37,7 @@ impl fmt::Display for BackendError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             BackendError::Io(e) => write!(f, "IO error: {}", e),
+            #[cfg(feature = "security-openssl")]
             BackendError::OpenSSL(e) => write!(f, "OpenSSL error: {}", e),
             BackendError::UnsupportedKeyType => write!(f, "Unsupported key type"),
             BackendError::InvalidKeyFormat => write!(f, "Invalid key format"),
@@ -55,6 +56,7 @@ pub type BackendResult<T> = Result<T, BackendError>;
 /// Cryptography operations backend.
 #[derive(Debug)]
 pub enum Backend {
+    #[cfg(feature = "security-openssl")]
     /// OpenSSL based backend.
     Openssl(openssl::OpensslBackend),
 }
@@ -63,6 +65,7 @@ impl Backend {
     #[inline]
     pub(super) fn inner(&self) -> &dyn BackendTrait {
         match self {
+            #[cfg(feature = "security-openssl")]
             Backend::Openssl(backend) => backend,
         }
     }
@@ -71,6 +74,7 @@ impl Backend {
     #[inline]
     pub(super) fn inner_mut(&mut self) -> &mut dyn BackendTrait {
         match self {
+            #[cfg(feature = "security-openssl")]
             Backend::Openssl(backend) => backend,
         }
     }

@@ -178,7 +178,7 @@ impl SecurityService {
             .application_permissions()
             .map_err(SecurityServiceError::InvalidCertificate)?;
 
-        let Some(permisssion) = signer_permissions.iter().find(|e| e.aid() == aid) else {
+        let Some(permission) = signer_permissions.iter().find(|e| e.aid() == aid) else {
             return Err(SecurityServiceError::InsufficientPermissions);
         };
 
@@ -197,7 +197,7 @@ impl SecurityService {
         if res {
             Ok(VerifyConfirm {
                 cert_id: at_digest,
-                permissions: permisssion.to_owned(),
+                permissions: permission.to_owned(),
             })
         } else {
             Err(SecurityServiceError::FalseSignature)

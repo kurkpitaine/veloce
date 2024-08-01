@@ -123,9 +123,13 @@ impl Default for tMKxRadioConfig {
                 Type: eMKxIFMsgType_MKXIF_RADIOACFG as u16,
                 Len: core::mem::size_of::<tMKxRadioConfig>() as u16,
                 Seq: 0,
+                #[cfg(feature = "llc-r17_1")]
                 Ref: 0,
+                #[cfg(feature = "llc-r17_1")]
                 Reserved: 0,
                 Ret: eMKxStatus_MKXSTATUS_RESERVED as i16,
+                #[cfg(feature = "llc-r16")]
+                Data: __IncompleteArrayField::new(),
             },
             RadioConfigData: MKxRadioConfigData {
                 Mode: eRadioMode_MKX_MODE_OFF as u16,
@@ -141,6 +145,9 @@ fn chan_config() -> MKxChanConfig {
     MKxChanConfig {
         PHY: MKxChanConfigPHY {
             ChannelFreq: 0,
+            #[cfg(feature = "llc-r16")]
+            Bandwidth: eMKxBandwidth_MKXBW_10MHz as i8,
+            #[cfg(feature = "llc-r17_1")]
             Bandwidth: eMKxBandwidth_MKXBW_10MHz as u8,
             TxAntenna: eMKxAntenna_MKX_ANT_1AND2 as u8,
             RxAntenna: eMKxAntenna_MKX_ANT_1AND2 as u8,
@@ -150,7 +157,9 @@ fn chan_config() -> MKxChanConfig {
         MAC: MKxChanConfigMAC {
             DualTxControl: eMKxDualTxControl_MKX_TXC_TXRX as u8,
             CSThreshold: -65,
+            #[cfg(feature = "llc-r17_1")]
             CBRThreshold: -85,
+            #[cfg(feature = "llc-r17_1")]
             Padding: [0u8; 3],
             SlotTime: 13,
             DIFSTime: 32 + (2 * 13),
@@ -163,6 +172,7 @@ fn chan_config() -> MKxChanConfig {
                 // MKX_TXQ_NON_QOS
                 MKxTxQConfig {
                     AIFS: 2,
+                    #[cfg(feature = "llc-r17_1")]
                     Pad: 0,
                     CWMIN: (1 << 4) - 1,
                     CWMAX: (1 << 10) - 1,
@@ -171,6 +181,7 @@ fn chan_config() -> MKxChanConfig {
                 // MKX_TXQ_AC_VO
                 MKxTxQConfig {
                     AIFS: 2,
+                    #[cfg(feature = "llc-r17_1")]
                     Pad: 0,
                     CWMIN: (1 << 2) - 1,
                     CWMAX: (1 << 3) - 1,
@@ -179,6 +190,7 @@ fn chan_config() -> MKxChanConfig {
                 // MKX_TXQ_AC_VI
                 MKxTxQConfig {
                     AIFS: 3,
+                    #[cfg(feature = "llc-r17_1")]
                     Pad: 0,
                     CWMIN: (1 << 3) - 1,
                     CWMAX: (1 << 4) - 1,
@@ -187,6 +199,7 @@ fn chan_config() -> MKxChanConfig {
                 // MKX_TXQ_AC_BE
                 MKxTxQConfig {
                     AIFS: 6,
+                    #[cfg(feature = "llc-r17_1")]
                     Pad: 0,
                     CWMIN: (1 << 4) - 1,
                     CWMAX: (1 << 10) - 1,
@@ -195,6 +208,7 @@ fn chan_config() -> MKxChanConfig {
                 // MKX_TXQ_AC_BK
                 MKxTxQConfig {
                     AIFS: 9,
+                    #[cfg(feature = "llc-r17_1")]
                     Pad: 0,
                     CWMIN: (1 << 4) - 1,
                     CWMAX: (1 << 10) - 1,

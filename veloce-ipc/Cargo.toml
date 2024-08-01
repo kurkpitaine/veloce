@@ -5,11 +5,9 @@ authors = ["Thibaud Rouillé <veloce@ferroxyde.com>"]
 edition = "2021"
 description = "Veloce IPC for messaging between apps."
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-prost = "0.12"
+prost = "0.13"
 zmq = "0.10"
 
 [build-dependencies]
-prost-build = "0.12"
+prost-build = "0.13"

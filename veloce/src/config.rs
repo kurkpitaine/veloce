@@ -61,6 +61,7 @@ pub(crate) const BTP_MAX_PL_SIZE: usize = GN_MAX_SDU_SIZE - 4;
 /// Maximum size of one DCC queue.
 pub(crate) const DCC_QUEUE_SIZE: usize = 10 * 1000;
 
+#[cfg(feature = "proto-security")]
 /// Lifetime of a certificate cache entry.
 pub(crate) const SEC_CERT_CACHE_ENTRY_LIFETIME: Duration = Duration::from_secs(20);
 

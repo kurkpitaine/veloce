@@ -9,11 +9,8 @@ pub const ETH_P_ALL: libc::c_short = 0x0003;
 pub const TUNSETIFF: libc::c_ulong = if cfg!(any(
     target_arch = "mips",
     target_arch = "mips64",
-    target_arch = "mips64el",
-    target_arch = "mipsel",
     target_arch = "powerpc",
     target_arch = "powerpc64",
-    target_arch = "powerpc64le",
     target_arch = "sparc64"
 )) {
     0x800454CA

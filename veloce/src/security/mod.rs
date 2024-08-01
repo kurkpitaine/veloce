@@ -27,10 +27,10 @@ pub mod trust_store;
 #[cfg(test)]
 mod tests;
 
-pub use backend::{
-    openssl::{OpensslBackend, OpensslBackendConfig},
-    Backend as SecurityBackend,
-};
+#[cfg(feature = "security-openssl")]
+pub use backend::openssl::{OpensslBackend, OpensslBackendConfig};
+
+pub use backend::Backend as SecurityBackend;
 
 pub use certificate::Certificate;
 pub use service::SecurityService;

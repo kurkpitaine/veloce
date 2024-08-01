@@ -7,7 +7,7 @@ fn main() {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     // Compiler for CDD/CAM/DENM files.
-    match Compiler::new()
+    match Compiler::<RasnBackend, _>::new()
         // add several ASN1 source files
         .add_asn_sources_by_path(
             vec![

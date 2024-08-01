@@ -1,6 +1,6 @@
 use std::os::fd::AsRawFd;
 
-use log::trace;
+use log::{debug, trace};
 
 use veloce::iface::{Config, Interface, SocketSet};
 use veloce::network::{GnAddrConfigMode, GnCore, GnCoreGonfig};
@@ -65,7 +65,7 @@ fn main() {
         iface.poll(&mut router, &mut device, &mut sockets);
 
         let iface_timeout = iface.poll_delay(timestamp, &sockets);
-        println!("iface_timeout: {:?}", iface_timeout);
+        debug!("iface_timeout: {:?}", iface_timeout);
 
         trace!("phy_wait");
         phy_wait(dev_fd, iface_timeout).expect("wait error");

@@ -5,25 +5,24 @@ authors = ["Thibaud Rouillé <veloce@ferroxyde.com>"]
 edition = "2021"
 description = "Veloce NXP SAF5x00 PHY"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-crossbeam = { version = "0.8.4" }
-futures-lite = "2.2.0"
-nusb = "0.1.6"
 rusb = "0.9"
-#rusb = {git = "https://github.com/kurkpitaine/rusb.git", branch = "free_pollfds"}
 veloce = { path = "../veloce" }
-heapless = { git = "https://github.com/kurkpitaine/heapless.git", branch = "linked_list" }
-log = { version = "0.4.20", default-features = false }
+heapless = { git = "https://github.com/rust-embedded/heapless.git", branch = "main" }
+log = { version = "0.4", default-features = false }
 
 [dev-dependencies]
-clap = { version = "4.4.11", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 uom = { version = "0.34.0", features = ["autoconvert", "f32"] }
-thread-priority = "0.15.1"
 
 [build-dependencies]
-bindgen = "0.69.2"
+bindgen = "0.69"
+
+[features]
+llc-r17_1 = []
+llc-r16 = []
+
+default = ["llc-r17_1"]
 
 [[example]]
 name = "usb_device"

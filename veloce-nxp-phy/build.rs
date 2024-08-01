@@ -5,18 +5,28 @@ fn main() {
     // TODO: improve this.
     let target = std::env::var("TARGET").unwrap();
     let sdk_path = if target == "armv7-unknown-linux-gnueabihf" {
-        Some("/opt/homebrew/Cellar/arm-unknown-linux-gnueabihf/11.2.0_1/toolchain/arm-unknown-linux-gnueabihf/sysroot")
+        Some("/opt/homebrew/Cellar/arm-unknown-linux-gnueabihf/13.2.0/toolchain/arm-unknown-linux-gnueabihf/sysroot")
     } else {
         None
     };
 
     // Tell cargo to invalidate the built crate whenever the wrapper changes
-    println!("cargo:rerun-if-changed=sys/wrapper.h");
+    let wrapper_path = if cfg!(feature = "llc-r17_1") {
+        println!("cargo:rerun-if-changed=sys/r17.1/wrapper.h");
+
+        "sys/r17.1/wrapper.h"
+    } else if cfg!(feature = "llc-r16") {
+        println!("cargo:rerun-if-changed=sys/r16/wrapper.h");
+
+        "sys/r16/wrapper.h"
+    } else {
+        panic!("No LLC version selected");
+    };
 
     let mut builder = bindgen::Builder::default()
         // The input header we would like to generate
         // bindings for.
-        .header("sys/wrapper.h")
+        .header(wrapper_path)
         // Use core libs instead of std.
         .use_core()
         // Disable generation of layout tests since they are

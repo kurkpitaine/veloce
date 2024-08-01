@@ -12,9 +12,7 @@ use core::fmt;
 pub mod config;
 pub mod llc;
 pub mod usb;
-//pub mod usb2;
 pub mod usb_phy;
-//pub mod usb_phy2;
 
 pub use config::{
     Channel as NxpChannel, Config as NxpConfig, Radio as NxpRadio,
@@ -35,7 +33,7 @@ pub enum Error {
     /// No Rx packet in buffer.
     NoRxPacket,
     /// An error occured during USB operation.
-    USB, /* (UsbError) */
+    USB,
 }
 
 impl fmt::Display for Error {
@@ -44,7 +42,6 @@ impl fmt::Display for Error {
             Error::Timeout => f.write_str("timeout"),
             Error::NoRxPacket => f.write_str("no rx packet in buffer"),
             Error::USB => f.write_str("USB error"),
-            //Error::USB(e) => write!(f, "USB: {}", e),
         }
     }
 }

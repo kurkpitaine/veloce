@@ -7,7 +7,7 @@ use openssl::{
     nid::Nid,
     pkey::{PKey, Private},
     sha,
-    sign::Verifier,
+    sign::{Signer, Verifier},
     symm,
 };
 use std::{
@@ -249,13 +249,14 @@ impl BackendTrait for OpensslBackend {
 
         let key = PKey::from_ec_key(ec_key).map_err(BackendError::OpenSSL)?;
 
-        let r = match signature.r {
+        let r = match &signature.r {
             EccPoint::XCoordinateOnly(c) => c,
             EccPoint::CompressedY0(c) => c,
             EccPoint::CompressedY1(c) => c,
-            EccPoint::Uncompressed(c) => c.x,
+            EccPoint::Uncompressed(c) => &c.x,
         };
-        let r = BigNum::from_slice(&r).map_err(BackendError::OpenSSL)?;
+
+        let r = BigNum::from_slice(r).map_err(BackendError::OpenSSL)?;
         let s = BigNum::from_slice(&signature.s).map_err(BackendError::OpenSSL)?;
 
         let mut verifier = Verifier::new(msg_digest, &key).map_err(BackendError::OpenSSL)?;
@@ -268,17 +269,26 @@ impl BackendTrait for OpensslBackend {
     }
 
     fn generate_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature> {
-        let Some(key) = &self.signing_cert_secret_key else {
+        let Some(ec_key) = &self.signing_cert_secret_key else {
             return Err(BackendError::NoSigningCertSecretKey);
         };
 
-        let sig_size = match key.group().curve_name() {
-            Some(Nid::BRAINPOOL_P256R1) | Some(Nid::X9_62_PRIME256V1) => 32,
-            Some(Nid::BRAINPOOL_P384R1) | Some(Nid::SECP384R1) => 48,
+        let (msg_digest, sig_size) = match ec_key.group().curve_name() {
+            Some(Nid::BRAINPOOL_P256R1) | Some(Nid::X9_62_PRIME256V1) => {
+                (MessageDigest::sha256(), 32)
+            }
+            Some(Nid::BRAINPOOL_P384R1) | Some(Nid::SECP384R1) => (MessageDigest::sha384(), 48),
             _ => return Err(BackendError::UnsupportedKeyType),
         };
 
-        let signature = EcdsaSig::sign(data, key).map_err(BackendError::OpenSSL)?;
+        let key = PKey::from_ec_key(ec_key.to_owned()).map_err(BackendError::OpenSSL)?;
+
+        let mut signer = Signer::new(msg_digest, &key).map_err(BackendError::OpenSSL)?;
+        signer.update(data).map_err(BackendError::OpenSSL)?;
+
+        let raw_signature = signer.sign_to_vec().map_err(BackendError::OpenSSL)?;
+        let signature = EcdsaSig::from_der(&raw_signature).map_err(BackendError::OpenSSL)?;
+
         let r_padded = signature
             .r()
             .to_vec_padded(sig_size)
@@ -288,10 +298,20 @@ impl BackendTrait for OpensslBackend {
             .to_vec_padded(sig_size)
             .map_err(BackendError::OpenSSL)?;
 
-        Ok(EcdsaSignature::NistP256r1(EcdsaSignatureInner {
+        let sig_inner = EcdsaSignatureInner {
             r: EccPoint::XCoordinateOnly(r_padded),
             s: s_padded,
-        }))
+        };
+
+        let res = match ec_key.group().curve_name() {
+            Some(Nid::X9_62_PRIME256V1) => EcdsaSignature::NistP256r1(sig_inner),
+            Some(Nid::SECP384R1) => EcdsaSignature::NistP384r1(sig_inner),
+            Some(Nid::BRAINPOOL_P256R1) => EcdsaSignature::BrainpoolP256r1(sig_inner),
+            Some(Nid::BRAINPOOL_P384R1) => EcdsaSignature::BrainpoolP384r1(sig_inner),
+            _ => unreachable!(),
+        };
+
+        Ok(res)
     }
 
     fn sha256(&self, data: &[u8]) -> [u8; 32] {

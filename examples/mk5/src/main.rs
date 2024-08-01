@@ -17,7 +17,6 @@ use veloce::iface::{Config, CongestionControl, Interface, SocketSet};
 use veloce::network::core::SecurityConfig;
 use veloce::network::{GnCore, GnCoreGonfig};
 use veloce::phy::Device;
-use veloce::phy::{Medium, RawSocket as VeloceRawSocket};
 use veloce::security::{SecurityBackend, TrustChain};
 use veloce::socket;
 use veloce::socket::denm::EventParameters;
@@ -30,7 +29,7 @@ use veloce_ipc::denm::{ApiResult, ApiResultCode};
 use veloce_ipc::prelude::zmq;
 use veloce_ipc::{IpcEvent, IpcEventType};
 use veloce_ipc::{ZmqPublisher, ZmqReplier};
-use veloce_nxp_phy::{NxpChannel, NxpConfig, NxpRadio, NxpUsbDevice, NxpWirelessChannel};
+use veloce_nxp_phy::{NxpChannel, NxpConfig, NxpLlcDevice, NxpRadio, NxpWirelessChannel};
 
 use veloce_asn1::{defs::etsi_103097_v211::etsi_ts103097Module, prelude::rasn};
 
@@ -42,23 +41,8 @@ use veloce::security::{
     },
 };
 
-enum DeviceType {
-    RawSocket(RawSocket),
-    Usb(UsbSocket),
-}
-
-impl DeviceType {
-    pub fn as_source_mut(&mut self) -> &mut dyn Source {
-        match self {
-            DeviceType::RawSocket(d) => d,
-            DeviceType::Usb(d) => d,
-        }
-    }
-}
-
 #[derive(Parser, Default, Debug)]
 struct Arguments {
-    dev: String,
     log_level: String,
 }
 
@@ -83,30 +67,23 @@ fn main() {
 
     let ll_addr = EthernetAddress([0x04, 0xe5, 0x48, 0xfa, 0xde, 0xca]);
 
-    let mut device = if args.dev == "usb" {
-        // Configure USB socket device.
-        let config = NxpConfig::new(
-            NxpRadio::A,
-            NxpChannel::Zero,
-            NxpWirelessChannel::Chan180,
-            Power::from_dbm_i32(23),
-            ll_addr,
-        );
-        // Configure NXP device
-        let mut device = UsbSocket::new(config).unwrap();
-        device
-            .inner_mut()
-            .commit_config()
-            .expect("Cannot configure device");
-        DeviceType::Usb(device)
-    } else {
-        // Configure Raw socket device
-        DeviceType::RawSocket(RawSocket::new(args.dev.as_str(), Medium::Ethernet).unwrap())
-    };
+    let config = NxpConfig::new(
+        NxpRadio::A,
+        NxpChannel::Zero,
+        NxpWirelessChannel::Chan180,
+        Power::from_dbm_i32(23),
+        ll_addr,
+    );
+    // Configure NXP device
+    let mut device = RawSocket::new("cw-llc0", config).unwrap();
+    device
+        .inner_mut()
+        .commit_config()
+        .expect("Cannot configure device");
 
     // Register it into the polling registry
     poll.registry()
-        .register(device.as_source_mut(), DEV_TOKEN, Interest::READABLE)
+        .register(&mut device, DEV_TOKEN, Interest::READABLE)
         .unwrap();
 
     // Register IPC rep.
@@ -135,21 +112,16 @@ fn main() {
     };
 
     // Build GnCore
-    let mut router_config = GnCoreGonfig::new(StationType::RoadSideUnit, Pseudonym(0xabcd));
+    let mut router_config = GnCoreGonfig::new(StationType::PassengerCar, Pseudonym(0xabcd));
     router_config.random_seed = 0xfadecafedeadbeef;
     router_config.security = Some(security_config);
     let mut router = GnCore::new(router_config, Instant::now());
     let ll_addr = router.address().mac_addr();
+    device.inner_mut().set_filter_addr(Some(ll_addr.into()));
 
     // Configure interface
     let config = Config::new(ll_addr.into());
-    let mut iface = match &mut device {
-        DeviceType::RawSocket(d) => Interface::new(config, d.inner_mut()),
-        DeviceType::Usb(d) => {
-            d.inner_mut().set_filter_addr(Some(ll_addr.into()));
-            Interface::new(config, d.inner_mut())
-        }
-    };
+    let mut iface = Interface::new(config, device.inner_mut());
     iface.set_congestion_control(CongestionControl::LimericDualAlpha);
 
     let mut sockets = SocketSet::new(vec![]);
@@ -262,10 +234,7 @@ fn main() {
         let _ = gpsd.poll();
 
         // trace!("iface poll");
-        match &mut device {
-            DeviceType::RawSocket(d) => iface.poll(&mut router, d.inner_mut(), &mut sockets),
-            DeviceType::Usb(d) => iface.poll(&mut router, d.inner_mut(), &mut sockets),
-        };
+        iface.poll(&mut router, device.inner_mut(), &mut sockets);
 
         let denm_socket = sockets.get_mut::<socket::denm::Socket>(denm_handle);
         denm_socket.poll(now);
@@ -335,17 +304,17 @@ fn main() {
 }
 
 pub struct RawSocket {
-    inner: VeloceRawSocket,
+    inner: NxpLlcDevice,
 }
 
 impl RawSocket {
-    pub fn new(name: &str, medium: Medium) -> io::Result<RawSocket> {
+    pub fn new(name: &str, config: NxpConfig) -> io::Result<RawSocket> {
         Ok(RawSocket {
-            inner: VeloceRawSocket::new(name, medium)?,
+            inner: NxpLlcDevice::new(name, config)?,
         })
     }
 
-    pub fn inner_mut(&mut self) -> &mut VeloceRawSocket {
+    pub fn inner_mut(&mut self) -> &mut NxpLlcDevice {
         &mut self.inner
     }
 }
@@ -371,51 +340,6 @@ impl Source for RawSocket {
 
     fn deregister(&mut self, registry: &mio::Registry) -> std::io::Result<()> {
         SourceFd(&self.inner.as_raw_fd()).deregister(registry)
-    }
-}
-
-pub struct UsbSocket {
-    inner: NxpUsbDevice,
-}
-
-impl UsbSocket {
-    pub fn new(config: NxpConfig) -> io::Result<UsbSocket> {
-        Ok(UsbSocket {
-            inner: NxpUsbDevice::new(config).map_err(|_| io::ErrorKind::Other)?,
-        })
-    }
-
-    pub fn inner_mut(&mut self) -> &mut NxpUsbDevice {
-        &mut self.inner
-    }
-}
-
-// Not very clean here, but USB support is only for development purposes. So
-// keep it this way for now.
-impl Source for UsbSocket {
-    fn register(
-        &mut self,
-        registry: &mio::Registry,
-        token: Token,
-        interests: mio::Interest,
-    ) -> std::io::Result<()> {
-        let fd = self.inner.pollfds()[0];
-        SourceFd(&fd).register(registry, token, interests)
-    }
-
-    fn reregister(
-        &mut self,
-        registry: &mio::Registry,
-        token: Token,
-        interests: mio::Interest,
-    ) -> std::io::Result<()> {
-        let fd = self.inner.pollfds()[0];
-        SourceFd(&fd).reregister(registry, token, interests)
-    }
-
-    fn deregister(&mut self, registry: &mio::Registry) -> std::io::Result<()> {
-        let fd = self.inner.pollfds()[0];
-        SourceFd(&fd).deregister(registry)
     }
 }
 

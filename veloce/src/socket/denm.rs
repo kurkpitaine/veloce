@@ -22,8 +22,8 @@ use crate::wire::{self, ports, EthernetAddress, GnTrafficClass};
 use crate::storage::PacketBuffer;
 
 use managed::ManagedSlice;
-use veloce_asn1::defs::d_e_n_m__p_d_u__descriptions as denm;
-use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d as cdd;
+use veloce_asn1::defs::denm__pdu__descriptions as denm;
+use veloce_asn1::defs::etsi__its__cdd as cdd;
 use veloce_asn1::prelude::rasn::{self, error::EncodeError};
 
 use super::btp::{Indication, Request};
@@ -1050,7 +1050,6 @@ impl<'a> Socket<'a> {
 
         match &mut self.orig_msg_table {
             ManagedSlice::Borrowed(_) => None,
-            #[cfg(feature = "alloc")]
             ManagedSlice::Owned(queries) => {
                 queries.push(None);
                 let index = queries.len() - 1;
@@ -1071,7 +1070,6 @@ impl<'a> Socket<'a> {
 
         match &mut self.recv_msg_table {
             ManagedSlice::Borrowed(_) => None,
-            #[cfg(feature = "alloc")]
             ManagedSlice::Owned(queries) => {
                 queries.push(None);
                 let index = queries.len() - 1;

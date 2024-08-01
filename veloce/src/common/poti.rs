@@ -1,6 +1,6 @@
 //! This module contains the implementation of the Poti module as defined in ETSI EN 302 890-2 V2.1.1.
 //! Only the positioning part is implemented, timing is considered out of scope in Veloce Poti implementation.
-#[cfg(all(feature = "alloc", not(feature = "std")))]
+#[cfg(not(feature = "std"))]
 use alloc::collections::vec_deque::VecDeque;
 
 #[cfg(feature = "std")]
@@ -11,7 +11,7 @@ use heapless::HistoryBuffer;
 use uom::si::{
     angle::degree,
     f32::Length,
-    length::{centimeter, decimeter, kilometer, meter},
+    length::{centimeter, kilometer, meter},
     velocity::{centimeter_per_second, meter_per_second},
 };
 
@@ -22,7 +22,7 @@ use crate::{
 
 #[cfg(feature = "asn1")]
 use veloce_asn1::{
-    defs::e_t_s_i__i_t_s__c_d_d::{
+    defs::etsi__its__cdd::{
         AltitudeConfidence as EtsiAltitudeConfidence, AltitudeValue as EtsiAltitudeValue,
         DeltaAltitude, DeltaLatitude, DeltaLongitude, DeltaReferencePosition,
         HeadingConfidence as EtsiHeadingConfidence, HeadingValue as EtsiHeadingValue,
@@ -393,6 +393,8 @@ impl Position {
             Elevation, Latitude, Longitude, NinetyDegreeInt, OneEightyDegreeInt, ThreeDLocation,
             Uint16,
         };
+
+        use uom::si::length::decimeter;
 
         let latitude = self
             .latitude

@@ -1116,7 +1116,7 @@ impl InterfaceInner {
         handled_by_raw_socket
     }
 
-    #[cfg(any(feature = "medium-ethernet", feature = "medium-80211p"))]
+    #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]
     fn dispatch<Tx>(
         &mut self,
         tx_token: Tx,
@@ -1167,7 +1167,6 @@ impl InterfaceInner {
                 packet.emit_payload(payload_buf);
 
                 // Sign the emitted content.
-
                 match sec_srv.encap_packet(&buffer, permission.clone(), core.now, position) {
                     Ok(encapsulated) => {
                         let len = repr.basic_header_len() + encapsulated.len();

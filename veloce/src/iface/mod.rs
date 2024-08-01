@@ -21,7 +21,7 @@ pub use self::interface::{
     congestion::CongestionControl, Config, Interface, InterfaceInner as Context,
 };
 
-#[cfg(all(test, feature = "proto-security"))]
+#[cfg(all(test, feature = "proto-security", feature = "socket-denm"))]
 pub(crate) use self::interface::DecapContext;
 pub(crate) use self::interface::InterfaceContext as ContextMeta;
 pub use self::socket_set::{SocketHandle, SocketSet, SocketStorage};

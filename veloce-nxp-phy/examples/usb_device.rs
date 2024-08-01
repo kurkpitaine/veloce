@@ -59,8 +59,9 @@ fn main() {
         iface.poll(&mut router, &mut device, &mut sockets);
 
         let iface_timeout = iface.poll_delay(timestamp, &sockets);
+        debug!("iface_timeout: {:?}", iface_timeout);
 
-        trace!("wait");
+        trace!("poll_wait");
         match device.poll_wait(iface_timeout) {
             Ok(_) => debug!("Rx available"),
             Err(e) => debug!("Error while polling : {}", e),

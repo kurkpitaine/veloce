@@ -1,4 +1,4 @@
-#[cfg(all(feature = "alloc", not(feature = "std")))]
+#[cfg(not(feature = "std"))]
 use alloc::collections::vec_deque::VecDeque;
 
 #[cfg(feature = "std")]
@@ -123,7 +123,7 @@ where
         timestamp: Instant,
         sender: EthernetAddress,
     ) -> Result<(), PacketBufferError> {
-        let mut node = Node {
+        let node = Node {
             cbf_identifier: cbf_id,
             cbf_expires_at: timestamp + cbf_timer,
             cbf_counter: 1,
@@ -134,11 +134,8 @@ where
             payload: Vec::new(),
         };
 
-        // TODO: improve this. We should copy only if the push is ok.
-        // Make push return a reference on the pushed element.
-        node.payload.copy_from_slice(payload);
-
         self.push(node)
+            .map(|n| n.payload.extend_from_slice(payload))
             .map_err(|_| PacketBufferError::PacketTooBig)?;
 
         self.update_poll();
@@ -146,8 +143,8 @@ where
         Ok(())
     }
 
-    /// Push a new element in the buffer.
-    fn push(&mut self, node: Node<T>) -> Result<(), TooBig> {
+    /// Push a new element in the buffer. Returns a mutable reference on the pushed element.
+    fn push(&mut self, node: Node<T>) -> Result<&mut Node<T>, TooBig> {
         // Check packet could fit in the buffer
         if node.size > self.capacity() {
             return Err(TooBig);
@@ -165,7 +162,7 @@ where
         self.storage.push_back(node);
         self.len += size;
 
-        Ok(())
+        Ok(self.storage.back_mut().unwrap_or_else(|| unreachable!()))
     }
 
     /// Drops only the packets where the predicate is true

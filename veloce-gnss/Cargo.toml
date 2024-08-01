@@ -5,22 +5,20 @@ authors = ["Thibaud Rouillé <veloce@ferroxyde.com>"]
 edition = "2021"
 description = "Veloce GNSS position provider"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 veloce = { path = "../veloce" }
-uom = { version = "0.35", default-features = false, features = [
+uom = { version = "0.36", default-features = false, features = [
    "autoconvert",
    "f32",
    "si",
 ] }
-mio = { version = "0.8", features = ["os-poll", "net"], optional = true }
+mio = { version = "1.0", features = ["os-poll", "net"], optional = true }
 gpsd_proto = { git = "https://github.com/c-to-the-l/gpsd_proto.git", branch = "support_gpsd_325", optional = true }
 serde_json = { version = "1.0", optional = true }
 nmea = { version = "0.6", default-features = false, optional = true }
 ublox = { version = "0.4", default-features = false, optional = true }
-chrono = { version = "0.4.34", optional = true }
-log = { version = "0.4.20", optional = true }
+chrono = { version = "0.4", optional = true }
+log = { version = "0.4", optional = true }
 libc = { version = "0.2", optional = true }
 
 [features]

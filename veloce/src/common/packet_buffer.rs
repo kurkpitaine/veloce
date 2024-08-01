@@ -1,11 +1,11 @@
-#[cfg(all(feature = "alloc", not(feature = "std")))]
+#[cfg(not(feature = "std"))]
 use alloc::collections::vec_deque::VecDeque;
-use core::fmt;
 
 #[cfg(feature = "std")]
 use std::collections::VecDeque;
 
 use crate::time::{Duration, Instant};
+use core::fmt;
 
 /// Trait stored metadata structures must implement.
 pub trait BufferMeta: fmt::Debug {
@@ -101,7 +101,7 @@ where
         payload: &[u8],
         timestamp: Instant,
     ) -> Result<(), PacketBufferError> {
-        let mut node = Node {
+        let node = Node {
             size: meta.size(),
             expires_at: timestamp + meta.lifetime(),
             flushable: false,
@@ -109,18 +109,15 @@ where
             payload: Vec::new(),
         };
 
-        // TODO: improve this. We should copy only if the push is ok.
-        // Make push return a reference on the pushed element.
-        node.payload.copy_from_slice(payload);
-
         self.push(node, timestamp)
+            .map(|n| n.payload.extend_from_slice(payload))
             .map_err(|_| PacketBufferError::PacketTooBig)?;
 
         Ok(())
     }
 
-    /// Push a new element in the buffer.
-    fn push(&mut self, node: Node<T>, timestamp: Instant) -> Result<(), TooBig> {
+    /// Push a new element in the buffer. Returns a mutable reference on the pushed element.
+    fn push(&mut self, node: Node<T>, timestamp: Instant) -> Result<&mut Node<T>, TooBig> {
         // Remove expired packets.
         self.drop_expired(timestamp);
 
@@ -141,7 +138,7 @@ where
         self.storage.push_back(node);
         self.len += size;
 
-        Ok(())
+        Ok(self.storage.back_mut().unwrap_or_else(|| unreachable!()))
     }
 
     /// Drop expired packets.

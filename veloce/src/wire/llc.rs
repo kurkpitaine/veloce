@@ -45,7 +45,7 @@ mod field {
     /// SNAP Upper protocol.
     pub const PROTO: Field = 6..8;
     /// Frame payload.
-    pub const PAYLOAD: Rest = 14..;
+    pub const PAYLOAD: Rest = 8..;
 }
 
 /// Length of an LLC with SNAP header.

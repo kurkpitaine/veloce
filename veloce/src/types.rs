@@ -95,7 +95,7 @@ impl AngleTrait for Angle {
 pub struct Pseudonym(pub u32);
 
 #[cfg(feature = "asn1")]
-use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::StationId;
+use veloce_asn1::defs::etsi__its__cdd::StationId;
 
 #[cfg(feature = "asn1")]
 impl From<StationId> for Pseudonym {

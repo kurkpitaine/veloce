@@ -15,7 +15,7 @@
 use core::{fmt, ops};
 
 #[cfg(feature = "asn1")]
-use veloce_asn1::defs::e_t_s_i__i_t_s__c_d_d::TimestampIts;
+use veloce_asn1::defs::etsi__its__cdd::TimestampIts;
 
 /// A representation of an absolute TAI time value.
 /// Clock zero date is 01-01-2004 at 00:00:00 UTC.

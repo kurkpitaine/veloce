@@ -47,11 +47,12 @@ const SECURITY_ENVELOPE: [u8; 313] = [
     0x75, 0xf8, 0x72, 0x86, 0xb9, 0xc6, 0xbc, 0x7d, 0xec,
 ];
 
-const BTP_CAM: [u8; 64] = [
-    0x02, 0x00, 0x00, 0x1e, 0x01, 0x00, 0x3c, 0x00, 0xae, 0x17, 0x15, 0xb4, 0x56, 0x03, 0xd7, 0x73,
-    0x4e, 0x6b, 0x1c, 0xa8, 0xac, 0xff, 0xff, 0x04, 0x1e, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x07, 0xd1, 0x00, 0x00, 0x02, 0x02, 0xc7, 0x92, 0xbf, 0xbc, 0x63, 0xa4, 0x00, 0xfa,
-    0x49, 0xb2, 0xbf, 0xed, 0x49, 0xbe, 0x16, 0x06, 0x30, 0xa1, 0x40, 0x00, 0x33, 0x1a, 0x96, 0x80,
+const GN_CAM: [u8; 66] = [
+    0x20, 0x50, 0x02, 0x00, 0x00, 0x1e, 0x01, 0x00, 0x3c, 0x00, 0xae, 0x17, 0x15, 0xb4, 0x56, 0x03,
+    0xd7, 0x73, 0x4e, 0x6b, 0x1c, 0xa8, 0xac, 0xff, 0xff, 0x04, 0x1e, 0xb0, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x07, 0xd1, 0x00, 0x00, 0x02, 0x02, 0xc7, 0x92, 0xbf, 0xbc, 0x63, 0xa4,
+    0x00, 0xfa, 0x49, 0xb2, 0xbf, 0xed, 0x49, 0xbe, 0x16, 0x06, 0x30, 0xa1, 0x40, 0x00, 0x33, 0x1a,
+    0x96, 0x80,
 ];
 
 fn setup_security_service() -> SecurityService {
@@ -110,10 +111,14 @@ fn test_sign_message() {
     };
 
     let res = service
-        .encap_packet(&BTP_CAM, permissions, valid_timestamp(), position)
+        .encap_packet(&GN_CAM, permissions, valid_timestamp(), position)
         .unwrap();
 
     assert!(res.len() > 0);
+
+    service
+        .decap_packet(&res, valid_timestamp() + Duration::from_millis(50))
+        .unwrap();
 }
 
 #[test]
@@ -129,7 +134,7 @@ fn test_signer_digest_or_certificate_cam() {
     };
 
     let timestamp_start = valid_timestamp();
-    let mut message = SecuredMessage::new(&BTP_CAM);
+    let mut message = SecuredMessage::new(&GN_CAM);
 
     service
         .sign_secured_message(&mut message, permissions.clone(), timestamp_start, position)
@@ -139,7 +144,7 @@ fn test_signer_digest_or_certificate_cam() {
     let signer = message.signer_identifier().unwrap();
     assert!(matches!(signer, SignerIdentifier::Certificate(_)));
 
-    let mut message = SecuredMessage::new(&BTP_CAM);
+    let mut message = SecuredMessage::new(&GN_CAM);
 
     service
         .sign_secured_message(
@@ -154,7 +159,7 @@ fn test_signer_digest_or_certificate_cam() {
     let signer = message.signer_identifier().unwrap();
     assert!(matches!(signer, SignerIdentifier::Digest(_)));
 
-    let mut message = SecuredMessage::new(&BTP_CAM);
+    let mut message = SecuredMessage::new(&GN_CAM);
 
     service
         .sign_secured_message(
@@ -218,7 +223,7 @@ fn test_position_inclusion() {
 
     // Position should not be included for CAM messages.
     let permissions = Permission::CAM(CamSsp::new().into());
-    let mut message = SecuredMessage::new(&BTP_CAM);
+    let mut message = SecuredMessage::new(&GN_CAM);
 
     service
         .sign_secured_message(

@@ -39,8 +39,8 @@ pub fn load_aa_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
 }
 
 pub fn load_at_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
-    let input_aa = include_bytes!("assets/AT.cert");
-    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_aa).unwrap()
+    let input_at = include_bytes!("assets/AT.cert");
+    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_at).unwrap()
 }
 
 pub fn load_tlm_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
@@ -49,8 +49,8 @@ pub fn load_tlm_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
 }
 
 pub fn valid_timestamp() -> Instant {
-    // 2024-07-20 - 12h00m00s
-    Instant::from_secs(1721469600)
+    // 2024-05-31 - 12h00m00s
+    Instant::from_secs(1717149600)
 }
 
 #[test]

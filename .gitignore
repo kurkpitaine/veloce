@@ -6,5 +6,6 @@ Cargo.lock
 veloce-ipc/src/proto/*
 !veloce-ipc/src/proto/mod.rs
 
-# Ignore obu example assets
+# Ignore mk5 and obu example assets
+examples/mk5/src/assets/*
 examples/obu/src/assets/*

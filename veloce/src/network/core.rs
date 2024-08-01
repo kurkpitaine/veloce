@@ -117,7 +117,7 @@ impl Core {
                     net_debug!("Cannot get hardware address from security service - using random");
                     EthernetAddress::from_bytes(&rand.rand_mac_addr())
                 });
-                (GnAddress::new(false, config.station_type, mac_addr), true)
+                (GnAddress::new(false, config.station_type, mac_addr), false)
             }
             (AddrConfigMode::Auto, None) => {
                 let mac_addr = EthernetAddress::from_bytes(&rand.rand_mac_addr());
@@ -213,8 +213,6 @@ impl Core {
 
             if ego_addr.mac_addr() == sender_addr || ego_addr == source {
                 // Addresses are equal, we have to generate a new Mac Address.
-                // We use the timestamp of the Ego Position Vector as a seed for the generator.
-                //let mut generator = Rand::new(self.ego_position_vector.timestamp.secs() as u64);
                 let new_address = EthernetAddress::from_bytes(&self.rand.rand_mac_addr());
                 self.ego_position_vector.address.set_mac_addr(new_address);
                 return Some(new_address);

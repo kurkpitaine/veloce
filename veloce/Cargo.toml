@@ -5,31 +5,28 @@ authors = ["Thibaud Rouillé <veloce@ferroxyde.com>"]
 edition = "2021"
 description = "A V2x stack for embedded devices"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-byteorder = "1.4.3"
-defmt = { version = "0.3.5", optional = true }
-env_logger = "0.10"
+byteorder = "1.5"
+defmt = { version = "0.3", optional = true, features = ["alloc"] }
+env_logger = "0.11"
 heapless = { git = "https://github.com/rust-embedded/heapless.git", branch = "main" }
 libc = { version = "0.2", optional = true }
-log = { version = "0.4.20", default-features = false, optional = true }
-managed = { version = "0.8", default-features = false, features = ["map"] }
-uom = { version = "0.35", features = ["autoconvert", "f32"] }
+log = { version = "0.4", default-features = false, optional = true }
+managed = { version = "0.8", default-features = false, features = ["alloc"] }
+uom = { version = "0.36", features = ["autoconvert", "f32"] }
 veloce-asn1 = { path = "../veloce-asn1", optional = true }
 veloce-ipc = { path = "../veloce-ipc", optional = true }
-openssl = { version = "0.10.64", optional = true }
-openssl-sys = { version = "0.9.102", optional = true }
+openssl = { version = "0.10", optional = true, features = ["vendored"] }
+openssl-sys = { version = "0.9", optional = true, features = ["vendored"] }
 
 [dev-dependencies]
-approx = "0.5.1"
-mac_address = "1.1.5"
-clap = { version = "4.4.11", features = ["derive"] }
+approx = "0.5"
+mac_address = "1.1"
+clap = { version = "4.5", features = ["derive"] }
 tempfile = "3.10"
 
 [features]
-std = ["managed/std", "alloc"]
-alloc = ["managed/alloc", "defmt?/alloc"]
+std = ["managed/std"]
 defmt = ["dep:defmt", "heapless/defmt-03"]
 asn1 = ["dep:veloce-asn1"]
 ipc = ["dep:veloce-ipc"]
@@ -39,17 +36,11 @@ conformance = []
 "medium-ieee80211p" = []
 "medium-pc5" = []
 
-"phy-raw_socket" = ["std", "libc"]
-"phy-tuntap_interface" = ["std", "libc", "medium-ethernet"]
+"phy-raw_socket" = ["std", "dep:libc"]
+"phy-tuntap_interface" = ["std", "dep:libc", "medium-ethernet"]
 
 "proto-geonet" = []
-"proto-security" = [
-   "std",
-   "proto-geonet",
-   "asn1",
-   "dep:openssl",
-   "dep:openssl-sys",
-] #TODO: improve this.
+"proto-security" = ["proto-geonet", "asn1"]
 "proto-btp" = ["proto-geonet"]
 "proto-map" = ["proto-geonet", "proto-btp"]
 "proto-cam" = ["proto-geonet", "proto-btp"]
@@ -62,11 +53,13 @@ conformance = []
 "socket-btp-a" = ["socket", "proto-geonet"]
 "socket-btp-b" = ["socket", "proto-geonet"]
 
-"socket-cam" = ["alloc", "socket", "proto-cam", "asn1"]
-"socket-denm" = ["alloc", "socket", "proto-denm", "asn1"]
+"socket-cam" = ["socket", "proto-cam", "asn1"]
+"socket-denm" = ["socket", "proto-denm", "asn1"]
 
 "packetmeta-id" = []
 "packetmeta-power" = []
+
+"security-openssl" = ["std", "dep:openssl", "dep:openssl-sys"]
 
 "async" = []
 
@@ -90,6 +83,7 @@ default = [
    "socket-denm",
    "packetmeta-id",
    "packetmeta-power",
+   "security-openssl",
    "async",
    "conformance",
 ]

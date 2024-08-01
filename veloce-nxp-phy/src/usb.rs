@@ -25,6 +25,7 @@ pub struct NxpUsbDevice {
     ref_num: Rc<RefCell<u16>>,
     /// Sequence number of messages being received.
     tx_seq_num: Rc<RefCell<u16>>,
+    #[cfg(feature = "llc-r17_1")]
     /// Sequence number of messages being sent.
     rx_seq_num: u16,
     /// Device configuration
@@ -43,6 +44,7 @@ impl NxpUsbDevice {
             lower: Rc::new(RefCell::new(lower)),
             ref_num: Rc::new(RefCell::new(0)),
             tx_seq_num: Rc::new(RefCell::new(0)),
+            #[cfg(feature = "llc-r17_1")]
             rx_seq_num: 0,
             config,
             cbr_values: HistoryBuffer::new(),
@@ -67,7 +69,7 @@ impl NxpUsbDevice {
     pub fn poll_wait(&self, timeout: Option<Duration>) -> Result<usize> {
         let before = SystemTime::now();
         let rc = self.lower.borrow_mut().poll_wait(timeout);
-        println!(
+        trace!(
             "Recv elapsed: {:?}, timeout: {:?}",
             SystemTime::elapsed(&before).unwrap(),
             timeout
@@ -121,6 +123,10 @@ impl Device for NxpUsbDevice {
     }
 
     fn channel_busy_ratio(&self) -> ChannelBusyRatio {
+        if self.cbr_values.is_empty() {
+            return ChannelBusyRatio::from_ratio(0.0);
+        }
+
         let sum: f32 = self
             .cbr_values
             .iter()
@@ -150,6 +156,7 @@ impl Device for NxpUsbDevice {
                     return None;
                 }
 
+                #[cfg(feature = "llc-r17_1")]
                 if hdr.Seq == 0 && hdr.Type == eMKxIFMsgType_MKXIF_ERROR as u16 {
                     // Do not trigger a warning and do not increment the expected seq number.
                     return None;
@@ -169,11 +176,15 @@ impl Device for NxpUsbDevice {
                 };
 
                 let cfg_channel = self.config.channel;
+                #[cfg(feature = "llc-r17_1")]
+                let cond = hdr.Ref == cfg_channel as u16;
+                #[cfg(feature = "llc-r16")]
+                let cond = hdr.Seq == cfg_channel as u16;
 
                 match (hdr.Type as u32, self.config.radio) {
                     (eMKxIFMsgType_MKXIF_RADIOASTATS, NxpRadio::A)
                     | (eMKxIFMsgType_MKXIF_RADIOBSTATS, NxpRadio::B)
-                        if hdr.Ref == cfg_channel as u16 =>
+                        if cond =>
                     {
                         let stats_pkt: &tMKxRadioStats = unsafe { &*buffer.as_ptr().cast() };
                         let stats = stats_pkt.RadioStatsData.Chan[cfg_channel as usize];
@@ -193,8 +204,16 @@ impl Device for NxpUsbDevice {
                             return None;
                         }
 
-                        if rx_pkt.RxPacketData.RadioID == radio as u8
-                            && rx_pkt.RxPacketData.ChannelID == cfg_channel as u8
+                        #[cfg(feature = "llc-r17_1")]
+                        let radio = radio as u8;
+                        #[cfg(feature = "llc-r16")]
+                        let radio = radio as i8;
+                        #[cfg(feature = "llc-r17_1")]
+                        let cfg_channel = cfg_channel as u8;
+                        #[cfg(feature = "llc-r16")]
+                        let cfg_channel = cfg_channel as i8;
+                        if rx_pkt.RxPacketData.RadioID == radio
+                            && rx_pkt.RxPacketData.ChannelID == cfg_channel
                         {
                             let mut meta = PacketMeta::default();
                             meta.power = Some(Power::from_half_dbm_i32(
@@ -281,11 +300,21 @@ impl TxToken for NxpTxToken {
         tx_pkt.Hdr.Type = eMKxIFMsgType_MKXIF_TXPACKET as u16;
         tx_pkt.Hdr.Len = (len + hdr_len) as u16;
         tx_pkt.Hdr.Seq = *tx_seq;
-        tx_pkt.Hdr.Ref = *ref_num;
         tx_pkt.Hdr.Ret = eMKxStatus_MKXSTATUS_RESERVED as i16;
 
-        tx_pkt.TxPacketData.RadioID = eMKxRadio_MKX_RADIO_A as u8;
-        tx_pkt.TxPacketData.ChannelID = eMKxChannel_MKX_CHANNEL_0 as u8;
+        #[cfg(feature = "llc-r17_1")]
+        {
+            tx_pkt.Hdr.Ref = *ref_num;
+            tx_pkt.TxPacketData.RadioID = eMKxRadio_MKX_RADIO_A as u8;
+            tx_pkt.TxPacketData.ChannelID = eMKxChannel_MKX_CHANNEL_0 as u8;
+        }
+
+        #[cfg(feature = "llc-r16")]
+        {
+            tx_pkt.TxPacketData.RadioID = eMKxRadio_MKX_RADIO_A as i8;
+            tx_pkt.TxPacketData.ChannelID = eMKxChannel_MKX_CHANNEL_0 as i8;
+        }
+
         tx_pkt.TxPacketData.TxAntenna = eMKxAntenna_MKX_ANT_DEFAULT as u8;
         tx_pkt.TxPacketData.MCS = eMKxMCS_MKXMCS_DEFAULT as u8;
         tx_pkt.TxPacketData.TxPower = eMKxPower_MKX_POWER_TX_DEFAULT as i16;
@@ -295,29 +324,12 @@ impl TxToken for NxpTxToken {
 
         let result = f(&mut buffer[hdr_len..]);
 
-        /* let ieee_hdr: &IEEE80211QoSHeader = unsafe { &mut *buffer[hdr_len..].as_mut_ptr().cast() };
-        let durationId = ieee_hdr.DurationId;
-
-        println!("FrameCtrl: {}", unsafe {ieee_hdr.FrameControl.FrameCtrl});
-        println!("durationId: {}", durationId);
-        println!("Address1: {:?}", ieee_hdr.Address1);
-        println!("Address2: {:?}", ieee_hdr.Address2);
-        println!("Address3: {:?}", ieee_hdr.Address3);
-        println!("SeqCtrl: {}", unsafe {ieee_hdr.SeqControl.SeqCtrl});
-        println!("QoSCtrl {}", unsafe {ieee_hdr.QoSControl.QoSCtrl});
-
-        let snap_hdr: &SNAPHeader = unsafe { &mut *buffer[hdr_len + size_of::<IEEE80211QoSHeader>()..].as_mut_ptr().cast() };
-        let ty = snap_hdr.Type;
-        println!("{}", ty);
-        println!("{}", unsafe {snap_hdr.__bindgen_anon_1.__bindgen_anon_1.SSAP});
-        println!("{}", unsafe {snap_hdr.__bindgen_anon_1.__bindgen_anon_1.DSAP}); */
-
         match self.lower.borrow_mut().send(&buffer[..]) {
             Ok(_) => {}
             Err(Error::Timeout) => {
-                println!("Timeout while TX");
+                error!("Timeout while TX");
             }
-            Err(e) => panic!("{}", e),
+            Err(e) => error!("{}", e),
         }
         result
     }
