@@ -148,7 +148,7 @@ impl fmt::Display for StationType {
 }
 
 #[cfg(feature = "asn1")]
-use veloce_asn1::defs::etsi__its__cdd::{
+use veloce_asn1::defs::etsi_messages_r2::etsi__its__cdd::{
     StationType as CddStationType, TrafficParticipantType,
 };
 

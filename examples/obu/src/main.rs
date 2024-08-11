@@ -8,7 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use clap::Parser;
-use log::{/* debug,*/ error, info};
+use log::{error, info};
 
 use mio::event::Source;
 use mio::unix::SourceFd;
@@ -21,11 +21,11 @@ use veloce::phy::{Medium, RawSocket as VeloceRawSocket};
 use veloce::security::{SecurityBackend, TrustChain};
 use veloce::socket;
 use veloce::socket::denm::EventParameters;
-use veloce::time::Instant;
+use veloce::time::{Duration, Instant};
 use veloce::types::{Power, Pseudonym};
 use veloce::utils;
 use veloce::wire::{EthernetAddress, StationType};
-use veloce_gnss::Gpsd;
+use veloce_gnss::{Gpsd, Replay};
 use veloce_ipc::denm::{ApiResult, ApiResultCode};
 use veloce_ipc::prelude::zmq;
 use veloce_ipc::{IpcEvent, IpcEventType};
@@ -56,10 +56,16 @@ impl DeviceType {
     }
 }
 
+enum GnssSource {
+    Gpsd(Gpsd),
+    Replay(Replay),
+}
+
 #[derive(Parser, Default, Debug)]
 struct Arguments {
     dev: String,
     log_level: String,
+    replay_file: Option<String>,
 }
 
 const DEV_TOKEN: Token = Token(0);
@@ -135,7 +141,7 @@ fn main() {
     };
 
     // Build GnCore
-    let mut router_config = GnCoreGonfig::new(StationType::RoadSideUnit, Pseudonym(0xabcd));
+    let mut router_config = GnCoreGonfig::new(StationType::PassengerCar, Pseudonym(0xabcd));
     router_config.random_seed = 0xfadecafedeadbeef;
     router_config.security = Some(security_config);
     let mut router = GnCore::new(router_config, Instant::now());
@@ -180,13 +186,21 @@ fn main() {
     let denm_socket = socket::denm::Socket::new(vec![], vec![]);
     let denm_handle: veloce::iface::SocketHandle = sockets.add(denm_socket);
 
-    // Create GPSD client
-    let mut gpsd = Gpsd::new(
-        "127.0.0.1:2947".to_string(),
-        poll.registry().try_clone().unwrap(),
-        GPSD_TOKEN,
-    )
-    .expect("malformed GPSD server address");
+    let mut gnss = if let Some(replay_file) = args.replay_file {
+        let path = load_nmea_log(&replay_file);
+        GnssSource::Replay(
+            Replay::new(&path, Duration::from_secs(1)).expect("Malformed GNSS replay file"),
+        )
+    } else {
+        // Create GPSD client
+        let gpsd = Gpsd::new(
+            "127.0.0.1:2947".to_string(),
+            poll.registry().try_clone().unwrap(),
+            GPSD_TOKEN,
+        )
+        .expect("malformed GPSD server address");
+        GnssSource::Gpsd(gpsd)
+    };
 
     loop {
         // Update timestamp.
@@ -199,16 +213,19 @@ fn main() {
         // Process each event.
         for event in events.iter() {
             match event.token() {
-                GPSD_TOKEN => {
-                    gpsd.ready(event).then(|| {
-                        gpsd.fetch_position()
-                            .try_into()
-                            .map(|fix| {
-                                router.set_position(fix).ok();
-                            })
-                            .ok();
-                    });
-                }
+                GPSD_TOKEN => match &mut gnss {
+                    GnssSource::Gpsd(gpsd) => {
+                        gpsd.ready(event).then(|| {
+                            gpsd.fetch_position()
+                                .try_into()
+                                .map(|fix| {
+                                    router.set_position(fix).ok();
+                                })
+                                .ok();
+                        });
+                    }
+                    _ => panic!("Unexpected GNSS source"),
+                },
                 DEV_TOKEN => {
                     //debug!("Rx available");
                 }
@@ -259,7 +276,18 @@ fn main() {
         }
 
         //trace!("gpsd poll");
-        let _ = gpsd.poll();
+        match &mut gnss {
+            GnssSource::Gpsd(gpsd) => {
+                gpsd.poll().ok();
+            }
+            GnssSource::Replay(replay) => {
+                if replay.poll(now) {
+                    if let Ok(fix) = replay.fetch_position().try_into() {
+                        router.set_position(fix).ok();
+                    }
+                }
+            }
+        }
 
         // trace!("iface poll");
         match &mut device {
@@ -326,7 +354,11 @@ fn main() {
             }
         }
 
-        let iface_timeout = iface.poll_delay(now, &sockets);
+        let mut iface_timeout = iface.poll_delay(now, &sockets);
+
+        if let GnssSource::Replay(replay) = &mut gnss {
+            iface_timeout = iface_timeout.min(Some(replay.poll_delay(now)));
+        }
 
         // Poll Mio for events, blocking until we get an event or a timeout.
         poll.poll(&mut events, iface_timeout.map(|t| t.into()))
@@ -485,4 +517,19 @@ pub fn load_tlm_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
     #[cfg(not(debug_assertions))]
     let input_tlm = &fs::read("assets/TLM.cert").unwrap();
     rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_tlm).unwrap()
+}
+
+fn load_nmea_log(path: &str) -> PathBuf {
+    #[cfg(debug_assertions)]
+    {
+        let mut log_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        log_path.push(file!());
+        log_path.pop();
+        log_path.push(path);
+
+        std::fs::canonicalize(log_path).unwrap()
+    }
+
+    #[cfg(not(debug_assertions))]
+    std::fs::canonicalize("assets/road.nmea").unwrap()
 }

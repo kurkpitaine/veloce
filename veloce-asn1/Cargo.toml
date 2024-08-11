@@ -9,11 +9,24 @@ description = "Veloce ASN1 formats"
 doctest = false
 
 [dependencies]
-rasn = "0.15"
-lazy_static = "1.5"          # This should not be a dependency.
+rasn = { git = "https://github.com/librasn/rasn.git", features = ["jer"] }
+lazy_static = "1.5"                                                        # This should not be a dependency.
 
 [build-dependencies]
 rasn-compiler = { git = "https://github.com/librasn/compiler" }
+
+[features]
+default = ["etsi-messages-r2", "etsi-pki-r2"]
+
+"etsi-messages-r2" = ["etsi-cam-r2", "etsi-denm-r2"]
+
+"etsi-cdd-r2" = []
+"etsi-cam-r2" = ["etsi-cdd-r2"]
+"etsi-denm-r2" = ["etsi-cdd-r2"]
+"etsi-security-r2" = []
+"etsi-pki-r2" = ["etsi-security-r2"]
+
+"ieee1609dot2-2023-wip-do-not-use" = []
 
 [[example]]
 name = "decenc"

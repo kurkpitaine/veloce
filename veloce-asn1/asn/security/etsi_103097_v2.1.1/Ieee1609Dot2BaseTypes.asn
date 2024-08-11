@@ -2,25 +2,25 @@
 --                     IEEE Std 1609.2: Base Data Types                      --
 --***************************************************************************--
 
-/** 
+/**
  * @brief NOTE: Section references in this file are to clauses in IEEE Std
  * 1609.2 unless indicated otherwise. Full forms of acronyms and
- * abbreviations used in this file are specified in 3.2. 
+ * abbreviations used in this file are specified in 3.2.
  */
 
-Ieee1609Dot2BaseTypes {iso(1) identified-organization(3) ieee(111) 
+Ieee1609Dot2BaseTypes {iso(1) identified-organization(3) ieee(111)
   standards-association-numbered-series-standards(2) wave-stds(1609) dot2(2)
   base(1) base-types(2) major-version-2(2) minor-version-3(3)}
 
-DEFINITIONS AUTOMATIC TAGS ::= BEGIN 
- 
+DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
 EXPORTS ALL;
 
 --***************************************************************************--
 --                               Integer Types                               --
 --***************************************************************************--
 
-/** 
+/**
  * @class Uint3
  *
  * @brief This atomic type is used in the definition of other data structures.
@@ -28,23 +28,23 @@ EXPORTS ALL;
  */
   Uint3  ::= INTEGER (0..7)
 
-/** 
+/**
  * @class Uint8
  *
  * @brief This atomic type is used in the definition of other data structures.
  * It is for non-negative integers up to 255, i.e., (hex)ff.
  */
   Uint8  ::= INTEGER (0..255)
-  
-/** 
+
+/**
  * @class Uint16
  *
  * @brief This atomic type is used in the definition of other data structures.
  * It is for non-negative integers up to 65,535, i.e., (hex)ff ff.
  */
   Uint16 ::= INTEGER (0..65535)
-  
-/** 
+
+/**
  * @class Uint32
  *
  * @brief This atomic type is used in the definition of other data structures.
@@ -52,8 +52,8 @@ EXPORTS ALL;
  * (hex)ff ff ff ff.
  */
   Uint32 ::= INTEGER (0..4294967295)
-  
-/** 
+
+/**
  * @class Uint64
  *
  * @brief This atomic type is used in the definition of other data structures.
@@ -61,15 +61,15 @@ EXPORTS ALL;
  * (hex)ff ff ff ff ff ff ff ff.
  */
   Uint64 ::= INTEGER (0..18446744073709551615)
-  
-/** 
+
+/**
  * @class SequenceOfUint8
  *
  * @brief This type is used for clarity of definitions.
  */
   SequenceOfUint8  ::= SEQUENCE OF Uint8
 
-/** 
+/**
  * @class SequenceOfUint16
  *
  * @brief This type is used for clarity of definitions.
@@ -81,15 +81,15 @@ EXPORTS ALL;
 --                            OCTET STRING Types                             --
 --***************************************************************************--
 
-/** 
+/**
  * @class Opaque
  *
  * @brief This is a synonym for ASN.1 OCTET STRING, and is used in the
  * definition of other data structures.
  */
   Opaque ::= OCTET STRING
-  
-/** 
+
+/**
  * @class HashedId3
  *
  * @brief This type contains the truncated hash of another data structure.
@@ -106,19 +106,19 @@ EXPORTS ALL;
  * e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b78<b>52b855</b>
  *
  * <br><br>The HashedId3 derived from this hash corresponds to the following:
- * 
+ *
  * <br>HashedId3 = 52b855.
  */
   HashedId3 ::= OCTET STRING (SIZE(3))
 
-/** 
+/**
  * @class SequenceOfHashedId3
  *
  * @brief This type is used for clarity of definitions.
  */
   SequenceOfHashedId3 ::= SEQUENCE OF HashedId3
 
-/** 
+/**
  * @class HashedId8
  *
  * @brief This type contains the truncated hash of another data structure.
@@ -144,8 +144,8 @@ EXPORTS ALL;
  * <br>HashedId8 = a495991b7852b855.
  */
   HashedId8 ::= OCTET STRING (SIZE(8))
-  
-/** 
+
+/**
  * @class HashedId10
  *
  * @brief This type contains the truncated hash of another data structure.
@@ -170,13 +170,13 @@ EXPORTS ALL;
  * <br>HashedId10 = 934ca495991b7852b855.
  */
   HashedId10 ::= OCTET STRING (SIZE(10))
-  
-/** 
+
+/**
  * @class HashedId32
  *
  * @brief This type contains the truncated hash of another data structure.
  * The HashedId32 for a given data structure is calculated by calculating the
- * hash of the encoded data structure and taking the low-order thirty two 
+ * hash of the encoded data structure and taking the low-order thirty two
  * bytes of the hash output. If the data structure is subject to
  * canonicalization it is canonicalized before hashing. The low-order thirty
  * two bytes are the last thirty two bytes of the hash when represented in
@@ -193,17 +193,17 @@ EXPORTS ALL;
  * e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
  *
  * <br><br>The HashedId32 derived from this hash corresponds to the following:
- * 
+ *
  * <br>HashedId32 =
  * e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.
  */
   HashedId32 ::= OCTET STRING (SIZE(32))
- 
+
 --***************************************************************************--
 --                             Time Structures                               --
 --***************************************************************************--
 
-/** 
+/**
  * @class Time32
  *
  * @brief This type gives the number of (TAI) seconds since 00:00:00 UTC, 1
@@ -211,7 +211,7 @@ EXPORTS ALL;
  */
   Time32 ::= Uint32
 
-/** 
+/**
  * @class Time64
  *
  * @brief This type gives the number of (TAI) microseconds since 00:00:00
@@ -219,7 +219,7 @@ EXPORTS ALL;
  */
   Time64 ::= Uint64
 
-/** 
+/**
  * @class ValidityPeriod
  *
  * @brief This structure gives the validity period of a certificate. The
@@ -235,7 +235,7 @@ EXPORTS ALL;
     duration  Duration
   }
 
-/** 
+/**
  * @class Duration
  *
  * @brief This structure represents the duration of validity of a
@@ -244,7 +244,7 @@ EXPORTS ALL;
  * which is the average number of seconds in a year; if it is desired to map
  * years more closely to wall-clock days, this can be done using the hours
  * choice for up to seven years and the sixtyHours choice for up to 448. In
- * this structure: 
+ * this structure:
  *
  * @param microseconds contains the duration in microseconds.
  *
@@ -268,14 +268,14 @@ EXPORTS ALL;
     hours         Uint16,
     sixtyHours    Uint16,
     years         Uint16
-  } 
+  }
 
 
 --***************************************************************************--
 --                           Location Structures                             --
 --***************************************************************************--
 
-/** 
+/**
  * @class GeographicRegion
  *
  * @brief This structure represents a geographic region of a specified form.
@@ -309,7 +309,7 @@ EXPORTS ALL;
  * @param rectangularRegion is an array of RectangularRegion structures
  * containing at least one entry. This field is interpreted as a series of
  * rectangles, which may overlap or be disjoint. The permitted region is any
- * point within any of the rectangles. 
+ * point within any of the rectangles.
  *
  * @param polygonalRegion contains a single instance of the PolygonalRegion
  * structure.
@@ -326,7 +326,7 @@ EXPORTS ALL;
     ...
   }
 
-/** 
+/**
  * @class CircularRegion
  *
  * @brief This structure specifies a circle with its center at center, its
@@ -342,7 +342,7 @@ EXPORTS ALL;
     radius  Uint16
   }
 
-/** 
+/**
  * @class RectangularRegion
  *
  * @brief This structure specifies a rectangle formed by connecting in
@@ -361,14 +361,14 @@ EXPORTS ALL;
     southEast  TwoDLocation
   }
 
-/** 
+/**
  * @class SequenceOfRectangularRegion
  *
  * @brief This type is used for clarity of definitions.
  */
   SequenceOfRectangularRegion ::= SEQUENCE OF RectangularRegion
 
-/** 
+/**
  * @class PolygonalRegion
  *
  * @brief This structure defines a region using a series of distinct
@@ -377,7 +377,7 @@ EXPORTS ALL;
  * with each pair of points connected by the geodesic on the reference
  * ellipsoid. The polygon is completed by connecting the final point to the
  * first point. The allowed region is the interior of the polygon and its
- * boundary. 
+ * boundary.
  *
  * <br><br>A point which contains an elevation component is considered to be
  * within the polygonal region if its horizontal projection onto the
@@ -385,7 +385,7 @@ EXPORTS ALL;
  *
  * <br><br>A valid PolygonalRegion contains at least three points. In a valid
  * PolygonalRegion, the implied lines that make up the sides of the polygon
- * do not intersect. 
+ * do not intersect.
  *
  * <br><br><b>Critical information fields</b>:
  * <ul>
@@ -398,12 +398,12 @@ EXPORTS ALL;
  */
   PolygonalRegion ::= SEQUENCE SIZE (3..MAX) OF TwoDLocation
 
-/** 
+/**
  * @class TwoDLocation
  *
  * @brief This structure is used to define validity regions for use in
  * certificates. The latitude and longitude fields contain the latitude and
- * longitude as defined above. 
+ * longitude as defined above.
  *
  * <br><br>NOTE: This data structure is consistent with the location encoding
  * used in SAE J2735, except that values 900 000 001 for latitude (used to
@@ -416,7 +416,7 @@ EXPORTS ALL;
     longitude  Longitude
   }
 
-/** 
+/**
  * @class IdentifiedRegion
  *
  * @brief This structure indicates the region of validity of a certificate
@@ -436,14 +436,14 @@ EXPORTS ALL;
     ...
   }
 
-/** 
+/**
  * @class SequenceOfIdentifiedRegion
  *
  * @brief This type is used for clarity of definitions.
  */
   SequenceOfIdentifiedRegion ::= SEQUENCE OF IdentifiedRegion
 
-/** 
+/**
  * @class CountryOnly
  *
  * @brief This is the integer representation of the country or area
@@ -452,11 +452,11 @@ EXPORTS ALL;
  */
   CountryOnly ::= Uint16
 
-/** 
+/**
  * @class CountryAndRegions
  *
  * @brief In this structure:
- * 
+ *
  * @param countryOnly is a CountryOnly as defined above.
  *
  * @param region identifies one or more regions within the country. If
@@ -472,7 +472,7 @@ EXPORTS ALL;
     regions      SequenceOfUint8
   }
 
-/** 
+/**
  * @class CountryAndSubregions
  *
  * @brief In this structure:
@@ -487,7 +487,7 @@ EXPORTS ALL;
  * </ul>
  *
  * <b>Parameters</b>:
- * 
+ *
  * @param country is a CountryOnly as defined above.
  *
  * @param regionAndSubregions identifies one or more subregions within
@@ -503,7 +503,7 @@ EXPORTS ALL;
     regionAndSubregions  SequenceOfRegionAndSubregions
   }
 
-/** 
+/**
  * @class RegionAndSubregions
  *
  * @brief In this structure:
@@ -514,7 +514,7 @@ EXPORTS ALL;
  * or subregions values when verifying a signed SPDU shall indicate that the
  * signed SPDU is invalid.</li>
  * </ul>
- *  
+ *
  * <b>Parameters</b>:
  *
  * @param region identifies a region within a country as specified under
@@ -528,14 +528,14 @@ EXPORTS ALL;
     subregions  SequenceOfUint16
   }
 
-/** 
+/**
  * @class SequenceOfRegionAndSubregions
  *
  * @brief This type is used for clarity of definitions.
  */
   SequenceOfRegionAndSubregions ::= SEQUENCE OF RegionAndSubregions
 
-/** 
+/**
  * @class ThreeDLocation
  *
  * @brief This structure contains an estimate of 3D location. The details of
@@ -551,7 +551,7 @@ EXPORTS ALL;
     elevation  Elevation
   }
 
-/** 
+/**
  * @class Latitude
  *
  * @brief This type contains an INTEGER encoding an estimate of the latitude
@@ -559,8 +559,8 @@ EXPORTS ALL;
  * (WGS)-84 datum as defined in NIMA Technical Report TR8350.2.
  */
   Latitude ::= NinetyDegreeInt
-  
-/** 
+
+/**
  * @class Longitude
  *
  * @brief This type contains an INTEGER encoding an estimate of the longitude
@@ -568,22 +568,22 @@ EXPORTS ALL;
  * (WGS)-84 datum as defined in NIMA Technical Report TR8350.2.
  */
   Longitude ::= OneEightyDegreeInt
-  
-/** 
+
+/**
  * @class Elevation
  *
  * @brief This structure contains an estimate of the geodetic altitude above
  * or below the WGS84 ellipsoid. The 16-bit value is interpreted as an
  * integer number of decimeters representing the height above a minimum
- * height of −409.5 m, with the maximum height being 6143.9 m. 
+ * height of -409.5 m, with the maximum height being 6143.9 m.
  */
   Elevation ::= Uint16
 
-/** 
+/**
  * @class NinetyDegreeInt
  *
  * @brief The integer in the latitude field is no more than 900,000,000 and
- * no less than −900,000,000, except that the value 900,000,001 is used to
+ * no less than -900,000,000, except that the value 900,000,001 is used to
  * indicate the latitude was not available to the sender.
  */
   NinetyDegreeInt ::= INTEGER {
@@ -592,27 +592,27 @@ EXPORTS ALL;
     unknown 	(900000001)
   } (-900000000..900000001)
 
-/** 
+/**
  * @class KnownLatitude
  *
  * @brief The known latitudes are from -900,000,000 to +900,000,000 in 0.1
  * microdegree intervals.
  */
-  KnownLatitude ::= NinetyDegreeInt (min..max) 
+  KnownLatitude ::= NinetyDegreeInt (min..max)
 
-/** 
+/**
  * @class UnknownLatitude
  *
  * @brief The value 900,000,001 indicates that the latitude was not
  * available to the sender.
  */
   UnknownLatitude ::= NinetyDegreeInt (unknown)
-  
-/** 
+
+/**
  * @class OneEightyDegreeInt
  *
  * @brief The integer in the longitude field is no more than 1,800,000,000
- * and no less than −1,799,999,999, except that the value 1,800,000,001 is
+ * and no less than -1,799,999,999, except that the value 1,800,000,001 is
  * used to indicate that the longitude was not available to the sender.
  */
   OneEightyDegreeInt ::= INTEGER {
@@ -621,15 +621,15 @@ EXPORTS ALL;
     unknown  	(1800000001)
   } (-1799999999..1800000001)
 
-/** 
+/**
  * @class KnownLongitude
  *
  * @brief The known longitudes are from -1,799,999,999 to +1,800,000,000 in
  * 0.1 microdegree intervals.
  */
   KnownLongitude ::= OneEightyDegreeInt (min..max)
-  
-/** 
+
+/**
  * @class UnknownLongitude
  *
  * @brief The value 1,800,000,001 indicates that the longitude was not
@@ -642,7 +642,7 @@ EXPORTS ALL;
 --                            Crypto Structures                              --
 --***************************************************************************--
 
-/** 
+/**
  * @class Signature
  *
  * @brief This structure represents a signature for a supported public key
@@ -661,7 +661,7 @@ EXPORTS ALL;
     ecdsaNistP384Signature         EcdsaP384Signature
   }
 
-/** 
+/**
  * @class EcdsaP256Signature
  *
  * @brief This structure represents an ECDSA signature. The signature is
@@ -712,7 +712,7 @@ EXPORTS ALL;
     sSig  OCTET STRING (SIZE (32))
   }
 
-/** 
+/**
  * @class EcdsaP384Signature
  *
  * @brief This structure represents an ECDSA signature. The signature is
@@ -725,7 +725,7 @@ EXPORTS ALL;
  * <br><br>If the signature process followed the specification of SEC 1 and
  * output the elliptic curve point R to allow for fast verification, R is
  * represented as an EccP384CurvePoint indicating the choice compressed-y-0,
- * compressed-y-1, or uncompressed at the sender’s discretion. 
+ * compressed-y-1, or uncompressed at the sender’s discretion.
  *
  * <br><br>Encoding considerations: If this structure is encoded for hashing,
  * the EccP256CurvePoint in rSig shall be taken to be of form x-only.
@@ -754,7 +754,7 @@ EXPORTS ALL;
     sSig  OCTET STRING (SIZE (48))
   }
 
-/** 
+/**
  * @class EccP256CurvePoint
  *
  * @brief This structure specifies a point on an elliptic curve in
@@ -783,7 +783,7 @@ EXPORTS ALL;
     }
   }
 
-/** 
+/**
  * @class EccP384CurvePoint
  *
  * @brief This structure specifies a point on an elliptic curve in
@@ -812,19 +812,19 @@ EXPORTS ALL;
     }
   }
 
-/** 
+/**
  * @class SymmAlgorithm
  *
  * @brief This enumerated value indicates supported symmetric algorithms. The
  * only symmetric algorithm supported in this version of this standard is
  * AES-CCM as specified in 5.3.7.
  */
-  SymmAlgorithm ::= ENUMERATED { 
+  SymmAlgorithm ::= ENUMERATED {
     aes128Ccm,
     ...
   }
 
-/** 
+/**
  * @class HashAlgorithm
  *
  * @brief This structure identifies a hash algorithm. The value is sha256,
@@ -836,24 +836,24 @@ EXPORTS ALL;
  * enumerated value of this type in a signed SPDU when verifying a signed
  * SPDU shall indicate that the signed SPDU is invalid.
  */
-  HashAlgorithm ::= ENUMERATED { 
+  HashAlgorithm ::= ENUMERATED {
     sha256,
     ...,
     sha384
   }
 
-/** 
+/**
  * @class EciesP256EncryptedKey
  *
  * @brief This data structure is used to transfer a 16-byte symmetric key
- * encrypted using ECIES as specified in IEEE Std 1363a-2004. 
+ * encrypted using ECIES as specified in IEEE Std 1363a-2004.
  *
- * <br><br>Encryption and decryption are carried out as specified in 5.3.4. 
+ * <br><br>Encryption and decryption are carried out as specified in 5.3.4.
  *
- * <br><br><b>Parameters</b>: 
+ * <br><br><b>Parameters</b>:
  *
  * @param v is the sender’s ephemeral public key, which is the output V from
- * encryption as specified in 5.3.4. 
+ * encryption as specified in 5.3.4.
  *
  * @param c is the encrypted symmetric key, which is the output C from
  * encryption as specified in 5.3.4. The algorithm for the symmetric key is
@@ -868,7 +868,7 @@ EXPORTS ALL;
     t  OCTET STRING (SIZE (16))
   }
 
-/** 
+/**
  * @class EncryptionKey
  *
  * @brief This structure contains an encryption key, which may be a public or
@@ -876,35 +876,35 @@ EXPORTS ALL;
  */
   EncryptionKey ::= CHOICE {
     public     PublicEncryptionKey,
-    symmetric  SymmetricEncryptionKey 
+    symmetric  SymmetricEncryptionKey
   }
 
-/** 
+/**
  * @class PublicEncryptionKey
  *
  * @brief This structure specifies a public encryption key and the associated
  * symmetric algorithm which is used for bulk data encryption when encrypting
  * for that public key.
  */
-  PublicEncryptionKey ::= SEQUENCE { 
+  PublicEncryptionKey ::= SEQUENCE {
     supportedSymmAlg  SymmAlgorithm,
     publicKey         BasePublicEncryptionKey
   }
 
-/** 
+/**
  * @class BasePublicEncryptionKey
  *
  * @brief This structure specifies the bytes of a public encryption key for a
  * particular algorithm. The only algorithm supported is ECIES over either
  * the NIST P256 or the Brainpool P256r1 curve as specified in 5.3.4.
  */
-  BasePublicEncryptionKey ::= CHOICE { 
+  BasePublicEncryptionKey ::= CHOICE {
     eciesNistP256         EccP256CurvePoint,
     eciesBrainpoolP256r1  EccP256CurvePoint,
     ...
   }
 
-/** 
+/**
  * @class PublicVerificationKey
  *
  * @brief This structure represents a public key and states with what
@@ -913,14 +913,14 @@ EXPORTS ALL;
  *
  * <br><br>An EccP256CurvePoint or EccP384CurvePoint within a
  * PublicVerificationKey structure is invalid if it indicates the choice
- * x-only. 
+ * x-only.
  *
  * <br><br><b>Critical information fields</b>: If present, this is a critical
  * information field as defined in 5.2.6. An implementation that does not
  * recognize the indicated CHOICE when verifying a signed SPDU shall indicate
- * that the signed SPDU is invalid. 
+ * that the signed SPDU is invalid.
  */
-  PublicVerificationKey ::= CHOICE { 
+  PublicVerificationKey ::= CHOICE {
     ecdsaNistP256         EccP256CurvePoint,
     ecdsaBrainpoolP256r1  EccP256CurvePoint,
     ...,
@@ -928,7 +928,7 @@ EXPORTS ALL;
     ecdsaNistP384         EccP384CurvePoint
   }
 
-/** 
+/**
  * @class SymmetricEncryptionKey
  *
  * @brief This structure provides the key bytes for use with an identified
@@ -945,20 +945,20 @@ EXPORTS ALL;
 --                              PSID / ITS-AID                               --
 --***************************************************************************--
 
-/** 
- * @class PsidSsp 
+/**
+ * @class PsidSsp
  *
  * @brief This structure represents the permissions that the certificate
  * holder has with respect to data for a single application area, identified
  * by a Psid. If the ServiceSpecificPermissions field is omitted, it
  * indicates that the certificate holder has the default permissions
- * associated with that Psid. 
+ * associated with that Psid.
  *
  * <br><br><b>Consistency with signed SPDU</b>. As noted in 5.1.1,
  * consistency between the SSP and the signed SPDU is defined by rules
  * specific to the given PSID and is out of scope for this standard.
  *
- * <br><br><b>Consistency with issuing certificate</b>. 
+ * <br><br><b>Consistency with issuing certificate</b>.
  *
  * <br><br>If a certificate has an appPermissions entry A for which the ssp
  * field is omitted, A is consistent with the issuing certificate if the
@@ -982,28 +982,28 @@ EXPORTS ALL;
     ssp   ServiceSpecificPermissions OPTIONAL
   }
 
-/** 
+/**
  * @class SequenceOfPsidSsp
  *
  * @brief This type is used for clarity of definitions.
  */
   SequenceOfPsidSsp ::= SEQUENCE OF PsidSsp
 
-/** 
+/**
  * @class Psid
  *
  * @brief This type represents the PSID defined in IEEE Std 1609.12.
  */
   Psid ::= INTEGER (0..MAX)
 
-/** 
+/**
  * @class SequenceOfPsid
  *
- * @brief This type is used for clarity of definitions. 
+ * @brief This type is used for clarity of definitions.
  */
   SequenceOfPsid ::= SEQUENCE OF Psid
 
-/** 
+/**
  * @class ServiceSpecificPermissions
  *
  * @brief This structure represents the Service Specific Permissions (SSP)
@@ -1012,7 +1012,7 @@ EXPORTS ALL;
  * bitmap-based. See Annex C for further discussion of how application
  * specifiers may choose which SSP form to use.
  *
- * <br><br><b>Consistency with issuing certificate</b>. 
+ * <br><br><b>Consistency with issuing certificate</b>.
  *
  * <br><br>If a certificate has an appPermissions entry A for which the ssp
  * field is opaque, A is consistent with the issuing certificate if the
@@ -1020,21 +1020,21 @@ EXPORTS ALL;
  * <ul>
  * <li> (OPTION 1) A SubjectPermissions field indicating the choice all and
  * no PsidSspRange field containing the psid field in A;</li>
- * 
+ *
  * <li> (OPTION 2) A PsidSspRange P for which the following holds:</li>
  * <ul>
  * <li> The psid field in P is equal to the psid field in A and one of the
  * following is true:</li>
  * <ul>
  * <li> The sspRange field in P indicates all.</li>
- * 
+ *
  * <li> The sspRange field in P indicates opaque and one of the entries in
  * the opaque field in P is an OCTET STRING identical to the opaque field in
  * A.</li>
  * </ul>
  * </ul>
  * </ul>
- * 
+ *
  * For consistency rules for other types of ServiceSpecificPermissions,
  * see the following subclauses.
  */
@@ -1044,14 +1044,14 @@ EXPORTS ALL;
     bitmapSsp  BitmapSsp
   }
 
-/** 
+/**
  * @class BitmapSsp
  *
  * @brief This structure represents a bitmap representation of a SSP. The
  * mapping of the bits of the bitmap to constraints on the signed SPDU is
  * PSID-specific.
  *
- * <br><br><b>Consistency with issuing certificate</b>. 
+ * <br><br><b>Consistency with issuing certificate</b>.
  *
  * <br><br>If a certificate has an appPermissions entry A for which the ssp
  * field is bitmapSsp, A is consistent with the issuing certificate if the
@@ -1059,7 +1059,7 @@ EXPORTS ALL;
  * <ul>
  * <li> (OPTION 1) A SubjectPermissions field indicating the choice all and
  * no PsidSspRange field containing the psid field in A;</li>
- * 
+ *
  * <li> (OPTION 2) A PsidSspRange P for which the following holds:</li>
  * <ul>
  * <li> The psid field in P is equal to the psid field in A and one of the
@@ -1085,7 +1085,7 @@ EXPORTS ALL;
  */
   BitmapSsp ::= OCTET STRING (SIZE(0..31))
 
-/** 
+/**
  * @class PsidSspRange
  *
  * @brief This structure represents the certificate issuing or requesting
@@ -1103,21 +1103,21 @@ EXPORTS ALL;
     sspRange  SspRange OPTIONAL
   }
 
-/** 
+/**
  * @class SequenceOfPsidSspRange
  *
  * @brief This type is used for clarity of definitions.
  */
   SequenceOfPsidSspRange ::= SEQUENCE OF PsidSspRange
 
-/** 
+/**
  * @class SspRange
  *
  * @brief This structure identifies the SSPs associated with a PSID for
- * which the holder may issue or request certificates. 
+ * which the holder may issue or request certificates.
  *
- * <br><br><b>Consistency with issuing certificate</b>. 
- * 
+ * <br><br><b>Consistency with issuing certificate</b>.
+ *
  * <br><br>If a certificate has a PsidSspRange A for which the ssp field is
  * opaque, A is consistent with the issuing certificate if the issuing
  * certificate contains one of the following:
@@ -1163,8 +1163,8 @@ EXPORTS ALL;
     ... ,
     bitmapSspRange  BitmapSspRange
   }
-   
-/** 
+
+/**
  * @class BitmapSspRange
  *
  * @brief This structure represents a bitmap representation of a SSP. The
@@ -1172,7 +1172,7 @@ EXPORTS ALL;
  * used to permit or constrain sspValue fields in issued certificates. The
  * sspValue and sspBitmask fields shall be of the same length.
  *
- * <br><br><b>Consistency with issuing certificate</b>. 
+ * <br><br><b>Consistency with issuing certificate</b>.
  *
  * <br><br>If a certificate has an PsidSspRange value P for which the
  * sspRange field is bitmapSspRange, P is consistent with the issuing
@@ -1208,12 +1208,12 @@ EXPORTS ALL;
     sspBitmask  OCTET STRING (SIZE(1..32))
   }
 
-/** 
+/**
  * @class SequenceOfOctetString
  *
  * @brief This type is used for clarity of definitions.
  */
-  SequenceOfOctetString ::= 
+  SequenceOfOctetString ::=
     SEQUENCE (SIZE (0..MAX)) OF OCTET STRING (SIZE(0..MAX))
 
 
@@ -1221,7 +1221,7 @@ EXPORTS ALL;
 --                          Certificate Components                           --
 --***************************************************************************--
 
-/** 
+/**
  * @class SubjectAssurance
  *
  * @brief This field contains the certificate holder’s assurance level, which
@@ -1230,7 +1230,7 @@ EXPORTS ALL;
  *
  * <br><br>This field is encoded as defined in Table 1, where "A" denotes bit
  * fields specifying an assurance level, "R" reserved bit fields, and "C" bit
- * fields specifying the confidence. 
+ * fields specifying the confidence.
  *
  * <br><br>Table 1: Bitwise encoding of subject assurance
  *
@@ -1253,7 +1253,7 @@ EXPORTS ALL;
  * encoding of the confidence levels is outside the scope of the present
  * document. It can be assumed that a higher assurance value indicates that
  * the holder is more trusted than the holder of a certificate with lower
- * assurance value and the same confidence value. 
+ * assurance value and the same confidence value.
  *
  * <br><br>NOTE: This field was originally specified in ETSI TS 103 097 [B7]
  * and future uses of this field are anticipated to be consistent with future
@@ -1261,7 +1261,7 @@ EXPORTS ALL;
  */
   SubjectAssurance ::= OCTET STRING (SIZE(1))
 
-/** 
+/**
  * @class CrlSeries
  *
  * @brief This integer identifies a series of CRLs issued under the authority
@@ -1273,31 +1273,31 @@ EXPORTS ALL;
 --***************************************************************************--
 --                             Pseudonym Linkage                             --
 --***************************************************************************--
-  
-/** 
+
+/**
  * @class IValue
  *
  * @brief This atomic type is used in the definition of other data structures.
  */
   IValue ::= Uint16
-  
-/** 
+
+/**
  * @class Hostname
  *
  * @brief This is a UTF-8 string as defined in IETF RFC 3629. The contents
  * are determined by policy.
  */
   Hostname ::= UTF8String (SIZE(0..255))
-  
-/** 
+
+/**
  * @class LinkageValue
  *
  * @brief This is the individual linkage value. See 5.1.3 and 7.3 for details
  * of use.
  */
   LinkageValue ::= OCTET STRING (SIZE(9))
-  
-/** 
+
+/**
  * @class GroupLinkageValue
  *
  * @brief This is the group linkage value. See 5.1.3 and 7.3 for details of
@@ -1307,16 +1307,16 @@ EXPORTS ALL;
     jValue  OCTET STRING (SIZE(4)),
     value   OCTET STRING (SIZE(9))
   }
-  
-/** 
+
+/**
  * @class LaId
  *
  * @brief This structure contains a LA Identifier for use in the algorithms
  * specified in 5.1.3.4.
  */
-  LaId ::= OCTET STRING (SIZE(2)) 
-  
-/** 
+  LaId ::= OCTET STRING (SIZE(2))
+
+/**
  * @class LinkageSeed
  *
  * @brief This structure contains a linkage seed value for use in the

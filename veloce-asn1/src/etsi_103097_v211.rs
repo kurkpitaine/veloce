@@ -1,3 +1,5 @@
+//! This is a tweaked output if the RASN compiler. Do not edit!!
+
 #[allow(non_camel_case_types, non_snake_case, non_upper_case_globals, unused)]
 pub mod etsi_ts103097Extension_module {
     extern crate alloc;
@@ -491,8 +493,8 @@ pub mod ieee1609Dot2 {
     #[doc = " * field."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
-    #[rasn(delegate)]
-    pub struct EndEntityType(pub FixedBitString<1>);
+    #[rasn(delegate, size("8"))]
+    pub struct EndEntityType(pub BitString);
     #[doc = "*"]
     #[doc = " * @class ExplicitCertificate"]
     #[doc = " *"]
@@ -1042,7 +1044,7 @@ pub mod ieee1609Dot2 {
         Integer::from(0)
     }
     fn psid_group_permissions_ee_type_default() -> EndEntityType {
-        EndEntityType(FixedBitString::<1>::new([1u8]))
+        EndEntityType(BitString::from_slice(&[1u8]))
     }
     #[doc = "*"]
     #[doc = " * @class RecipientInfo"]
@@ -1499,8 +1501,8 @@ pub mod ieee1609Dot2 {
         pub can_request_rollover: Option<()>,
         pub encryption_key: Option<PublicEncryptionKey>,
         pub verify_key_indicator: VerificationKeyIndicator,
-        #[rasn(extension_addition)]
-        pub flags: Option<FixedBitString<1>>,
+        #[rasn(extension_addition, size("8"))]
+        pub flags: Option<BitString>,
     }
     impl ToBeSignedCertificate {
         pub fn new(
@@ -1516,7 +1518,7 @@ pub mod ieee1609Dot2 {
             can_request_rollover: Option<()>,
             encryption_key: Option<PublicEncryptionKey>,
             verify_key_indicator: VerificationKeyIndicator,
-            flags: Option<FixedBitString<1>>,
+            flags: Option<BitString>,
         ) -> Self {
             Self {
                 id,

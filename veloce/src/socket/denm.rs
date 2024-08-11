@@ -22,8 +22,8 @@ use crate::wire::{self, ports, EthernetAddress, GnTrafficClass};
 use crate::storage::PacketBuffer;
 
 use managed::ManagedSlice;
-use veloce_asn1::defs::denm__pdu__descriptions as denm;
-use veloce_asn1::defs::etsi__its__cdd as cdd;
+use veloce_asn1::defs::etsi_messages_r2::denm__pdu__descriptions as denm;
+use veloce_asn1::defs::etsi_messages_r2::etsi__its__cdd as cdd;
 use veloce_asn1::prelude::rasn::{self, error::EncodeError};
 
 use super::btp::{Indication, Request};
@@ -1513,7 +1513,7 @@ mod test {
 
         // Awareness traffic direction.
         assert_eq!(
-            msg.denm.management.awareness_traffic_direction,
+            msg.denm.management.traffic_direction,
             params.awareness.traffic_direction
         );
     }
@@ -1591,6 +1591,7 @@ mod test {
             cdd::CauseCodeV2::new(cdd::CauseCodeChoice::accident2(cdd::AccidentSubCauseCode(
                 0,
             ))),
+            None,
             None,
             None,
         )

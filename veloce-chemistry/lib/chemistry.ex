@@ -51,7 +51,7 @@ defmodule Chemistry do
   def denm_trigger() do
     situation_container =
       {:SituationContainer, 7, {:CauseCodeV2, {:humanPresenceOnTheRoad12, :childrenOnRoadway}},
-       :asn1_NOVALUE, :asn1_NOVALUE}
+       :asn1_NOVALUE, :asn1_NOVALUE, :asn1_NOVALUE, :asn1_NOVALUE}
 
     {:ok, uper} = :"DENM-PDU-Descriptions".encode(:SituationContainer, situation_container)
 

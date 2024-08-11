@@ -22,7 +22,7 @@ use crate::{
 
 #[cfg(feature = "asn1")]
 use veloce_asn1::{
-    defs::etsi__its__cdd::{
+    defs::etsi_messages_r2::etsi__its__cdd::{
         AltitudeConfidence as EtsiAltitudeConfidence, AltitudeValue as EtsiAltitudeValue,
         DeltaAltitude, DeltaLatitude, DeltaLongitude, DeltaReferencePosition,
         HeadingConfidence as EtsiHeadingConfidence, HeadingValue as EtsiHeadingValue,
@@ -325,7 +325,6 @@ impl Fix {
             && self.confidence.altitude.is_some()
             && self.confidence.speed.is_some()
             && self.confidence.heading.is_some()
-            && self.confidence.speed.is_some()
     }
 }
 
@@ -432,9 +431,9 @@ impl Position {
 pub struct Motion {
     /// Speed value at the position.
     pub speed: Option<Speed>,
-    /// Speed value at the position.
+    /// Vertical speed value at the position.
     pub vertical_speed: Option<Speed>,
-    /// Speed value at the position.
+    /// Heading value at the position.
     pub heading: Option<Heading>,
 }
 

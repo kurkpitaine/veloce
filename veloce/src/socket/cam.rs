@@ -26,8 +26,8 @@ use uom::si::angle::degree;
 use uom::si::f32::Length;
 use uom::si::length::meter;
 use uom::si::velocity::meter_per_second;
-use veloce_asn1::defs::cam__pdu__descriptions as cam;
-use veloce_asn1::defs::etsi__its__cdd as cdd;
+use veloce_asn1::defs::etsi_messages_r2::cam__pdu__descriptions as cam;
+use veloce_asn1::defs::etsi_messages_r2::etsi__its__cdd as cdd;
 use veloce_asn1::prelude::rasn::{self, error::DecodeError, types::SequenceOf};
 
 use super::btp::{Indication, RecvError, Request};
@@ -266,7 +266,10 @@ impl<'a> Socket<'a> {
             let authorized = if let Permission::CAM(p) = &_ind.its_aid {
                 Self::check_permissions(&decoded, &p.ssp)
             } else {
-                net_debug!("Cannot process CAM - unexpected permission type. Got {:?}", _ind.its_aid);
+                net_debug!(
+                    "Cannot process CAM - unexpected permission type. Got {:?}",
+                    _ind.its_aid
+                );
                 return;
             };
 
@@ -626,7 +629,7 @@ impl<'a> Socket<'a> {
     #[cfg(feature = "proto-security")]
     /// Check if the CAM content is authorized vs `permission`.
     fn check_permissions(cam: &cam::CAM, permission: &CamSsp) -> bool {
-        use veloce_asn1::defs::etsi__its__cdd::TrafficRule;
+        use veloce_asn1::defs::etsi_messages_r2::etsi__its__cdd::TrafficRule;
         let mut expected = CamSsp::new();
 
         match &cam.cam.cam_parameters.high_frequency_container {

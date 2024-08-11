@@ -9,7 +9,7 @@ defmodule Chemistry.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       compilers: [:asn1, :proto] ++ Mix.compilers(),
-      asn1_paths: "../veloce-asn1/asn",
+      asn1_paths: "../veloce-asn1/asn/messages",
       asn1_options: [:uper, :verbose],
       protoc_opts: [
         paths: ["../veloce-ipc/schema"],
@@ -31,7 +31,8 @@ defmodule Chemistry.MixProject do
   defp deps do
     [
       {:protobuf, "~> 0.12.0"},
-      {:protobuf_compiler, git: "https://github.com/OffgridElectric/protobuf_compiler.git", runtime: false},
+      {:protobuf_compiler,
+       git: "https://github.com/OffgridElectric/protobuf_compiler.git", runtime: false},
       {:chumak, "~> 1.4"},
       {:asn1_compiler, "~> 0.1.1", runtime: false}
     ]

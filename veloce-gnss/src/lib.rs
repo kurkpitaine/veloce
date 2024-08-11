@@ -14,8 +14,15 @@ use veloce::{
     types::{LatitudeTrait, LongitudeTrait},
 };
 
+#[cfg(feature = "gpsd")]
 mod gpsd;
+#[cfg(feature = "gpsd")]
 pub use gpsd::Gpsd;
+
+#[cfg(feature = "replay")]
+mod replay;
+#[cfg(feature = "replay")]
+pub use replay::Replay;
 
 /// Accumulated GPS data. Most of the nested fields are optional,
 /// due to GPSs not sending all the relevant data at once.

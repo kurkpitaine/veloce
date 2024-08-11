@@ -281,7 +281,7 @@ FROM EtsiTs103097ExtensionModule {itu-t(0) identified-organization(4)
  * whole-certificate hash algorithm, determined as described in 6.4.3.
  *
  * @param requestedCertificate, if present, is used by the SDS to provide
- * certificates per the “inline�? version of the peer-to-peer certificate
+ * certificates per the "inline" version of the peer-to-peer certificate
  * distribution mechanism given in Clause 8.
  *
  * @param pduFunctionalType, if present, is used to indicate that the SPDU is
@@ -1138,8 +1138,8 @@ FROM EtsiTs103097ExtensionModule {itu-t(0) identified-organization(4)
  * less than or equal to minChainLength + chainLengthRange certificates. A
  * value of 0 for minChainLength is not permitted when this type appears in
  * the certIssuePermissions field of a ToBeSignedCertificate; a certificate
- * that has a value of 0 for this field is invalid. The value −1 for
- * chainLengthRange is a special case: if the value of chainLengthRange is −1
+ * that has a value of 0 for this field is invalid. The value -1 for
+ * chainLengthRange is a special case: if the value of chainLengthRange is -1
  * it indicates that the certificate chain may be any length equal to or
  * greater than minChainLength. See the examples below for further discussion.
  *

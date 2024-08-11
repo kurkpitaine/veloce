@@ -58,4 +58,8 @@ pub mod ports {
     pub const MRSM: u16 = 2023;
     /// P2P Full Certificate Trust List Distribution service BTP port number.
     pub const P2P_CTLM: u16 = 2024;
+    /// Parking Availability service BTP port number.
+    pub const PAS: u16 = 2025;
+    /// Automated Vehicle Marshalling service BTP port number.
+    pub const AVM: u16 = 2026;
 }

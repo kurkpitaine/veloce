@@ -54,13 +54,13 @@ EtsiTs103097Data::=Ieee1609Dot2Data /* (WITH COMPONENTS {...,
   })
 }) */
 
-EtsiTs103097Data-Unsecured {ToBeSentDataContent} ::= EtsiTs103097Data /* (WITH COMPONENTS {...,
+EtsiTs103097Data-Unsecured /* {ToBeSentDataContent} */ ::= EtsiTs103097Data (WITH COMPONENTS {...,
   content (WITH COMPONENTS {
     unsecuredData (CONTAINING ToBeSentDataContent)
   })
-}) */
+})
 
-EtsiTs103097Data-Signed {ToBeSignedDataContent} ::= EtsiTs103097Data /* (WITH COMPONENTS {...,
+EtsiTs103097Data-Signed /* {ToBeSignedDataContent} */ ::= EtsiTs103097Data (WITH COMPONENTS {...,
   content (WITH COMPONENTS {
     signedData (WITH COMPONENTS {...,
       tbsData (WITH COMPONENTS {
@@ -74,7 +74,7 @@ EtsiTs103097Data-Signed {ToBeSignedDataContent} ::= EtsiTs103097Data /* (WITH CO
       })
     })
   })
-}) */
+})
 
 EtsiTs103097Data-SignedExternalPayload ::= EtsiTs103097Data (WITH COMPONENTS {...,
   content (WITH COMPONENTS {
@@ -90,7 +90,7 @@ EtsiTs103097Data-SignedExternalPayload ::= EtsiTs103097Data (WITH COMPONENTS {..
   })
 })
 
-EtsiTs103097Data-Encrypted {ToBeEncryptedDataContent} ::= EtsiTs103097Data (WITH COMPONENTS {...,
+EtsiTs103097Data-Encrypted /* {ToBeEncryptedDataContent} */ ::= EtsiTs103097Data (WITH COMPONENTS {...,
   content (WITH COMPONENTS {
     encryptedData (WITH COMPONENTS {...,
       ciphertext (WITH COMPONENTS {...,
@@ -102,9 +102,9 @@ EtsiTs103097Data-Encrypted {ToBeEncryptedDataContent} ::= EtsiTs103097Data (WITH
   })
 })
 
-EtsiTs103097Data-SignedAndEncrypted {ToBesignedAndEncryptedDataContent} ::= EtsiTs103097Data-Encrypted {EtsiTs103097Data-Signed {ToBesignedAndEncryptedDataContent}}
+EtsiTs103097Data-SignedAndEncrypted /* {ToBesignedAndEncryptedDataContent} */ ::= EtsiTs103097Data-Encrypted {EtsiTs103097Data-Signed {ToBesignedAndEncryptedDataContent}}
 
-EtsiTs103097Data-Encrypted-Unicast {ToBeEncryptedDataContent} ::= EtsiTs103097Data-Encrypted { EtsiTs103097Data-Unsecured{ToBeEncryptedDataContent}} (WITH COMPONENTS {...,
+EtsiTs103097Data-Encrypted-Unicast /* {ToBeEncryptedDataContent} */ ::= EtsiTs103097Data-Encrypted { EtsiTs103097Data-Unsecured{ToBeEncryptedDataContent}} (WITH COMPONENTS {...,
   content (WITH COMPONENTS {
     encryptedData (WITH COMPONENTS {...,
       recipients (SIZE(1))
@@ -112,7 +112,7 @@ EtsiTs103097Data-Encrypted-Unicast {ToBeEncryptedDataContent} ::= EtsiTs103097Da
   })
 })
 
-EtsiTs103097Data-SignedAndEncrypted-Unicast {ToBesignedAndEncryptedDataContent} ::= EtsiTs103097Data-Encrypted {EtsiTs103097Data-Signed {ToBesignedAndEncryptedDataContent}} (WITH COMPONENTS {...,
+EtsiTs103097Data-SignedAndEncrypted-Unicast /* {ToBesignedAndEncryptedDataContent} */ ::= EtsiTs103097Data-Encrypted {EtsiTs103097Data-Signed {ToBesignedAndEncryptedDataContent}} (WITH COMPONENTS {...,
   content (WITH COMPONENTS {
     encryptedData (WITH COMPONENTS {...,
       recipients (SIZE(1))

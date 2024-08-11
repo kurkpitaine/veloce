@@ -1,7 +1,7 @@
 //! Decentralized Event Notification messages SSP definition.
 //! See ETSI TS 103 831 V2.2.1 chapter 6.2.2.2.
 
-use veloce_asn1::defs::etsi__its__cdd as cdd;
+use veloce_asn1::defs::etsi_messages_r2::etsi__its__cdd as cdd;
 
 use super::{SspContainer, SspError, SspResult, SspTrait, SSP_VERSION_1, SSP_VERSION_2};
 

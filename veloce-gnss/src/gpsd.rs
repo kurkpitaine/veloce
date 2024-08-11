@@ -50,7 +50,7 @@ enum ClientState {
 pub struct Gpsd {
     /// Gps position.
     position: GpsInfo,
-    /// Gps data temp cache. Used for constructing `position`.
+    /// Gps data temp cache. Used for building [Self::position].
     cache: GpsInfo,
     /// Last time at which we received valid data
     /// from the GPSD server.

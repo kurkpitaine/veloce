@@ -369,14 +369,14 @@ MissingCrlIdentifier ::= SEQUENCE {
  *
  * @param tlsHandshake: indicates that the Signed SPDU is not to be directly
  * consumed as an application PDU and is to be used to provide information
- * about the holder�s permissions to a Transport Layer Security (TLS)
+ * about the holders permissions to a Transport Layer Security (TLS)
  * (IETF 5246 [B15], IETF 8446 [B16]) handshake process operating to secure
  * communications to an application process. See IETF [B15] and ISO 21177
  * [B20] for further information.
  *
  * @param iso21177ExtendedAuth: indicates that the Signed SPDU is not to be
  * directly consumed as an application PDU and is to be used to provide
- * additional information about the holder�s permissions to the ISO 21177
+ * additional information about the holders permissions to the ISO 21177
  * Security Subsystem for an application process. See ISO 21177 [B20] for
  * further information.
  *

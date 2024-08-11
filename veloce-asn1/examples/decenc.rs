@@ -1,3 +1,4 @@
+use veloce_asn1::defs::etsi_102941_v221::etsi_ts102941_messages_ca::EtsiTs102941Data;
 use veloce_asn1::defs::etsi_103097_v211::etsi_ts103097Module;
 use veloce_asn1::prelude::*;
 
@@ -60,6 +61,25 @@ fn main() {
     match rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Data>(input_vw_ectl) {
         Ok(d) => {
             println!("VW ECTL: {:?}\n", d);
+
+            match &d.0.content {
+                veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2::Ieee1609Dot2Content::signedData(sd) => {
+                    match &sd.tbs_data.payload.data.as_ref().unwrap().content {
+                        veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2::Ieee1609Dot2Content::unsecuredData(ud) => {
+                            match rasn::coer::decode::<EtsiTs102941Data>(&ud.0) {
+                                Ok(ed) => {
+                                    println!("VW ECTL TS 102941 data: {}\n", rasn::jer::encode(&ed).unwrap());
+                                },
+                                Err(e) => {
+                                    println!("Cannot encode VW ECTL TS 102941 data: {}\n", e);
+                                },
+                            }
+                        },
+                        _ => {},
+                    }
+                },
+                _ => {},
+            }
 
             match rasn::coer::encode(&d) {
                 Ok(e) => {
