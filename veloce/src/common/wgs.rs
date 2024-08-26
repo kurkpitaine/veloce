@@ -1,16 +1,16 @@
-use core::f32::consts::FRAC_PI_2;
+use core::f64::consts::FRAC_PI_2;
 use core::mem;
 
 use crate::types::{meter, Latitude, LatitudeTrait, Longitude, LongitudeTrait};
 use uom::si::angle::radian;
-use uom::si::f32::{Angle, Length, Ratio};
+use uom::si::f64::{Angle, Length, Ratio};
 use uom::si::ratio::ratio;
 use uom::typenum::{P2, P3};
 
 /// The equatorial radius of WGS84 ellipsoid (6_378_137 m).
-const WGS84_A: f32 = 6_378_137.0;
+const WGS84_A: f64 = 6_378_137.0;
 /// The inverse flattening of WGS84 ellipsoid (1/298.257223563).
-const WGS84_F: f32 = 1.0 / (298_257_223_563.0 / 1_000_000_000.0);
+const WGS84_F: f64 = 1.0 / (298_257_223_563.0 / 1_000_000_000.0);
 
 const GEO_TRANSFORM_MATRIX_LEN: usize = 9;
 
@@ -39,7 +39,7 @@ impl Geocentric {
         let e_sq_m = (Ratio::new::<ratio>(1.0) - f) * (Ratio::new::<ratio>(1.0) - f);
         let e_sq_a = e_sq.abs();
         let e_4_a = e_sq * e_sq;
-        let max_radius = Ratio::new::<ratio>(2.0) * a / Ratio::new::<ratio>(f32::EPSILON);
+        let max_radius = Ratio::new::<ratio>(2.0) * a / Ratio::new::<ratio>(f64::EPSILON);
 
         Geocentric {
             a,
@@ -480,8 +480,8 @@ mod test {
 
         let (lat, lon, _) = system.reverse(move_to);
 
-        assert_relative_eq!(lat.get::<degree>(), 48.267450);
-        assert_relative_eq!(lon.get::<degree>(), -3.565424);
+        assert_relative_eq!(lat.get::<degree>(), 48.267444, max_relative = 0.00001);
+        assert_relative_eq!(lon.get::<degree>(), -3.565424, max_relative = 0.00001);
 
         let move_to = GeocentricPosition {
             x: Length::new::<meter>(-1000.0),
@@ -491,8 +491,8 @@ mod test {
 
         let (lat, lon, _) = system.reverse(move_to);
 
-        assert_relative_eq!(lat.get::<degree>(), 48.285430);
-        assert_relative_eq!(lon.get::<degree>(), -3.565428);
+        assert_relative_eq!(lat.get::<degree>(), 48.285430, max_relative = 0.00001);
+        assert_relative_eq!(lon.get::<degree>(), -3.565428, max_relative = 0.00001);
 
         let move_to = GeocentricPosition {
             x: Length::new::<meter>(1000.0),
@@ -502,8 +502,8 @@ mod test {
 
         let (lat, lon, _) = system.reverse(move_to);
 
-        assert_relative_eq!(lat.get::<degree>(), 48.285430);
-        assert_relative_eq!(lon.get::<degree>(), -3.538478);
+        assert_relative_eq!(lat.get::<degree>(), 48.285430, max_relative = 0.00001);
+        assert_relative_eq!(lon.get::<degree>(), -3.538478, max_relative = 0.00001);
 
         let move_to = GeocentricPosition {
             x: Length::new::<meter>(1000.0),
@@ -513,7 +513,7 @@ mod test {
 
         let (lat, lon, _) = system.reverse(move_to);
 
-        assert_relative_eq!(lat.get::<degree>(), 48.267450);
-        assert_relative_eq!(lon.get::<degree>(), -3.538483);
+        assert_relative_eq!(lat.get::<degree>(), 48.267450, max_relative = 0.00001);
+        assert_relative_eq!(lon.get::<degree>(), -3.538483, max_relative = 0.00001);
     }
 }

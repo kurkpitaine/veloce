@@ -195,31 +195,31 @@ impl Default for Medium {
 /// 100.0 inclusive.
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ChannelBusyRatio(f32);
+pub struct ChannelBusyRatio(f64);
 
 impl ChannelBusyRatio {
     /// Build a new [ChannelBusyRatio] from a percentage value.
     /// `val` is clamped between 0.0 and 100.0
-    pub fn from_percentage(val: f32) -> Self {
+    pub fn from_percentage(val: f64) -> Self {
         let val = val.clamp(0.0, 100.0);
         ChannelBusyRatio(val)
     }
 
     /// Build a new [ChannelBusyRatio] from a ratio value.
     /// `val` is clamped between 0.0 and 1.0
-    pub fn from_ratio(val: f32) -> Self {
+    pub fn from_ratio(val: f64) -> Self {
         let val = (val * 100.0).clamp(0.0, 100.0);
         ChannelBusyRatio(val)
     }
 
     /// Return the [ChannelBusyRatio] value as a percentage.
-    pub fn as_percentage(&self) -> f32 {
+    pub fn as_percentage(&self) -> f64 {
         self.0
     }
 
     /// Return the [ChannelBusyRatio] value as a ratio value
     /// between 0.0 and 1.0.
-    pub fn as_ratio(&self) -> f32 {
+    pub fn as_ratio(&self) -> f64 {
         self.0 / 100.0
     }
 }
@@ -282,7 +282,7 @@ pub trait RxToken {
     /// packet bytes as argument.
     fn consume<R, F>(self, f: F) -> R
     where
-        F: FnOnce(&mut [u8]) -> R;
+        F: FnOnce(&[u8]) -> R;
 
     /// The Packet ID associated with the frame received by this [`RxToken`]
     fn meta(&self) -> PacketMeta {

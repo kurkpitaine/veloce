@@ -26,7 +26,7 @@ fn test_create_canonical_key() {
 
     let config = OpensslBackendConfig {
         canonical_key_path: canonical_key_path.clone(),
-        canonical_key_passwd: "test1234".to_string(),
+        canonical_key_passwd: "test1234".to_string().into(),
         signing_cert_secret_key_path: None,
         signing_cert_secret_key_passwd: None,
     };
@@ -52,7 +52,12 @@ fn test_compress_point() {
         .affine_coordinates(&group, &mut x, &mut y, &mut bn_ctx)
         .unwrap();
 
-    let config = OpensslBackendConfig::default();
+    let config = OpensslBackendConfig {
+        canonical_key_path: String::new(),
+        canonical_key_passwd: String::new().into(),
+        signing_cert_secret_key_path: None,
+        signing_cert_secret_key_passwd: None,
+    };
     let backend = OpensslBackend::new(config).unwrap();
 
     let key = EcdsaKey::NistP256r1(EccPoint::Uncompressed(UncompressedEccPoint {
@@ -74,9 +79,9 @@ fn test_load_secret_key() {
 
     let config = OpensslBackendConfig {
         canonical_key_path: "".to_string(),
-        canonical_key_passwd: "".to_string(),
+        canonical_key_passwd: "".to_string().into(),
         signing_cert_secret_key_path: Some(key_path.into_os_string().into_string().unwrap()),
-        signing_cert_secret_key_passwd: Some("test1234".to_string()),
+        signing_cert_secret_key_passwd: Some("test1234".to_string().into()),
     };
 
     OpensslBackend::new(config).unwrap();

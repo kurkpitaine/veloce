@@ -1,6 +1,6 @@
 pub use uom::si::angle::{degree, radian};
-pub use uom::si::f32::Angle;
-use uom::si::f32::*;
+pub use uom::si::f64::Angle;
+use uom::si::f64::*;
 pub use uom::si::length::meter;
 pub use uom::si::velocity::centimeter_per_second;
 pub use uom::si::velocity::kilometer_per_hour;
@@ -120,9 +120,9 @@ impl Power {
         Power(val)
     }
 
-    /// Build a new [Power] from a dBm value stored in a [f32].
+    /// Build a new [Power] from a dBm value stored in a [f64].
     /// Values are ceiled to the nearest round value.
-    pub fn from_dbm_f32(val: f32) -> Self {
+    pub fn from_dbm_f64(val: f64) -> Self {
         let val = val * 2.0;
         Power(val.ceil() as i32)
     }
@@ -137,9 +137,9 @@ impl Power {
         (self.0 / 2) as i16
     }
 
-    /// Return the [Power] value as an [f32] in dBm units.
-    pub fn as_dbm_f32(&self) -> f32 {
-        self.0 as f32 / 2.0
+    /// Return the [Power] value as an [f64] in dBm units.
+    pub fn as_dbm_f64(&self) -> f64 {
+        self.0 as f64 / 2.0
     }
 
     /// Return the [Power] value as an [i32] in 0.5 dBm units.
@@ -147,9 +147,9 @@ impl Power {
         self.0
     }
 
-    /// Return the [Power] value as an [f32] in 0.5 dBm units.
-    pub fn as_half_dbm_f32(&self) -> f32 {
-        self.0 as f32
+    /// Return the [Power] value as an [f64] in 0.5 dBm units.
+    pub fn as_half_dbm_f64(&self) -> f64 {
+        self.0 as f64
     }
 
     /// Return the [Power] value as an [i16] in 0.5 dBm units.

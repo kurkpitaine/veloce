@@ -3,7 +3,7 @@ use core::cmp::min;
 use core::task::Waker;
 
 use uom::si::area::square_kilometer;
-use uom::si::f32::Area;
+use uom::si::f64::Area;
 
 use crate::config;
 use crate::iface::packet::GeonetPacket;

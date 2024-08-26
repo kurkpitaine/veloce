@@ -10,6 +10,7 @@ use openssl::{
     sign::{Signer, Verifier},
     symm,
 };
+use secrecy::{ExposeSecret, SecretString};
 use std::{
     fs::File,
     io::{self, Read, Result as IoResult, Write},
@@ -22,16 +23,16 @@ use crate::security::{
     UncompressedEccPoint,
 };
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct OpensslBackendConfig {
     /// Canonical secret key path.
     pub canonical_key_path: String,
     /// Canonical key password.
-    pub canonical_key_passwd: String,
+    pub canonical_key_passwd: SecretString,
     /// Signing certificate secret key path.
     pub signing_cert_secret_key_path: Option<String>,
     /// Signing certificate secret key password.
-    pub signing_cert_secret_key_passwd: Option<String>,
+    pub signing_cert_secret_key_passwd: Option<SecretString>,
 }
 
 #[derive(Debug)]
@@ -140,7 +141,7 @@ impl OpensslBackend {
         let mut buf = Vec::new();
         content.read_to_end(&mut buf)?;
 
-        let key = EcKey::private_key_from_pem_passphrase(&buf, pwd.as_bytes())
+        let key = EcKey::private_key_from_pem_passphrase(&buf, pwd.expose_secret().as_bytes())
             .map_err(|_| io::ErrorKind::Other)?;
 
         Ok(key)
@@ -172,7 +173,7 @@ impl BackendTrait for OpensslBackend {
         let content = secret_key
             .private_key_to_pem_passphrase(
                 symm::Cipher::chacha20_poly1305(),
-                self.config.canonical_key_passwd.as_bytes(),
+                self.config.canonical_key_passwd.expose_secret().as_bytes(),
             )
             .map_err(BackendError::OpenSSL)?;
 

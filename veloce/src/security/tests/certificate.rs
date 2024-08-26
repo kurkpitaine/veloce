@@ -15,7 +15,7 @@ use crate::{
 pub fn openssl_backend() -> OpensslBackend {
     let config = OpensslBackendConfig {
         canonical_key_path: String::new(),
-        canonical_key_passwd: "test1234".to_string(),
+        canonical_key_passwd: "test1234".to_string().into(),
         signing_cert_secret_key_path: None,
         signing_cert_secret_key_passwd: None,
     };

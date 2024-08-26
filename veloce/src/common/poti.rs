@@ -10,7 +10,7 @@ use heapless::HistoryBuffer;
 
 use uom::si::{
     angle::degree,
-    f32::Length,
+    f64::Length,
     length::{centimeter, kilometer, meter},
     velocity::{centimeter_per_second, meter_per_second},
 };
@@ -751,7 +751,7 @@ impl PathHistory {
     fn trucate_concise_points(&mut self) {
         if self.concise_points.0.len() > 2 {
             let mut distance = Length::new::<meter>(0.0);
-            let points: VecDeque<PathPoint> = self
+            let mut points: VecDeque<PathPoint> = self
                 .concise_points
                 .0
                 .iter()
@@ -761,14 +761,182 @@ impl PathHistory {
                     if distance >= Length::new::<meter>(200.0) {
                         return false;
                     } else {
-                        distance += p_prev.distance_to(p_curr);
+                        distance += p_prev.distance_to(*p_curr);
                         true
                     }
                 })
-                .map(|(_, p2)| *p2)
+                .map(|(_p1, p2)| *p2)
                 .collect();
 
+            points.push_front(self.concise_points.0[0]);
             self.concise_points = PositionHistory(points);
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    fn one_meter_latitude() -> Latitude {
+        Latitude::new::<degree>(1.0 / 111320.0)
+    }
+
+    #[test]
+    fn test_reference_position() {
+        let timestamp = TAI2004::now();
+        let mut ph = PathHistory::new();
+        let first_pp = PathPoint {
+            timestamp,
+            latitude: Latitude::new::<degree>(48.271947),
+            longitude: Longitude::new::<degree>(-3.6149619),
+            ..Default::default()
+        };
+
+        ph.push_position(first_pp);
+        assert_eq!(first_pp.timestamp, ph.samples.recent().unwrap().timestamp);
+
+        let second_pp = PathPoint {
+            timestamp: timestamp + Duration::from_millis(100),
+            latitude: Latitude::new::<degree>(48.271947),
+            longitude: Longitude::new::<degree>(-3.6149619),
+            ..Default::default()
+        };
+
+        ph.push_position(second_pp);
+        assert_eq!(second_pp.timestamp, ph.samples.recent().unwrap().timestamp);
+    }
+
+    #[test]
+    fn test_equal_samples() {
+        let mut ph = PathHistory::new();
+        assert_eq!(0, ph.points().0.len());
+
+        let first_pp = PathPoint {
+            timestamp: TAI2004::now(),
+            latitude: Latitude::new::<degree>(48.271947),
+            longitude: Longitude::new::<degree>(-3.6149619),
+            ..Default::default()
+        };
+
+        ph.push_position(first_pp);
+        assert_eq!(1, ph.points().0.len());
+        assert_eq!(first_pp.timestamp, ph.points().0.front().unwrap().timestamp);
+        assert_relative_eq!(
+            first_pp.latitude.get::<degree>(),
+            ph.points().0.front().unwrap().latitude.get::<degree>()
+        );
+        assert_relative_eq!(
+            first_pp.longitude.get::<degree>(),
+            ph.points().0.front().unwrap().longitude.get::<degree>()
+        );
+
+        for _ in 0..10 {
+            ph.push_position(first_pp);
+            assert_eq!(1, ph.points().0.len());
+        }
+    }
+
+    #[test]
+    fn test_position_history_len_threshold() {
+        let mut ph = PathHistory::new();
+        let mut pp = PathPoint::default();
+        ph.push_position(pp);
+        pp.latitude += one_meter_latitude();
+        ph.push_position(pp);
+        pp.latitude += one_meter_latitude();
+        ph.push_position(pp);
+        assert_eq!(1, ph.points().0.len());
+
+        pp.latitude += one_meter_latitude();
+        ph.push_position(pp);
+        assert_eq!(1, ph.points().0.len());
+
+        pp.latitude += 20.0 * one_meter_latitude();
+        ph.push_position(pp);
+        assert_eq!(2, ph.points().0.len());
+        assert_relative_eq!(
+            3.0 * one_meter_latitude().get::<degree>(),
+            ph.points().0.front().unwrap().latitude.get::<degree>()
+        );
+
+        pp.latitude += 10.0 * one_meter_latitude();
+        ph.push_position(pp);
+        assert_eq!(3, ph.points().0.len());
+        assert_relative_eq!(
+            23.0 * one_meter_latitude().get::<degree>(),
+            ph.points().0.front().unwrap().latitude.get::<degree>()
+        );
+
+        pp.latitude += 10.0 * one_meter_latitude();
+        ph.push_position(pp);
+        assert_eq!(3, ph.points().0.len());
+
+        pp.latitude += 3.0 * one_meter_latitude();
+        ph.push_position(pp);
+        assert_eq!(4, ph.points().0.len());
+        assert_relative_eq!(
+            43.0 * one_meter_latitude().get::<degree>(),
+            ph.points().0.front().unwrap().latitude.get::<degree>()
+        );
+    }
+
+    #[test]
+    fn test_error_threshold() {
+        let mut ph = PathHistory::new();
+        let mut pp = PathPoint::default();
+        ph.push_position(pp);
+
+        pp.heading += Heading::new::<degree>(5.0);
+        ph.push_position(pp);
+        pp.latitude += 5.0 * one_meter_latitude();
+        ph.push_position(pp);
+        assert_eq!(1, ph.points().0.len());
+
+        pp.latitude += Latitude::new::<degree>(10.0);
+        pp.longitude += Longitude::new::<degree>(10.0);
+        ph.push_position(pp);
+        assert_eq!(2, ph.points().0.len());
+    }
+
+    #[test]
+    fn test_concise_points_truncation() {
+        let mut ph = PathHistory::new();
+        let mut pp = PathPoint::default();
+        ph.push_position(pp);
+
+        pp.latitude += 25.0 * one_meter_latitude();
+        ph.push_position(pp);
+        pp.latitude += 25.0 * one_meter_latitude();
+        ph.push_position(pp);
+        assert_eq!(2, ph.points().0.len());
+
+        pp.latitude += 25.0 * one_meter_latitude();
+        ph.push_position(pp);
+        assert_eq!(3, ph.points().0.len());
+
+        pp.latitude += 205.0 * one_meter_latitude();
+        ph.push_position(pp);
+        assert_eq!(4, ph.points().0.len());
+        assert_relative_eq!(
+            0.0 * one_meter_latitude().get::<degree>(),
+            ph.points().0.back().unwrap().latitude.get::<degree>()
+        );
+        assert_relative_eq!(
+            75.0 * one_meter_latitude().get::<degree>(),
+            ph.points().0.front().unwrap().latitude.get::<degree>()
+        );
+
+        ph.push_position(pp);
+        assert_eq!(2, ph.points().0.len());
+        assert_relative_eq!(
+            75.0 * one_meter_latitude().get::<degree>(),
+            ph.points().0.back().unwrap().latitude.get::<degree>()
+        );
+        assert_relative_eq!(
+            280.0 * one_meter_latitude().get::<degree>(),
+            ph.points().0.front().unwrap().latitude.get::<degree>()
+        );
     }
 }

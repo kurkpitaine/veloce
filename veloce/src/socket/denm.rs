@@ -1087,7 +1087,7 @@ mod ipc {
     };
 
     use super::*;
-    use uom::si::{angle::degree, f32::Angle, length::meter};
+    use uom::si::{angle::degree, f64::Angle, length::meter};
     use veloce_ipc::denm::{self as ipc_denm};
 
     /// Error type returned by the IPC interface.
@@ -1281,25 +1281,25 @@ mod ipc {
             let shp = value.shape.ok_or(IpcError::Malformed)?;
             let shape = match shp {
                 ipc_denm::geo_area::Shape::Circle(c) => Shape::Circle(Circle {
-                    radius: Distance::new::<meter>(c.radius as f32),
+                    radius: Distance::new::<meter>(c.radius as f64),
                 }),
                 ipc_denm::geo_area::Shape::Rectangle(r) => Shape::Rectangle(Rectangle {
-                    a: Distance::new::<meter>(r.distance_a as f32),
-                    b: Distance::new::<meter>(r.distance_b as f32),
+                    a: Distance::new::<meter>(r.distance_a as f64),
+                    b: Distance::new::<meter>(r.distance_b as f64),
                 }),
                 ipc_denm::geo_area::Shape::Ellipse(e) => Shape::Ellipse(Ellipse {
-                    a: Distance::new::<meter>(e.distance_a as f32),
-                    b: Distance::new::<meter>(e.distance_b as f32),
+                    a: Distance::new::<meter>(e.distance_a as f64),
+                    b: Distance::new::<meter>(e.distance_b as f64),
                 }),
             };
 
             Ok(GeoArea {
                 shape,
                 position: GeoPosition {
-                    latitude: Latitude::new::<degree>(value.latitude as f32),
-                    longitude: Longitude::new::<degree>(value.longitude as f32),
+                    latitude: Latitude::new::<degree>(value.latitude as f64),
+                    longitude: Longitude::new::<degree>(value.longitude as f64),
                 },
-                angle: Angle::new::<degree>(value.angle as f32),
+                angle: Angle::new::<degree>(value.angle as f64),
             })
         }
     }
@@ -1336,7 +1336,7 @@ mod ipc {
 #[cfg(test)]
 mod test {
     use uom::si::angle::degree;
-    use uom::si::f32::{Angle, Length};
+    use uom::si::f64::{Angle, Length};
     use uom::si::length::{centimeter, meter};
     use uom::si::velocity::{centimeter_per_second, meter_per_second};
     use wire::GeonetVariant;

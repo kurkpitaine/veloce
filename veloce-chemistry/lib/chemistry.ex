@@ -1,108 +1,26 @@
+require Logger
+
 defmodule Chemistry do
-  alias Proto.Denm.ApiRepetition
-  alias Proto.Denm.ApiTrigger
-  alias Proto.Denm.CircleShape
-  alias Proto.Denm.GeoArea
-  alias Proto.Denm.EtsiReferencePosition
-  alias Proto.Denm.EtsiPosConfidenceEllipse
-  alias Proto.Denm.EtsiAltitudeWithConfidence
-  alias Proto.Denm.EtsiStandardLength3b
-  alias Proto.Denm.EtsiTrafficDirection
-  alias Proto.Denm.ApiParameters
-  alias Proto.Event.Event
+  @moduledoc false
+
+  use Application
+
+  alias Chemistry.Subscriber
+  alias Chemistry.Carotte
 
   def start(_type, _args) do
-    {:ok, sock} = :chumak.socket(:req)
+    Logger.configure(level: :debug)
+    Application.ensure_started(:amqp)
 
-    topic = <<>>
-    :chumak.subscribe(sock, topic)
+    children = [
+      Carotte.child_spec(host: "localhost", port: 5672, username: "guest", password: "guest"),
+      Subscriber.child_spec(host: "localhost", port: 45556)
+    ]
 
-    case :chumak.connect(sock, :tcp, ~c"localhost", 45557) do
-      {:ok, _BindPid} ->
-        IO.puts("Binding OK with Pid: #{inspect(sock)}")
-
-      {:error, reason} ->
-        IO.puts("Connection Failed for this reason: #{inspect(reason)}")
-    end
-
-    loop(sock)
+    # See https://hexdocs.pm/elixir/Supervisor.html
+    # for other strategies and supported options
+    opts = [strategy: :one_for_one, name: Chemistry.Supervisor]
+    Supervisor.start_link(children, opts)
   end
 
-  def loop(socket) do
-    params = denm_trigger()
-    :ok = :chumak.send(socket, params)
-
-    IO.puts("Sent: #{inspect(params)}")
-
-    {:ok, data} = :chumak.recv(socket)
-
-    IO.puts("Received: #{inspect(data)}")
-    %Event{timestamp: _tst, event_type: evt} = Event.decode(data)
-
-    case evt do
-      {:denm_result, hdl} ->
-        IO.puts("#{inspect(hdl)}")
-    end
-
-    Process.sleep(20000)
-    loop(socket)
-  end
-
-  def denm_trigger() do
-    situation_container =
-      {:SituationContainer, 7, {:CauseCodeV2, {:humanPresenceOnTheRoad12, :childrenOnRoadway}},
-       :asn1_NOVALUE, :asn1_NOVALUE, :asn1_NOVALUE, :asn1_NOVALUE}
-
-    {:ok, uper} = :"DENM-PDU-Descriptions".encode(:SituationContainer, situation_container)
-
-    latitude = 48.2770467
-    longitude = -3.5530699
-
-    params = %ApiParameters{
-      detection_time: :os.system_time(:millisecond),
-      validity_duration: 3600,
-      position: %EtsiReferencePosition{
-        latitude: latitude,
-        longitude: longitude,
-        position_confidence_ellipse: %EtsiPosConfidenceEllipse{
-          semi_major_confidence: 732,
-          semi_minor_confidence: 234,
-          semi_major_orientation: 240
-        },
-        altitude: %EtsiAltitudeWithConfidence{
-          altitude: 14020
-        }
-      },
-      awareness_distance: :lessThan200m,
-      awareness_traffic_direction: :allTrafficDirections,
-      geo_area: %GeoArea{
-        latitude: latitude,
-        longitude: longitude,
-        shape:
-          {:circle,
-           %CircleShape{
-             radius: 1000
-           }},
-        angle: 0.0
-      },
-      repetition: %ApiRepetition{
-        duration: 10 * 1000,
-        interval: 500
-      },
-      traffic_class: 0x10,
-      situation_container: uper
-    }
-
-    trigger = %ApiTrigger{
-      id: System.unique_integer([:positive]),
-      parameters: params
-    }
-
-    evt = %Event{
-      timestamp: :os.system_time(:millisecond),
-      event_type: {:denm_trigger, trigger}
-    }
-
-    Event.encode(evt)
-  end
 end

@@ -92,7 +92,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn latitude(&self) -> Latitude {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::LATITUDE]);
-        Latitude::new::<tenth_of_microdegree>(raw as f32)
+        Latitude::new::<tenth_of_microdegree>(raw as f64)
     }
 
     /// Return the Longitude field.
@@ -100,7 +100,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn longitude(&self) -> Longitude {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::LONGITUDE]);
-        Longitude::new::<tenth_of_microdegree>(raw as f32)
+        Longitude::new::<tenth_of_microdegree>(raw as f64)
     }
 
     /// Return the Position Accuracy Indicator flag.
@@ -116,7 +116,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn speed(&self) -> Speed {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_u16(&data[field::PAI_SPEED]);
-        Speed::new::<centimeter_per_second>((raw & !0x8000) as f32)
+        Speed::new::<centimeter_per_second>((raw & !0x8000) as f64)
     }
 
     /// Return the Heading field.
@@ -124,7 +124,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn heading(&self) -> Heading {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_u16(&data[field::HEADING]);
-        Heading::new::<decidegree>(raw as f32)
+        Heading::new::<decidegree>(raw as f64)
     }
 }
 

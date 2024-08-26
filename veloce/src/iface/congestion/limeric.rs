@@ -18,13 +18,13 @@ const MAX_INTERVAL: Duration = Duration::from_secs(1);
 /// as defined in ETSI TS 102 687 v1.2.1, Table 3.
 #[derive(Debug)]
 pub struct Parameters {
-    pub alpha: f32,
-    pub beta: f32,
-    pub delta_min: f32,
-    pub delta_max: f32,
-    pub g_minus_max: f32,
-    pub g_plus_max: f32,
-    pub cbr_target: f32,
+    pub alpha: f64,
+    pub beta: f64,
+    pub delta_min: f64,
+    pub delta_max: f64,
+    pub g_minus_max: f64,
+    pub g_plus_max: f64,
+    pub cbr_target: f64,
     pub cbr_interval: Duration,
 }
 
@@ -47,8 +47,8 @@ impl Default for Parameters {
 /// ["Strengths and Weaknesses of the ETSI Adaptive DCC Algorithm: A Proposal for Improvement"](http://dx.doi.org/10.1109/LCOMM.2019.2906178)
 #[derive(Debug)]
 pub struct DualAlphaParameters {
-    pub alpha_high: f32,
-    pub threshold: f32,
+    pub alpha_high: f64,
+    pub threshold: f64,
 }
 
 impl Default for DualAlphaParameters {
@@ -69,11 +69,11 @@ pub struct Limeric {
     /// Interval between transmissions.
     tx_interval: Duration,
     /// Limerick algorithm duty cycle.
-    duty_cycle: f32,
+    duty_cycle: f64,
     /// Current channel load.
-    channel_load: f32,
+    channel_load: f64,
     /// History of CBR values.
-    cbr_hist: HistoryBuffer<f32, CBR_HISTORY_SIZE>,
+    cbr_hist: HistoryBuffer<f64, CBR_HISTORY_SIZE>,
     /// Limerick algorithm parameters.
     params: Parameters,
     /// Optional parameters for Dual Alpha improvement.
@@ -133,14 +133,14 @@ impl Limeric {
         if self.duty_cycle >= 0.0 {
             if delay > 0 {
                 // Apply equation B.2 of TS 102 687 v1.2.1 if gate is closed at the moment
-                let interval = (self.last_tx_duration.total_micros() as f32 / self.duty_cycle)
-                    * ((delay / self.tx_interval.total_micros() as i64) as f32);
+                let interval = (self.last_tx_duration.total_micros() as f64 / self.duty_cycle)
+                    * ((delay / self.tx_interval.total_micros() as i64) as f64);
 
                 let interval = timestamp - self.last_tx_at + Duration::from_micros(interval as u64);
                 self.tx_interval = interval.max(MIN_INTERVAL).min(MAX_INTERVAL);
             } else {
                 // use equation B.1 otherwise
-                let interval = self.last_tx_duration.total_micros() as f32 / self.duty_cycle;
+                let interval = self.last_tx_duration.total_micros() as f64 / self.duty_cycle;
                 self.tx_interval = Duration::from_micros(interval as u64)
                     .max(MIN_INTERVAL)
                     .min(MAX_INTERVAL);
@@ -153,7 +153,7 @@ impl Limeric {
 
     /// Computes the duty cycle value for the Limerick algorithm.
     /// Return value is clamped between 0.0 and 1.0.
-    fn calculate_duty_cycle(&self) -> f32 {
+    fn calculate_duty_cycle(&self) -> f64 {
         let cbr_delta = self.params.cbr_target - self.channel_load;
 
         let delta_offset = if cbr_delta > 0.0 {
@@ -180,7 +180,7 @@ impl Limeric {
 
     /// Returns the smoothed CBR for step n, ie: equation (1) in
     /// Limerick publication.
-    fn smoothed_cbr(&self) -> f32 {
+    fn smoothed_cbr(&self) -> f64 {
         if self.cbr_hist.len() == self.cbr_hist.capacity() {
             0.5 * self.cbr_hist_average() + 0.5 * self.channel_load
         } else {
@@ -189,9 +189,9 @@ impl Limeric {
     }
 
     /// Computes the mean value of the data inside `cbr_hist`.
-    fn cbr_hist_average(&self) -> f32 {
-        let sum: f32 = self.cbr_hist.iter().sum();
-        let count = self.cbr_hist.len() as f32;
+    fn cbr_hist_average(&self) -> f64 {
+        let sum: f64 = self.cbr_hist.iter().sum();
+        let count = self.cbr_hist.len() as f64;
         sum / count
     }
 }
@@ -225,7 +225,7 @@ impl RateController for Limeric {
     }
 
     fn notify_tx(&mut self, tx_at: Instant, duration: Duration) {
-        let interval = duration.total_micros() as f32 / self.duty_cycle;
+        let interval = duration.total_micros() as f64 / self.duty_cycle;
         let interval = Duration::from_micros(interval as u64);
         self.tx_interval = interval.max(MIN_INTERVAL).min(MAX_INTERVAL);
         self.last_tx_at = tx_at;
@@ -268,8 +268,8 @@ mod test {
     #[test]
     fn test_init() {
         let limeric = Limeric::new(Default::default());
-        assert_eq!(limeric.smoothed_cbr(), 0.0);
-        assert_eq!(limeric.duty_cycle, 0.0153);
+        assert_relative_eq!(limeric.smoothed_cbr(), 0.0);
+        assert_relative_eq!(limeric.duty_cycle, 0.0153);
     }
 
     #[test]
@@ -278,15 +278,15 @@ mod test {
         let mut timestamp = Instant::now();
 
         limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.2));
-        assert_eq!(limeric.smoothed_cbr(), 0.2);
+        assert_relative_eq!(limeric.smoothed_cbr(), 0.2);
 
         timestamp += Duration::from_millis(100);
         limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.4));
-        assert_eq!(limeric.smoothed_cbr(), 0.3);
+        assert_relative_eq!(limeric.smoothed_cbr(), 0.3);
 
         timestamp += Duration::from_millis(100);
         limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.6));
-        assert_eq!(limeric.smoothed_cbr(), 0.4);
+        assert_relative_eq!(limeric.smoothed_cbr(), 0.4);
 
         timestamp += Duration::from_millis(100);
         limeric.update_cbr(timestamp, ChannelBusyRatio::from_ratio(0.6));
@@ -344,7 +344,7 @@ mod test {
         limeric.update_cbr(start, ChannelBusyRatio::from_ratio(0.8));
         limeric_da.update_cbr(start, ChannelBusyRatio::from_ratio(0.8));
 
-        assert_eq!(limeric.duty_cycle, limeric_da.duty_cycle);
+        assert_relative_eq!(limeric.duty_cycle, limeric_da.duty_cycle);
 
         limeric.run(start);
         limeric_da.run(start);

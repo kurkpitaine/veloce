@@ -24,7 +24,7 @@ pub(crate) const GN_DEFAULT_HOP_LIMIT: u8 = 10;
 pub(crate) const GN_DEFAULT_TRAFFIC_CLASS: GnTrafficClass = GnTrafficClass::from_byte(&0x00);
 pub(crate) const GN_MAX_PACKET_LIFETIME: Duration = Duration::from_secs(600);
 pub(crate) const GN_DEFAULT_PACKET_LIFETIME: Duration = Duration::from_secs(60);
-pub(crate) const GN_MAX_PACKET_DATA_RATE_EMA_BETA: f32 = 0.9;
+pub(crate) const GN_MAX_PACKET_DATA_RATE_EMA_BETA: f64 = 0.9;
 /// Maximum segment length carried by a Geonetworking packet.
 pub(crate) const GN_MAX_SDU_SIZE: usize = 1398;
 /// Location service retransmission period.
@@ -42,13 +42,13 @@ pub(crate) const GN_CBF_MIN_TIME: Duration = Duration::from_millis(1);
 /// Maximum duration a GN packet shall be buffered in the CBF packet buffer.
 pub(crate) const GN_CBF_MAX_TIME: Duration = Duration::from_millis(100);
 /// Default theoretical maximum communication range in meters.
-pub(crate) const GN_DEFAULT_MAX_COMMUNICATION_RANGE: f32 = 1000.0;
+pub(crate) const GN_DEFAULT_MAX_COMMUNICATION_RANGE: f64 = 1000.0;
 /// Default threshold angle for area advanced forwarding algorithm in degrees.
-pub(crate) const GN_BROADCAST_CBF_DEF_SECTOR_ANGLE: f32 = 30.0;
+pub(crate) const GN_BROADCAST_CBF_DEF_SECTOR_ANGLE: f64 = 30.0;
 /// Maximum Geographical area size in square kilometers.
-pub(crate) const GN_MAX_GEO_AREA_SIZE: f32 = 10.0;
+pub(crate) const GN_MAX_GEO_AREA_SIZE: f64 = 10.0;
 /// Distance related to the confidence interval for latitude and longitude [m].
-pub(crate) const GN_PAI_INTERVAL: f32 = 80.0;
+pub(crate) const GN_PAI_INTERVAL: f64 = 80.0;
 
 /// Lifetime for the ITS-G5 extensions of the location table entry.
 pub(crate) const GN_LIFETIME_LOC_TE_X: Duration = Duration::from_secs(1);

@@ -23,7 +23,7 @@ use crate::storage::PacketBuffer;
 use crate::wire::{EthernetAddress, StationType};
 
 use uom::si::angle::degree;
-use uom::si::f32::Length;
+use uom::si::f64::Length;
 use uom::si::length::meter;
 use uom::si::velocity::meter_per_second;
 use veloce_asn1::defs::etsi_messages_r2::cam__pdu__descriptions as cam;

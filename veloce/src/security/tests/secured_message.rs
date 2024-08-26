@@ -65,9 +65,9 @@ fn setup_security_service() -> SecurityService {
 
     let config = OpensslBackendConfig {
         canonical_key_path: "".to_string(),
-        canonical_key_passwd: "".to_string(),
+        canonical_key_passwd: "".to_string().into(),
         signing_cert_secret_key_path: Some(key_path.into_os_string().into_string().unwrap()),
-        signing_cert_secret_key_passwd: Some("test1234".to_string()),
+        signing_cert_secret_key_passwd: Some("test1234".to_string().into()),
     };
 
     let backend = OpensslBackend::new(config).unwrap();
@@ -213,11 +213,11 @@ fn test_position_inclusion() {
 
     let location = message.generation_location().unwrap().unwrap();
     assert_relative_eq!(
-        location.latitude.0 .0 as f32,
+        location.latitude.0 .0 as f64,
         position.latitude.unwrap().get::<tenth_of_microdegree>()
     );
     assert_relative_eq!(
-        location.longitude.0 .0 as f32,
+        location.longitude.0 .0 as f64,
         position.longitude.unwrap().get::<tenth_of_microdegree>()
     );
 

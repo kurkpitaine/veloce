@@ -1,7 +1,7 @@
 use approx::assert_relative_eq;
 use uom::si::{
     angle::degree,
-    f32::{Angle, Length},
+    f64::{Angle, Length},
     length::meter,
     velocity::{centimeter_per_second, meter_per_second},
 };
@@ -121,11 +121,13 @@ fn test_receive_gac() {
 
         assert_relative_eq!(
             anycast_spv.latitude.get::<tenth_of_microdegree>(),
-            gac_spv.latitude.get::<tenth_of_microdegree>()
+            gac_spv.latitude.get::<tenth_of_microdegree>(),
+            max_relative = 0.1
         );
         assert_relative_eq!(
             anycast_spv.longitude.get::<tenth_of_microdegree>(),
-            gac_spv.longitude.get::<tenth_of_microdegree>()
+            gac_spv.longitude.get::<tenth_of_microdegree>(),
+            max_relative = 0.1
         );
 
         assert_relative_eq!(

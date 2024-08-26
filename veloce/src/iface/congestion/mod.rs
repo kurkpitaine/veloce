@@ -189,8 +189,8 @@ impl Congestion {
                 (acc.0 + e.0.as_ratio(), acc.1 + e.1.as_ratio())
             });
             (
-                sum_r_0 / cbr_values.len() as f32,
-                sum_r_1 / cbr_values.len() as f32,
+                sum_r_0 / cbr_values.len() as f64,
+                sum_r_1 / cbr_values.len() as f64,
             )
         };
 

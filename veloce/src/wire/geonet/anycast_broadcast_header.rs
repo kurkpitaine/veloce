@@ -93,7 +93,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn latitude(&self) -> Latitude {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::LATITUDE]);
-        Latitude::new::<tenth_of_microdegree>(raw as f32)
+        Latitude::new::<tenth_of_microdegree>(raw as f64)
     }
 
     /// Return the geo-area longitude.
@@ -101,7 +101,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn longitude(&self) -> Longitude {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::LONGITUDE]);
-        Longitude::new::<tenth_of_microdegree>(raw as f32)
+        Longitude::new::<tenth_of_microdegree>(raw as f64)
     }
 
     /// Return the geo-area distance A.
@@ -109,7 +109,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn distance_a(&self) -> Distance {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_u16(&data[field::DISTANCE_A]);
-        Distance::new::<meter>(raw as f32)
+        Distance::new::<meter>(raw as f64)
     }
 
     /// Return the geo-area distance B.
@@ -117,7 +117,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn distance_b(&self) -> Distance {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_u16(&data[field::DISTANCE_B]);
-        Distance::new::<meter>(raw as f32)
+        Distance::new::<meter>(raw as f64)
     }
 
     /// Return the geo-area angle.
@@ -125,7 +125,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn angle(&self) -> Angle {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_u16(&data[field::ANGLE]);
-        Angle::new::<degree>(raw as f32)
+        Angle::new::<degree>(raw as f64)
     }
 }
 
@@ -298,7 +298,7 @@ mod test {
     static BYTES_HEADER: [u8; 44] = [
         0x00, 0x0f, 0x00, 0x00, 0xbc, 0x00, 0x9a, 0xf3, 0xd8, 0x02, 0xfb, 0xd1, 0x00, 0x00, 0x00,
         0x78, 0x1c, 0xc6, 0x66, 0x60, 0xfd, 0xe2, 0x03, 0xd4, 0x80, 0x18, 0x0b, 0x2c, 0x1c, 0xc5,
-        0xb7, 0x20, 0xfd, 0xd8, 0x66, 0x90, 0x01, 0xf4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xb7, 0x00, 0xfd, 0xd8, 0x66, 0x94, 0x01, 0xf4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
 
     fn lpv_repr() -> LongPositionVector {
@@ -343,8 +343,8 @@ mod test {
             Repr {
                 sequence_number: SequenceNumber(15),
                 source_position_vector: lpv_repr(),
-                latitude: Latitude::new::<tenth_of_microdegree>(482719520.0),
-                longitude: Longitude::new::<tenth_of_microdegree>(-36149616.0),
+                latitude: Latitude::new::<tenth_of_microdegree>(482719488.0),
+                longitude: Longitude::new::<tenth_of_microdegree>(-36149612.0),
                 distance_a: Distance::new::<meter>(500.0),
                 distance_b: Distance::new::<meter>(0.0),
                 angle: Angle::new::<degree>(0.0)

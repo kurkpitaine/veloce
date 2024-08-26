@@ -86,7 +86,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn latitude(&self) -> Latitude {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::LATITUDE]);
-        Latitude::new::<tenth_of_microdegree>(raw as f32)
+        Latitude::new::<tenth_of_microdegree>(raw as f64)
     }
 
     /// Return the Longitude field.
@@ -94,7 +94,7 @@ impl<T: AsRef<[u8]>> Header<T> {
     pub fn longitude(&self) -> Longitude {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::LONGITUDE]);
-        Longitude::new::<tenth_of_microdegree>(raw as f32)
+        Longitude::new::<tenth_of_microdegree>(raw as f64)
     }
 }
 

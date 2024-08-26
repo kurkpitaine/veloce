@@ -1,5 +1,5 @@
 use uom::si::angle::{degree, radian};
-use uom::si::f32::{Angle, Length};
+use uom::si::f64::{Angle, Length};
 use uom::si::length::meter;
 
 use crate::common::CbfIdentifier;

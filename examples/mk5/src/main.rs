@@ -360,9 +360,9 @@ pub fn openssl_backend() -> OpensslBackend {
 
     let config = OpensslBackendConfig {
         canonical_key_path: String::new(),
-        canonical_key_passwd: String::new(),
+        canonical_key_passwd: String::new().into(),
         signing_cert_secret_key_path: Some(key_path),
-        signing_cert_secret_key_passwd: Some("test1234".to_string()),
+        signing_cert_secret_key_passwd: Some("test1234".to_string().into()),
     };
 
     OpensslBackend::new(config).unwrap()

@@ -122,11 +122,11 @@ impl Device for NxpLlcDevice {
             return ChannelBusyRatio::from_ratio(0.0);
         }
 
-        let sum: f32 = self
+        let sum: f64 = self
             .cbr_values
             .iter()
             .fold(0.0, |acc, e| acc + e.as_ratio());
-        let count = self.cbr_values.len() as f32;
+        let count = self.cbr_values.len() as f64;
         ChannelBusyRatio::from_ratio(sum / count)
     }
 
@@ -183,7 +183,7 @@ impl Device for NxpLlcDevice {
                         let stats_pkt: &tMKxRadioStats = unsafe { &*buffer.as_ptr().cast() };
                         let stats = stats_pkt.RadioStatsData.Chan[cfg_channel as usize];
                         let cbr =
-                            ChannelBusyRatio::from_ratio(stats.ChannelBusyRatio as f32 / 255.0);
+                            ChannelBusyRatio::from_ratio(stats.ChannelBusyRatio as f64 / 255.0);
                         self.cbr_values.write(cbr);
 
                         None
@@ -258,7 +258,7 @@ pub struct NxpRxToken {
 impl phy::RxToken for NxpRxToken {
     fn consume<R, F>(mut self, f: F) -> R
     where
-        F: FnOnce(&mut [u8]) -> R,
+        F: FnOnce(&[u8]) -> R,
     {
         f(&mut self.buffer[..])
     }

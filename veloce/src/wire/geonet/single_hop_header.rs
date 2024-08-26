@@ -221,13 +221,13 @@ impl G5Ext {
 
     /// Returns the `cbr_l0_hop` field.
     pub fn cbr_l0_hop(&self) -> ChannelBusyRatio {
-        let val = f32::from(self.0[0]) / 255.0;
+        let val = f64::from(self.0[0]) / 255.0;
         ChannelBusyRatio::from_ratio(val)
     }
 
     /// Returns the `cbr_l1_hop` field.
     pub fn cbr_l1_hop(&self) -> ChannelBusyRatio {
-        let val = f32::from(self.0[1]) / 255.0;
+        let val = f64::from(self.0[1]) / 255.0;
         ChannelBusyRatio::from_ratio(val)
     }
 

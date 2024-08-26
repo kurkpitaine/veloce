@@ -1344,8 +1344,8 @@ impl InterfaceInner {
             })
             .and_then(|_| {
                 // G5 bandwidth is 6 Mbps.
-                let bytes_per_usec: f32 = 6.144 / 8.0;
-                let tx_duration_usec = bytes_per_usec * total_len as f32;
+                let bytes_per_usec: f64 = 6.144 / 8.0;
+                let tx_duration_usec = bytes_per_usec * total_len as f64;
                 trc.controller
                     .inner_mut()
                     .notify_tx(core.now, Duration::from_micros(tx_duration_usec as u64));

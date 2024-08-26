@@ -10,7 +10,7 @@ use mio::event::Event;
 use mio::net::TcpStream;
 use mio::{Interest, Registry, Token};
 use uom::si::angle::degree;
-use uom::si::f32::{Angle, Length, Velocity};
+use uom::si::f64::{Angle, Length, Velocity};
 use uom::si::length::meter;
 use uom::si::velocity::meter_per_second;
 
@@ -428,26 +428,31 @@ impl Gpsd {
                     self.cache.fix.ept = tpv.ept.map(|ept| Duration::from_secs_f32(ept));
                     self.cache.fix.latitude = tpv
                         .lat
-                        .map(|latitude| Angle::new::<degree>(latitude as f32));
-                    self.cache.fix.epy = tpv.epy.map(|epy| Length::new::<meter>(epy as f32));
+                        .map(|latitude| Angle::new::<degree>(latitude as f64));
+                    self.cache.fix.epy = tpv.epy.map(|epy| Length::new::<meter>(epy as f64));
                     self.cache.fix.longitude = tpv
                         .lon
-                        .map(|longitude| Angle::new::<degree>(longitude as f32));
-                    self.cache.fix.epx = tpv.epx.map(|epx| Length::new::<meter>(epx as f32));
-                    self.cache.fix.eph = tpv.eph.map(|eph| Length::new::<meter>(eph as f32));
+                        .map(|longitude| Angle::new::<degree>(longitude as f64));
+                    self.cache.fix.epx = tpv.epx.map(|epx| Length::new::<meter>(epx as f64));
+                    self.cache.fix.eph = tpv.eph.map(|eph| Length::new::<meter>(eph as f64));
                     self.cache.fix.altitude =
-                        tpv.alt_hae.map(|alt| Length::new::<meter>(alt as f32));
-                    self.cache.fix.epv = tpv.epv.map(|epv| Length::new::<meter>(epv as f32));
-                    self.cache.fix.track = tpv.track.map(|track| Angle::new::<degree>(track));
-                    self.cache.fix.epd = tpv.epd.map(|epd| Angle::new::<degree>(epd));
+                        tpv.alt_hae.map(|alt| Length::new::<meter>(alt as f64));
+                    self.cache.fix.epv = tpv.epv.map(|epv| Length::new::<meter>(epv as f64));
+                    self.cache.fix.track =
+                        tpv.track.map(|track| Angle::new::<degree>(track.into()));
+                    self.cache.fix.epd = tpv.epd.map(|epd| Angle::new::<degree>(epd.into()));
                     self.cache.fix.speed = tpv
                         .speed
-                        .map(|speed| Velocity::new::<meter_per_second>(speed));
-                    self.cache.fix.eps = tpv.eps.map(|eps| Velocity::new::<meter_per_second>(eps));
+                        .map(|speed| Velocity::new::<meter_per_second>(speed.into()));
+                    self.cache.fix.eps = tpv
+                        .eps
+                        .map(|eps| Velocity::new::<meter_per_second>(eps.into()));
                     self.cache.fix.climb = tpv
                         .climb
-                        .map(|climb| Velocity::new::<meter_per_second>(climb));
-                    self.cache.fix.epc = tpv.epc.map(|epc| Velocity::new::<meter_per_second>(epc));
+                        .map(|climb| Velocity::new::<meter_per_second>(climb.into()));
+                    self.cache.fix.epc = tpv
+                        .epc
+                        .map(|epc| Velocity::new::<meter_per_second>(epc.into()));
 
                     updated |= true;
                 }
@@ -471,20 +476,23 @@ impl Gpsd {
 
                     self.cache.gst.time = Some(gst_time);
 
-                    self.cache.gst.rms_deviation = gst.rms;
-                    self.cache.gst.major_deviation =
-                        gst.major.map(|major_dev| Length::new::<meter>(major_dev));
-                    self.cache.gst.minor_deviation =
-                        gst.minor.map(|minor_dev| Length::new::<meter>(minor_dev));
+                    self.cache.gst.rms_deviation = gst.rms.map(|rms| rms.into());
+                    self.cache.gst.major_deviation = gst
+                        .major
+                        .map(|major_dev| Length::new::<meter>(major_dev.into()));
+                    self.cache.gst.minor_deviation = gst
+                        .minor
+                        .map(|minor_dev| Length::new::<meter>(minor_dev.into()));
                     self.cache.gst.major_orientation = gst
                         .orient
-                        .map(|major_orient| Angle::new::<degree>(major_orient));
+                        .map(|major_orient| Angle::new::<degree>(major_orient.into()));
                     self.cache.gst.lat_err_deviation =
-                        gst.lat.map(|lat_dev| Length::new::<meter>(lat_dev));
+                        gst.lat.map(|lat_dev| Length::new::<meter>(lat_dev.into()));
                     self.cache.gst.lon_err_deviation =
-                        gst.lon.map(|lon_dev| Length::new::<meter>(lon_dev));
-                    self.cache.gst.alt_err_deviation =
-                        gst.minor.map(|minor_dev| Length::new::<meter>(minor_dev));
+                        gst.lon.map(|lon_dev| Length::new::<meter>(lon_dev.into()));
+                    self.cache.gst.alt_err_deviation = gst
+                        .minor
+                        .map(|minor_dev| Length::new::<meter>(minor_dev.into()));
 
                     updated |= true;
                 }

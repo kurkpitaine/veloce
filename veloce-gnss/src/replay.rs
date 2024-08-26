@@ -14,8 +14,8 @@ use nmea::{
     },
     Nmea, ParseResult, SentenceType,
 };
-use uom::si::f32::{Angle, Velocity};
-use uom::si::{angle::degree, f32::Length, length::meter};
+use uom::si::f64::{Angle, Velocity};
+use uom::si::{angle::degree, f64::Length, length::meter};
 
 use veloce::{
     time::{Duration, Instant},
@@ -221,25 +221,25 @@ impl Replay {
                 self.position.fix.latitude = self
                     .cache
                     .latitude
-                    .map(|latitude| Angle::new::<degree>(latitude as f32));
+                    .map(|latitude| Angle::new::<degree>(latitude as f64));
 
                 self.position.fix.longitude = self
                     .cache
                     .longitude
-                    .map(|longitude| Angle::new::<degree>(longitude as f32));
+                    .map(|longitude| Angle::new::<degree>(longitude as f64));
 
                 self.position.fix.altitude =
-                    self.cache.altitude.map(|alt| Length::new::<meter>(alt));
+                    self.cache.altitude.map(|alt| Length::new::<meter>(alt.into()));
 
                 self.position.fix.track = self
                     .cache
                     .true_course
-                    .map(|track| Angle::new::<degree>(track));
+                    .map(|track| Angle::new::<degree>(track.into()));
 
                 self.position.fix.speed = self
                     .cache
                     .speed_over_ground
-                    .map(|speed| Velocity::new::<meter_per_second>(speed));
+                    .map(|speed| Velocity::new::<meter_per_second>(speed.into()));
 
                 // Fake confidence values sine NMEA parser does not provide them.
                 self.position.confidence = Some(crate::Confidence {

@@ -1,5 +1,5 @@
 use byteorder::{ByteOrder, NetworkEndian};
-use uom::si::{angle::degree, f32::Angle, length::meter};
+use uom::si::{angle::degree, f64::Angle, length::meter};
 
 use crate::{
     common::geo_area::{Circle, Ellipse, GeoArea, GeoPosition, Rectangle, Shape},
@@ -182,35 +182,35 @@ impl<T: AsRef<[u8]>> UtGnTriggerGeoBroadcast<T> {
     fn latitude(&self) -> Latitude {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::GEN_GABC_LAT]);
-        Latitude::new::<tenth_of_microdegree>(raw as f32)
+        Latitude::new::<tenth_of_microdegree>(raw as f64)
     }
 
     #[inline]
     fn longitude(&self) -> Longitude {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::GEN_GABC_LON]);
-        Longitude::new::<tenth_of_microdegree>(raw as f32)
+        Longitude::new::<tenth_of_microdegree>(raw as f64)
     }
 
     #[inline]
     fn distance_a(&self) -> Distance {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_u16(&data[field::GEN_GABC_DIST_A]);
-        Distance::new::<meter>(raw as f32)
+        Distance::new::<meter>(raw as f64)
     }
 
     #[inline]
     fn distance_b(&self) -> Distance {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_u16(&data[field::GEN_GABC_DIST_B]);
-        Distance::new::<meter>(raw as f32)
+        Distance::new::<meter>(raw as f64)
     }
 
     #[inline]
     fn angle(&self) -> Angle {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_u16(&data[field::GEN_GABC_ANGLE]);
-        Angle::new::<degree>(raw as f32)
+        Angle::new::<degree>(raw as f64)
     }
 
     /// Return the lifetime field.

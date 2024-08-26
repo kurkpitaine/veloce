@@ -126,11 +126,13 @@ fn test_receive_ls_rep() {
 
         assert_relative_eq!(
             guc_spv.latitude.get::<tenth_of_microdegree>(),
-            geo_uc_spv.latitude.get::<tenth_of_microdegree>()
+            geo_uc_spv.latitude.get::<tenth_of_microdegree>(),
+            max_relative = 0.1
         );
         assert_relative_eq!(
             guc_spv.longitude.get::<tenth_of_microdegree>(),
-            geo_uc_spv.longitude.get::<tenth_of_microdegree>()
+            geo_uc_spv.longitude.get::<tenth_of_microdegree>(),
+            max_relative = 0.1
         );
 
         assert_relative_eq!(

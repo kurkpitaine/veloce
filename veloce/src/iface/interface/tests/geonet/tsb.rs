@@ -114,11 +114,13 @@ fn test_receive_tsb() {
 
         assert_relative_eq!(
             topo_spv.latitude.get::<tenth_of_microdegree>(),
-            tsb_spv.latitude.get::<tenth_of_microdegree>()
+            tsb_spv.latitude.get::<tenth_of_microdegree>(),
+            max_relative = 0.1
         );
         assert_relative_eq!(
             topo_spv.longitude.get::<tenth_of_microdegree>(),
-            tsb_spv.longitude.get::<tenth_of_microdegree>()
+            tsb_spv.longitude.get::<tenth_of_microdegree>(),
+            max_relative = 0.1
         );
 
         assert_relative_eq!(

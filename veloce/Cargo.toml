@@ -13,11 +13,12 @@ heapless = { git = "https://github.com/rust-embedded/heapless.git", branch = "ma
 libc = { version = "0.2", optional = true }
 log = { version = "0.4", default-features = false, optional = true }
 managed = { version = "0.8", default-features = false, features = ["alloc"] }
-uom = { version = "0.36", features = ["autoconvert", "f32"] }
+uom = { version = "0.36", features = ["autoconvert", "f64"] }
 veloce-asn1 = { path = "../veloce-asn1", optional = true }
 veloce-ipc = { path = "../veloce-ipc", optional = true }
 openssl = { version = "0.10", optional = true, features = ["vendored"] }
 openssl-sys = { version = "0.9", optional = true, features = ["vendored"] }
+secrecy = { version = "0.8.0", optional = true, features = ["alloc"] }
 
 [dev-dependencies]
 approx = "0.5"
@@ -59,7 +60,7 @@ conformance = []
 "packetmeta-id" = []
 "packetmeta-power" = []
 
-"security-openssl" = ["std", "dep:openssl", "dep:openssl-sys"]
+"security-openssl" = ["std", "dep:openssl", "dep:openssl-sys", "dep:secrecy"]
 
 "async" = []
 

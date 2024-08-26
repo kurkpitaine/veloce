@@ -175,7 +175,7 @@ impl<T: AsRef<[u8]>> UtChangePosition<T> {
     pub fn delta_latitude(&self) -> Latitude {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::C_POS_DELTA_LAT]);
-        Latitude::new::<tenth_of_microdegree>(raw as f32)
+        Latitude::new::<tenth_of_microdegree>(raw as f64)
     }
 
     /// Return the delta longitude field.
@@ -183,7 +183,7 @@ impl<T: AsRef<[u8]>> UtChangePosition<T> {
     pub fn delta_longitude(&self) -> Longitude {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::C_POS_DELTA_LON]);
-        Longitude::new::<tenth_of_microdegree>(raw as f32)
+        Longitude::new::<tenth_of_microdegree>(raw as f64)
     }
 
     /// Return the delta elevation field.
@@ -191,6 +191,6 @@ impl<T: AsRef<[u8]>> UtChangePosition<T> {
     pub fn delta_elevation(&self) -> Distance {
         let data = self.buffer.as_ref();
         let raw = NetworkEndian::read_i32(&data[field::C_POS_DELTA_ELV]);
-        Distance::new::<centimeter>(raw as f32)
+        Distance::new::<centimeter>(raw as f64)
     }
 }

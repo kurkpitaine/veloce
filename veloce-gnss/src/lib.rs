@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use log::{error, trace};
 use uom::si::{
     angle::degree,
-    f32::{Angle, Length, Ratio, Velocity},
+    f64::{Angle, Length, Ratio, Velocity},
     ratio::ratio,
 };
 
@@ -261,7 +261,7 @@ pub struct Gst {
     pub time: Option<DateTime<Utc>>,
     /// Value of the standard deviation of the range inputs to the navigation
     /// process (range inputs include pseudoranges and DGPS corrections).
-    pub rms_deviation: Option<f32>,
+    pub rms_deviation: Option<f64>,
     /// Standard deviation of semi-major axis of error ellipse.
     pub major_deviation: Option<Length>,
     /// Standard deviation of semi-minor axis of error ellipse.

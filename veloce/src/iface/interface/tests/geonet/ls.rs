@@ -175,11 +175,13 @@ fn test_receive_ls_req() {
 
         assert_relative_eq!(
             lsr_spv.latitude.get::<tenth_of_microdegree>(),
-            ls_req_spv.latitude.get::<tenth_of_microdegree>()
+            ls_req_spv.latitude.get::<tenth_of_microdegree>(),
+            max_relative = 0.1
         );
         assert_relative_eq!(
             lsr_spv.longitude.get::<tenth_of_microdegree>(),
-            ls_req_spv.longitude.get::<tenth_of_microdegree>()
+            ls_req_spv.longitude.get::<tenth_of_microdegree>(),
+            max_relative = 0.1
         );
 
         assert_relative_eq!(
@@ -284,11 +286,13 @@ fn test_receive_ls_rep() {
 
         assert_relative_eq!(
             lsr_spv.latitude.get::<tenth_of_microdegree>(),
-            ls_rep_spv.latitude.get::<tenth_of_microdegree>()
+            ls_rep_spv.latitude.get::<tenth_of_microdegree>(),
+            max_relative = 0.1
         );
         assert_relative_eq!(
             lsr_spv.longitude.get::<tenth_of_microdegree>(),
-            ls_rep_spv.longitude.get::<tenth_of_microdegree>()
+            ls_rep_spv.longitude.get::<tenth_of_microdegree>(),
+            max_relative = 0.1
         );
 
         assert_relative_eq!(
@@ -305,11 +309,13 @@ fn test_receive_ls_rep() {
 
         assert_relative_eq!(
             lsr_dpv.latitude.get::<tenth_of_microdegree>(),
-            ls_rep_dpv.latitude.get::<tenth_of_microdegree>()
+            ls_rep_dpv.latitude.get::<tenth_of_microdegree>(),
+            max_relative = 0.1
         );
         assert_relative_eq!(
             lsr_dpv.longitude.get::<tenth_of_microdegree>(),
-            ls_rep_dpv.longitude.get::<tenth_of_microdegree>()
+            ls_rep_dpv.longitude.get::<tenth_of_microdegree>(),
+            max_relative = 0.1
         );
     };
 

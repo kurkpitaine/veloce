@@ -13,7 +13,7 @@ use crate::wire::{
     EthernetAddress as MacAddress, LongPositionVectorRepr as LongPositionVector, SequenceNumber,
 };
 use heapless::{FnvIndexMap, HistoryBuffer, Vec};
-pub use uom::si::f32::InformationRate;
+pub use uom::si::f64::InformationRate;
 pub use uom::si::information_rate::{byte_per_second, kilobit_per_second};
 
 use super::location_service::LocationServiceRequestHandle;
@@ -72,7 +72,7 @@ impl LocationTableEntry {
     pub fn update_pdr(&mut self, packet_size: usize, timestamp: Instant) {
         if timestamp > self.packet_data_rate_updated_at {
             let measure_period = timestamp - self.packet_data_rate_updated_at;
-            let instant_pdr = packet_size as f32 / measure_period.secs() as f32;
+            let instant_pdr = packet_size as f64 / measure_period.secs() as f64;
             self.packet_data_rate *= GN_MAX_PACKET_DATA_RATE_EMA_BETA;
             self.packet_data_rate += InformationRate::new::<byte_per_second>(
                 (1.0 - GN_MAX_PACKET_DATA_RATE_EMA_BETA) * instant_pdr,

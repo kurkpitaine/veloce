@@ -2,10 +2,10 @@ use super::wgs::{Geocentric, LocalCartesian};
 use crate::types::{meter, radian, Distance, Latitude, Longitude};
 use crate::wire::{GeoAnycastRepr, GeoBroadcastRepr, GeonetPacketType};
 
-use core::f32::consts::FRAC_PI_2;
-use core::f32::consts::PI;
+use core::f64::consts::FRAC_PI_2;
+use core::f64::consts::PI;
 use uom::si::area::square_kilometer;
-use uom::si::f32::{Angle, Area, Length, Ratio};
+use uom::si::f64::{Angle, Area, Length, Ratio};
 use uom::si::length::kilometer;
 use uom::si::ratio::ratio;
 use uom::typenum::P2;
@@ -71,7 +71,7 @@ impl Circle {
             let y_over_r = position.y / self.radius;
             Ratio::new::<ratio>(1.0) - (x_over_r * x_over_r) - (y_over_r * y_over_r)
         } else {
-            Ratio::new::<ratio>(f32::NEG_INFINITY)
+            Ratio::new::<ratio>(f64::NEG_INFINITY)
         }
     }
 }
@@ -106,7 +106,7 @@ impl Rectangle {
             let y_op = Ratio::new::<ratio>(1.0) - y_over_b * y_over_b;
             x_op.min(y_op)
         } else {
-            Ratio::new::<ratio>(f32::NEG_INFINITY)
+            Ratio::new::<ratio>(f64::NEG_INFINITY)
         }
     }
 }
@@ -139,7 +139,7 @@ impl Ellipse {
             let y_over_b = position.y / self.b;
             Ratio::new::<ratio>(1.0) - x_over_a * x_over_a - y_over_b * y_over_b
         } else {
-            Ratio::new::<ratio>(f32::NEG_INFINITY)
+            Ratio::new::<ratio>(f64::NEG_INFINITY)
         }
     }
 }
@@ -359,7 +359,7 @@ mod test {
         common::geo_area::{Ellipse, Rectangle},
         types::{Distance, Latitude, Longitude},
     };
-    use uom::si::{angle::degree, f32::Angle, length::meter};
+    use uom::si::{angle::degree, f64::Angle, length::meter};
 
     #[test]
     fn test_circle_geo_zone() {

@@ -9,7 +9,7 @@ description = "Veloce GNSS position provider"
 veloce = { path = "../veloce" }
 uom = { version = "0.36", default-features = false, features = [
    "autoconvert",
-   "f32",
+   "f64",
    "si",
 ] }
 mio = { version = "1.0", features = ["os-poll", "net"], optional = true }
