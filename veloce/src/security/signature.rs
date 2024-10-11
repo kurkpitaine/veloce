@@ -1,6 +1,6 @@
 use core::fmt;
 
-use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2Base_types::{
+use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2_base_types::{
     EcdsaP256Signature, EcdsaP384Signature, Signature as EtsiSignature,
 };
 

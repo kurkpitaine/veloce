@@ -31,7 +31,7 @@ use veloce_ipc::{IpcEvent, IpcEventType};
 use veloce_ipc::{ZmqPublisher, ZmqReplier};
 use veloce_nxp_phy::{NxpChannel, NxpConfig, NxpLlcDevice, NxpRadio, NxpWirelessChannel};
 
-use veloce_asn1::{defs::etsi_103097_v211::etsi_ts103097Module, prelude::rasn};
+use veloce_asn1::{defs::etsi_103097_v211::etsi_ts103097_module, prelude::rasn};
 
 use veloce::security::{
     backend::openssl::{OpensslBackend, OpensslBackendConfig},
@@ -368,45 +368,45 @@ pub fn openssl_backend() -> OpensslBackend {
     OpensslBackend::new(config).unwrap()
 }
 
-pub fn load_root_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_root_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     #[cfg(debug_assertions)]
     let input_root = include_bytes!("assets/RCA.cert");
     #[cfg(not(debug_assertions))]
     let input_root = &fs::read("assets/RCA.cert").unwrap();
 
-    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_root).unwrap()
+    rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_root).unwrap()
 }
 
-pub fn load_ea_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_ea_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     #[cfg(debug_assertions)]
     let input_ea = include_bytes!("assets/EA.cert");
     #[cfg(not(debug_assertions))]
     let input_ea = &fs::read("assets/EA.cert").unwrap();
 
-    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_ea).unwrap()
+    rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_ea).unwrap()
 }
 
-pub fn load_aa_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_aa_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     #[cfg(debug_assertions)]
     let input_aa = include_bytes!("assets/AA.cert");
     #[cfg(not(debug_assertions))]
     let input_aa = &fs::read("assets/AA.cert").unwrap();
 
-    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_aa).unwrap()
+    rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_aa).unwrap()
 }
 
-pub fn load_at_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_at_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     #[cfg(debug_assertions)]
     let input_at = include_bytes!("assets/AT.cert");
     #[cfg(not(debug_assertions))]
     let input_at = &fs::read("assets/AT.cert").unwrap();
-    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_at).unwrap()
+    rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_at).unwrap()
 }
 
-pub fn load_tlm_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_tlm_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     #[cfg(debug_assertions)]
     let input_tlm = include_bytes!("assets/TLM.cert");
     #[cfg(not(debug_assertions))]
     let input_tlm = &fs::read("assets/TLM.cert").unwrap();
-    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_tlm).unwrap()
+    rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_tlm).unwrap()
 }

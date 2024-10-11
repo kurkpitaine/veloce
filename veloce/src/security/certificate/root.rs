@@ -1,7 +1,7 @@
 use veloce_asn1::{
     defs::etsi_103097_v211::{
-        ieee1609Dot2::{self, Certificate as EtsiCertificate, IssuerIdentifier},
-        ieee1609Dot2Base_types,
+        ieee1609_dot2::{self, Certificate as EtsiCertificate, IssuerIdentifier},
+        ieee1609_dot2_base_types,
     },
     prelude::rasn::{self, types::Integer},
 };
@@ -93,8 +93,8 @@ impl CertificateTrait for RootCertificate {
     }
 
     fn verify_constraints(cert: &EtsiCertificate) -> CertificateResult<()> {
-        use ieee1609Dot2::{CertificateId, CertificateType};
-        use ieee1609Dot2Base_types::Psid;
+        use ieee1609_dot2::{CertificateId, CertificateType};
+        use ieee1609_dot2_base_types::Psid;
 
         // The certificate shall be of type explicit as specified in IEEE Std 1609.2, clause 6.4.6.
         match cert.0.r_type {

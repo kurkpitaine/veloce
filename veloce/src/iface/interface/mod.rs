@@ -98,6 +98,44 @@ type UcBuffer = PacketBuffer<GeonetRepr<GeonetUnicast>, UC_BUF_SIZE>;
 type BcBuffer = PacketBuffer<GeonetRepr<GeonetVariant>, BC_BUF_SIZE>;
 type CbfBuffer = ContentionBuffer<GeonetRepr<GeonetVariant>, CBF_BUF_SIZE>;
 
+/// Result returned by [`Interface::poll`].
+///
+/// This contains information on whether socket states might have changed.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PollResult {
+    /// Socket state is guaranteed to not have changed.
+    None,
+    /// You should check the state of sockets again for received data or completion of operations.
+    SocketStateChanged,
+}
+
+/// Result returned by [`Interface::poll_ingress_single`].
+///
+/// This contains information on whether a packet was processed or not,
+/// and whether it might've affected socket states.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PollIngressSingleResult {
+    /// No packet was processed. You don't need to call [`Interface::poll_ingress_single`]
+    /// again, until more packets arrive.
+    ///
+    /// Socket state is guaranteed to not have changed.
+    None,
+    /// A packet was processed.
+    ///
+    /// There may be more packets in the device's RX queue, so you should call [`Interface::poll_ingress_single`] again.
+    ///
+    /// Socket state is guaranteed to not have changed.
+    PacketProcessed,
+    /// A packet was processed, which might have caused socket state to change.
+    ///
+    /// There may be more packets in the device's RX queue, so you should call [`Interface::poll_ingress_single`] again.
+    ///
+    /// You should check the state of sockets again for received data or completion of operations.
+    SocketStateChanged,
+}
+
 /// A network interface.
 ///
 /// The network interface logically owns a number of other data structures; to avoid
@@ -244,65 +282,104 @@ impl Interface {
         }
     }
 
-    /// Transmit packets queued in the given sockets, and receive packets queued
+    /// Transmit packets queued in the sockets, and receive packets queued
     /// in the device.
     ///
-    /// This function returns a boolean value indicating whether any packets were
-    /// processed or emitted, and thus, whether the readiness of any socket might
-    /// have changed.
+    /// This function returns a value indicating whether the state of any socket
+    /// might have changed.
+    ///
+    /// ## DoS warning
+    ///
+    /// This function processes all packets in the device's queue. This can
+    /// be an unbounded amount of work if packets arrive faster than they're
+    /// processed.
+    ///
+    /// If this is a concern for your application (i.e. your environment doesn't
+    /// have preemptive scheduling, or `poll()` is called from a main loop where
+    /// other important things are processed), you may use the lower-level methods
+    /// [`poll_egress()`](Self::poll_egress) and [`poll_ingress_single()`](Self::poll_ingress_single).
+    /// This allows you to insert yields or process other events between processing
+    /// individual ingress packets.
     pub fn poll<D>(
         &mut self,
         core: &mut GnCore,
         device: &mut D,
         sockets: &mut SocketSet<'_>,
-    ) -> bool
+    ) -> PollResult
+    where
+        D: Device + ?Sized,
+    {
+        let mut res = PollResult::None;
+
+        #[cfg(feature = "proto-geonet")]
+        self.run_congestion_control(core.now, device.channel_busy_ratio());
+
+        // Process ingress while there's packets available.
+        loop {
+            match self.socket_ingress(core, device, sockets) {
+                PollIngressSingleResult::None => break,
+                PollIngressSingleResult::PacketProcessed => {}
+                PollIngressSingleResult::SocketStateChanged => res = PollResult::SocketStateChanged,
+            }
+        }
+
+        // Process egress.
+        match self.poll_egress(core, device, sockets) {
+            PollResult::None => {}
+            PollResult::SocketStateChanged => res = PollResult::SocketStateChanged,
+        }
+
+        res
+    }
+
+    /// Transmit packets queued in the sockets.
+    ///
+    /// This function returns a value indicating whether the state of any socket
+    /// might have changed.
+    ///
+    /// This is guaranteed to always perform a bounded amount of work.
+    pub fn poll_egress<D>(
+        &mut self,
+        core: &mut GnCore,
+        device: &mut D,
+        sockets: &mut SocketSet<'_>,
+    ) -> PollResult
     where
         D: Device + ?Sized,
     {
         #[cfg(feature = "proto-geonet")]
-        {
-            self.run_congestion_control(core.now, device.channel_busy_ratio());
-            if self.congestion_control_egress(core, device) {
-                return true;
-            }
-        }
+        self.congestion_control_egress(core, device);
 
-        let mut readiness_may_have_changed = false;
+        self.ls_buffered_egress(core, device);
+        self.uc_buffered_egress(core, device);
+        self.bc_buffered_egress(core, device);
+        self.cb_buffered_egress(core, device);
+        self.location_service_egress(core, device);
+        self.beacon_service_egress(core, device);
 
-        loop {
-            let mut did_something = false;
+        self.socket_egress(core, device, sockets)
+    }
 
-            did_something |= self.socket_ingress(core, device, sockets);
-            // net_trace!("socket_ingress = {}", did_something);
-            did_something |= self.socket_egress(core, device, sockets);
-            // net_trace!("socket_egress = {}", did_something);
+    /// Process one incoming packet queued in the device.
+    ///
+    /// Returns a value indicating:
+    /// - whether a packet was processed, in which case you have to call this method again in case there's more packets queued.
+    /// - whether the state of any socket might have changed.
+    ///
+    /// Since it processes at most one packet, this is guaranteed to always perform a bounded amount of work.
+    pub fn poll_ingress_single<D>(
+        &mut self,
+        core: &mut GnCore,
+        device: &mut D,
+        sockets: &mut SocketSet<'_>,
+    ) -> PollIngressSingleResult
+    where
+        D: Device + ?Sized,
+    {
+        #[cfg(feature = "proto-geonet")]
+        self.run_congestion_control(core.now, device.channel_busy_ratio());
 
-            // Buffered packets inside different buffers are dequeued here after.
-            // One call to xx_buffered_egress send ALL the packets marked for flush.
-            // This could lead to some packets not being transmitted because of device exhaustion
-            // if a large number of packets has to be sent.
-            did_something |= self.ls_buffered_egress(core, device);
-            // net_trace!("ls_buffered_egress = {}", did_something);
-            did_something |= self.uc_buffered_egress(core, device);
-            // net_trace!("uc_buffered_egress = {}", did_something);
-            did_something |= self.bc_buffered_egress(core, device);
-            // net_trace!("bc_buffered_egress = {}", did_something);
-            did_something |= self.cb_buffered_egress(core, device);
-            // net_trace!("cb_buffered_egress = {}", did_something);
-
-            did_something |= self.location_service_egress(core, device);
-            // net_trace!("location_service_egress = {}", did_something);
-            did_something |= self.beacon_service_egress(core, device);
-            // net_trace!("beacon_service_egress = {}", did_something);
-
-            if did_something {
-                readiness_may_have_changed = true;
-            } else {
-                break;
-            }
-        }
-
-        readiness_may_have_changed
+        self.socket_ingress(core, device, sockets)
     }
 
     /// Return a _soft deadline_ for calling [poll] the next time.
@@ -365,77 +442,79 @@ impl Interface {
         core: &mut GnCore,
         device: &mut D,
         sockets: &mut SocketSet<'_>,
-    ) -> bool
+    ) -> PollIngressSingleResult
     where
         D: Device + ?Sized,
     {
-        let mut processed_any = false;
+        let Some((rx_token, tx_token)) = device.receive(core.now) else {
+            return PollIngressSingleResult::None;
+        };
 
-        while let Some((rx_token, tx_token)) = device.receive(core.now) {
-            let rx_meta = rx_token.meta();
+        let rx_meta = rx_token.meta();
+        let res = rx_token.consume(|frame| {
+            if frame.is_empty() {
+                return PollIngressSingleResult::PacketProcessed;
+            }
 
-            rx_token.consume(|frame| {
-                if frame.is_empty() {
-                    return;
-                }
+            let mut sec_buf = SecuredDataBuffer::default();
+            let ctx = InterfaceContext {
+                core,
+                ls: &mut self.location_service,
+                congestion_control: &mut self.congestion_control,
+                ls_buffer: &mut self.ls_buffer,
+                uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
+                bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
+                cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
+                #[cfg(feature = "proto-security")]
+                decap_context: &mut DecapContext::default(),
+            };
 
-                let mut sec_buf = SecuredDataBuffer::default();
-                let ctx = InterfaceContext {
-                    core,
-                    ls: &mut self.location_service,
-                    congestion_control: &mut self.congestion_control,
-                    ls_buffer: &mut self.ls_buffer,
-                    uc_forwarding_buffer: &mut self.uc_forwarding_buffer,
-                    bc_forwarding_buffer: &mut self.bc_forwarding_buffer,
-                    cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
-                    #[cfg(feature = "proto-security")]
-                    decap_context: &mut DecapContext::default(),
-                };
-
-                match self.inner.caps.medium {
-                    #[cfg(feature = "medium-ethernet")]
-                    Medium::Ethernet => {
-                        if let Some((ctx, dst_addr, packet)) =
-                            self.inner
-                                .process_ethernet(ctx, sockets, rx_meta, frame, &mut sec_buf)
-                        {
-                            if let Err(err) = self.inner.dispatch(
-                                tx_token,
-                                ctx.core,
-                                dst_addr,
-                                packet,
-                                ctx.congestion_control,
-                            ) {
-                                net_debug!("Failed to send response: {:?}", err);
-                            }
-                        }
-                    }
-                    #[cfg(feature = "medium-ieee80211p")]
-                    Medium::Ieee80211p => {
-                        if let Some((ctx, dst_addr, packet)) = self.inner.process_ieee80211p(
-                            ctx,
-                            sockets,
-                            rx_meta,
-                            frame,
-                            &mut sec_buf,
+            match self.inner.caps.medium {
+                #[cfg(feature = "medium-ethernet")]
+                Medium::Ethernet => {
+                    if let Some((ctx, dst_addr, packet)) =
+                        self.inner
+                            .process_ethernet(ctx, sockets, rx_meta, frame, &mut sec_buf)
+                    {
+                        if let Err(err) = self.inner.dispatch(
+                            tx_token,
+                            ctx.core,
+                            dst_addr,
+                            packet,
+                            ctx.congestion_control,
                         ) {
-                            if let Err(err) = self.inner.dispatch(
-                                tx_token,
-                                ctx.core,
-                                dst_addr,
-                                packet,
-                                ctx.congestion_control,
-                            ) {
-                                net_debug!("Failed to send response: {:?}", err);
-                            }
+                            net_debug!("Failed to send response: {:?}", err);
                         }
                     }
-                    #[cfg(feature = "medium-pc5")]
-                    Medium::PC5 => todo!(),
                 }
-                processed_any = true;
-            });
-        }
+                #[cfg(feature = "medium-ieee80211p")]
+                Medium::Ieee80211p => {
+                    if let Some((ctx, dst_addr, packet)) =
+                        self.inner
+                            .process_ieee80211p(ctx, sockets, rx_meta, frame, &mut sec_buf)
+                    {
+                        if let Err(err) = self.inner.dispatch(
+                            tx_token,
+                            ctx.core,
+                            dst_addr,
+                            packet,
+                            ctx.congestion_control,
+                        ) {
+                            net_debug!("Failed to send response: {:?}", err);
+                        }
+                    }
+                }
+                #[cfg(feature = "medium-pc5")]
+                Medium::PC5 => todo!(),
+            }
+
+            // TODO: Propagate the PollIngressSingleResult from deeper.
+            // There's many received packets that we process but can't cause sockets
+            // to change state. For example Beacons, forwarded stuff...
+            // We should return `PacketProcessed` for these to save the user from
+            // doing useless socket polls.
+            PollIngressSingleResult::SocketStateChanged
+        });
 
         // Update device filter.
         #[cfg(any(feature = "medium-pc5", feature = "medium-ieee80211p"))]
@@ -449,7 +528,7 @@ impl Interface {
             }
         }
 
-        processed_any
+        res
     }
 
     fn socket_egress<D>(
@@ -457,7 +536,7 @@ impl Interface {
         core: &mut GnCore,
         device: &mut D,
         sockets: &mut SocketSet<'_>,
-    ) -> bool
+    ) -> PollResult
     where
         D: Device + ?Sized,
     {
@@ -468,7 +547,7 @@ impl Interface {
             Dispatch(DispatchError),
         }
 
-        let mut emitted_any = false;
+        let mut result = PollResult::None;
         for item in sockets.items_mut() {
             let mut respond = |inner: &mut InterfaceInner,
                                core: &mut GnCore,
@@ -485,7 +564,7 @@ impl Interface {
                     .dispatch_geonet(t, core, meta, dst_ll_addr, response, congestion_ctrl)
                     .map_err(EgressError::Dispatch)?;
 
-                emitted_any = true;
+                result = PollResult::SocketStateChanged;
 
                 Ok(())
             };
@@ -591,7 +670,8 @@ impl Interface {
                 Ok(()) => {}
             }
         }
-        emitted_any
+
+        result
     }
 
     #[cfg(feature = "proto-geonet")]

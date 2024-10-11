@@ -172,7 +172,7 @@ fn main() {
                 .generated
                 .replace(
                     "super::etsi_ts103097_module",
-                    "crate::etsi_103097_v211::etsi_ts103097Module",
+                    "crate::etsi_103097_v211::etsi_ts103097_module",
                 )
                 .replace(
                     "data: Option<Ieee1609Dot2Data>",

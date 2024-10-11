@@ -19,6 +19,7 @@ pub(crate) mod packet;
 pub(crate) use self::congestion::Congestion;
 pub use self::interface::{
     congestion::CongestionControl, Config, Interface, InterfaceInner as Context,
+    PollIngressSingleResult, PollResult,
 };
 
 #[cfg(all(test, feature = "proto-security", feature = "socket-denm"))]

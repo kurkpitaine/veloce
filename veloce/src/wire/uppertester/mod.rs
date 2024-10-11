@@ -4,6 +4,7 @@ use uom::si::length::centimeter;
 use crate::types::{tenth_of_microdegree, Distance, Latitude, Longitude};
 
 pub mod btp;
+pub mod denm;
 pub mod geonet;
 
 /// Uppertester result values.
@@ -24,6 +25,15 @@ enum_with_unknown! {
       UtChangePositionResult = 0x03,
       UtChangePseudonym = 0x04,
       UtChangePseudonymResult = 0x05,
+
+      // DENM types.
+      UtDenmTrigger = 0x10,
+      UtDenmTriggerResult = 0x11,
+      UtDenmUpdate = 0x12,
+      UtDenmUpdateResult = 0x13,
+      UtDenmTermination = 0x14,
+      UtDenmTerminationResult = 0x15,
+      UtDenmEventInd = 0x17,
 
       // Geonetworking types.
       UtGnTriggerResult = 0x41,
@@ -51,6 +61,9 @@ mod field {
 
     /// 1-octet Uppertester return code field.
     pub const RES_CODE: usize = 1;
+
+    /// Uppertester result payload field.
+    pub const RES_PAYLOAD: Rest = 2..;
 
     /// UtInitialize fields.
     /// HashedId8 indicates the AT certificate digest to be used by the IUT.
@@ -122,6 +135,47 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Packet<T> {
     pub fn set_result(&mut self, rc: Result) {
         let data = self.buffer.as_mut();
         data[field::RES_CODE] = rc as u8;
+    }
+}
+
+/// A read/write wrapper around an Uppertester Result packet.
+#[derive(Debug, PartialEq)]
+pub struct UtResultPacket<T: AsRef<[u8]>> {
+    buffer: T,
+}
+
+impl<T: AsRef<[u8]>> UtResultPacket<T> {
+    /// Create a raw octet buffer with an Uppertester packet structure.
+    pub fn new(buffer: T) -> UtResultPacket<T> {
+        UtResultPacket { buffer }
+    }
+
+    /// Consume the header, returning the underlying buffer.
+    pub fn into_inner(self) -> T {
+        self.buffer
+    }
+}
+
+impl<T: AsRef<[u8]> + AsMut<[u8]>> UtResultPacket<T> {
+    /// Set the result message type field.
+    #[inline]
+    pub fn set_result_message_type(&mut self, value: MessageType) {
+        let data = self.buffer.as_mut();
+        data[field::MSG_TYPE.start] = value.into();
+    }
+
+    /// Set the result code.
+    #[inline]
+    pub fn set_result_code(&mut self, rc: Result) {
+        let data = self.buffer.as_mut();
+        data[field::RES_CODE] = rc as u8;
+    }
+
+    /// Return a mutable pointer to the payload.
+    #[inline]
+    pub fn payload_mut(&mut self) -> &mut [u8] {
+        let data = self.buffer.as_mut();
+        &mut data[field::RES_PAYLOAD]
     }
 }
 

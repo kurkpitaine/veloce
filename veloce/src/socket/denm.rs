@@ -82,9 +82,9 @@ pub enum PollProcessEvent {
 #[allow(unused)] // unused depending on which sockets are enabled
 pub struct PollProcessInfo {
     /// Action Id of the DENM.
-    action_id: ActionId,
+    pub action_id: ActionId,
     /// Full DENM message.
-    msg: denm::DENM,
+    pub msg: denm::DENM,
 }
 
 /// Error returned by [`Socket::trigger`], [`Socket::update`] and [`Socket::cancel`].
@@ -146,9 +146,9 @@ impl core::fmt::Display for ApiError {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ActionId {
     /// Station ID part.
-    station_id: u32,
+    pub station_id: u32,
     /// Sequence number part
-    seq_num: u16,
+    pub seq_num: u16,
 }
 
 impl core::fmt::Display for ActionId {
@@ -271,7 +271,7 @@ impl TerminationType {
 }
 
 /// A handle to an in-progress DENM transmission.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct EventHandle {
     /// Index of the DENM in the message table.
@@ -296,43 +296,43 @@ pub struct EventAwareness {
     /// If relevance zone is circular, should be set to the radius of the circular
     /// awareness area in which the receiving ITS-S may encounter the event. See
     /// [cdd::StandardLength3b] for possible values.
-    distance: Option<cdd::StandardLength3b>,
+    pub distance: Option<cdd::StandardLength3b>,
     /// Awareness traffic direction, ie: the traffic direction along which the
     /// receiving ITS-S may encounter the event. See [cdd::TrafficDirection] for possible values.
-    traffic_direction: Option<cdd::TrafficDirection>,
+    pub traffic_direction: Option<cdd::TrafficDirection>,
 }
 
 /// Parameters regarding a DENM transmission.
 #[derive(Debug, Clone)]
 pub struct EventParameters {
     /// Event detection time. Should be less or equal to now TAI time.
-    detection_time: TAI2004,
+    pub detection_time: TAI2004,
     /// Event validity duration, rounded as `seconds` in the emitted DENM.
     /// Value should be in 0..=86400 seconds range.
     /// If set to [None], validity is set to a 600 secs duration.
-    validity_duration: Option<Duration>,
+    pub validity_duration: Option<Duration>,
     /// Event position.
-    position: cdd::ReferencePosition,
+    pub position: cdd::ReferencePosition,
     /// Event awareness.
-    awareness: EventAwareness,
+    pub awareness: EventAwareness,
     /// Geonetworking destination area.
-    geo_area: GeoArea,
+    pub geo_area: GeoArea,
     /// Repetition parameters. If set to [None], the DENM will be transmitted
     /// exactly one time.
-    repetition: Option<RepetitionParameters>,
+    pub repetition: Option<RepetitionParameters>,
     /// Keep Alive Forwarding. Contains the `transmissionInterval` value,
     /// ie: a retransmission period rounded as `milliseconds` in the emitted DENM.
     /// Should be set to [Some] Duration to enable Keep Alive Forwarding if the
     /// application requires, and in range 1..=10000 milliseconds.
-    keep_alive: Option<Duration>,
+    pub keep_alive: Option<Duration>,
     /// Geonetworking traffic class.
-    traffic_class: GnTrafficClass,
+    pub traffic_class: GnTrafficClass,
     /// Situation container of the DENM. Ignored in case of cancel or negation.
-    situation_container: Option<denm::SituationContainer>,
+    pub situation_container: Option<denm::SituationContainer>,
     /// Location container of the DENM. Ignored in case of cancel or negation.
-    location_container: Option<denm::LocationContainer>,
+    pub location_container: Option<denm::LocationContainer>,
     /// "A la carte" container of the DENM. Ignored in case of cancel or negation.
-    alacarte_container: Option<denm::AlacarteContainer>,
+    pub alacarte_container: Option<denm::AlacarteContainer>,
 }
 
 /// Parameters for DENM retransmission.
@@ -340,10 +340,10 @@ pub struct EventParameters {
 pub struct RepetitionParameters {
     /// Duration of the repetition.
     /// Shall not be greater than [EventParameters::validity_duration].
-    duration: Duration,
+    pub duration: Duration,
     /// Time interval between two consecutive transmissions.
     /// Shall not be greater than [EventParameters::validity_duration].
-    interval: Duration,
+    pub interval: Duration,
 }
 
 /// Maximum number of DENMs in receive buffer.
@@ -1076,6 +1076,16 @@ impl<'a> Socket<'a> {
                 Some(index)
             }
         }
+    }
+
+    #[cfg( feature = "conformance")]
+    /// Resets the DENM socket to an empty fresh state.
+    pub fn reset(&mut self) {
+        self.seq_num = 0;
+        self.orig_msg_table = vec![].into();
+        self.recv_msg_table = vec![].into();
+        self.dispatch_event = None;
+        self.process_event = None;
     }
 }
 

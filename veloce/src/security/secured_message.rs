@@ -4,11 +4,11 @@
 
 use core::fmt;
 
-use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2::{
+use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2::{
     HeaderInfo, Ieee1609Dot2Content, Ieee1609Dot2Data, SignedData, SignedDataPayload,
     ToBeSignedData,
 };
-use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2Base_types::{
+use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2_base_types::{
     EccP256CurvePoint, EcdsaP256Signature, HashAlgorithm, HashedId3, Opaque, Psid,
     SequenceOfHashedId3, Signature, ThreeDLocation, Time64, Uint64, Uint8,
 };
@@ -16,9 +16,9 @@ use veloce_asn1::prelude::rasn::types::FixedOctetString;
 use veloce_asn1::prelude::rasn::{self, error::DecodeError};
 use veloce_asn1::{
     defs::etsi_103097_v211::{
-        etsi_ts103097Module::{EtsiTs103097Data, EtsiTs103097DataSigned},
-        ieee1609Dot2::{self, Certificate as EtsiCertificate},
-        ieee1609Dot2Base_types::HashedId8,
+        etsi_ts103097_module::{EtsiTs103097Data, EtsiTs103097DataSigned},
+        ieee1609_dot2::{self, Certificate as EtsiCertificate},
+        ieee1609_dot2_base_types::HashedId8,
     },
     prelude::rasn::error::EncodeError,
     prelude::rasn::types::OctetString,
@@ -42,18 +42,18 @@ pub enum SignerIdentifier {
     Certificate(EtsiCertificate),
 }
 
-impl TryFrom<&ieee1609Dot2::SignerIdentifier> for SignerIdentifier {
+impl TryFrom<&ieee1609_dot2::SignerIdentifier> for SignerIdentifier {
     type Error = SecuredMessageError;
 
-    fn try_from(signer_id: &ieee1609Dot2::SignerIdentifier) -> Result<Self, Self::Error> {
+    fn try_from(signer_id: &ieee1609_dot2::SignerIdentifier) -> Result<Self, Self::Error> {
         let res = match signer_id {
-            ieee1609Dot2::SignerIdentifier::digest(digest) => {
+            ieee1609_dot2::SignerIdentifier::digest(digest) => {
                 SignerIdentifier::Digest(digest.clone())
             }
-            ieee1609Dot2::SignerIdentifier::certificate(cert_seq) => {
+            ieee1609_dot2::SignerIdentifier::certificate(cert_seq) => {
                 SignerIdentifier::Certificate(cert_seq.0[0].clone())
             }
-            ieee1609Dot2::SignerIdentifier::R_self(_) => {
+            ieee1609_dot2::SignerIdentifier::R_self(_) => {
                 return Err(SecuredMessageError::SelfSigned)
             }
             _ => return Err(SecuredMessageError::UnsupportedSignerIdentifier),
@@ -63,13 +63,13 @@ impl TryFrom<&ieee1609Dot2::SignerIdentifier> for SignerIdentifier {
     }
 }
 
-impl Into<ieee1609Dot2::SignerIdentifier> for SignerIdentifier {
-    fn into(self) -> ieee1609Dot2::SignerIdentifier {
+impl Into<ieee1609_dot2::SignerIdentifier> for SignerIdentifier {
+    fn into(self) -> ieee1609_dot2::SignerIdentifier {
         match self {
-            SignerIdentifier::Digest(digest) => ieee1609Dot2::SignerIdentifier::digest(digest),
+            SignerIdentifier::Digest(digest) => ieee1609_dot2::SignerIdentifier::digest(digest),
             SignerIdentifier::Certificate(cert) => {
-                let seq = ieee1609Dot2::SequenceOfCertificate(vec![cert]);
-                ieee1609Dot2::SignerIdentifier::certificate(seq)
+                let seq = ieee1609_dot2::SequenceOfCertificate(vec![cert]);
+                ieee1609_dot2::SignerIdentifier::certificate(seq)
             }
         }
     }
@@ -92,7 +92,7 @@ pub enum SecuredMessageError {
     MalformedCertificate,
     /// No generation time value in message.
     NoGenerationTime,
-    /// Invalid number of certificates. [ieee1609Dot2::SignerIdentifier::certificate] shall contain
+    /// Invalid number of certificates. [ieee1609_dot2::SignerIdentifier::certificate] shall contain
     /// exactly one certificate.
     InvalidNumberOfCerts,
     /// Message is not signed.
@@ -105,9 +105,9 @@ pub enum SecuredMessageError {
     UnsupportedSignerIdentifier,
     /// AID format is not supported.
     UnsupportedAIDFormat,
-    /// Message does not contain data. [ieee1609Dot2::SignedDataPayload::data] should be present.
+    /// Message does not contain data. [ieee1609_dot2::SignedDataPayload::data] should be present.
     NoData,
-    /// Message data is of wrong type. Should be [ieee1609Dot2::Ieee1609Dot2Content::unsecuredData].
+    /// Message data is of wrong type. Should be [ieee1609_dot2::Ieee1609Dot2Content::unsecuredData].
     DataContent,
 }
 
@@ -445,7 +445,7 @@ impl SecuredMessage {
     /// the validation code for custom parameterized types.
     #[inline]
     fn verify_etsi_data_constraints(data: &EtsiTs103097Data) -> SecuredMessageResult<()> {
-        use ieee1609Dot2::{RecipientInfo, SignerIdentifier};
+        use ieee1609_dot2::{RecipientInfo, SignerIdentifier};
         if data.0.protocol_version.0 != 3 {
             return Err(SecuredMessageError::UnsupportedProtocolVersion);
         }

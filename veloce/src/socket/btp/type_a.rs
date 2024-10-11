@@ -220,21 +220,21 @@ impl<'a> Socket<'a> {
             return Err(SendError::Unaddressable);
         }
 
-        let segment_len = size + wire::BTP_B_HEADER_LEN;
+        let segment_len = size + wire::BTP_A_HEADER_LEN;
         if segment_len > config::GN_MAX_SDU_SIZE {
             return Err(SendError::SizeTooLong);
         }
         if req.max_lifetime > config::GN_MAX_PACKET_LIFETIME {
             return Err(SendError::LifetimeTooHigh);
         }
-        match req.transport {
+        /* match req.transport {
             Transport::Anycast(a) | Transport::Broadcast(a)
                 if a.size() > Area::new::<square_kilometer>(config::GN_MAX_GEO_AREA_SIZE) =>
             {
                 return Err(SendError::AreaTooBig)
             }
             _ => {}
-        };
+        }; */
 
         let mut packet_buf = self
             .tx_buffer
@@ -257,7 +257,7 @@ impl<'a> Socket<'a> {
             meta.endpoint,
             size
         );
-        Ok(&mut packet_buf[wire::BTP_B_HEADER_LEN..])
+        Ok(&mut packet_buf[wire::BTP_A_HEADER_LEN..])
     }
 
     /// Enqueue a packet to be send and pass the buffer to the provided closure.
@@ -281,7 +281,7 @@ impl<'a> Socket<'a> {
             return Err(SendError::Unaddressable);
         }
 
-        if max_size + wire::BTP_B_HEADER_LEN > config::GN_MAX_SDU_SIZE {
+        if max_size + wire::BTP_A_HEADER_LEN > config::GN_MAX_SDU_SIZE {
             return Err(SendError::SizeTooLong);
         }
         if req.max_lifetime > config::GN_MAX_PACKET_LIFETIME {
@@ -305,7 +305,7 @@ impl<'a> Socket<'a> {
                 };
 
                 btp_repr.emit(&mut BtpAHeader::new_unchecked(&mut buf));
-                f(&mut buf[wire::BTP_B_HEADER_LEN..])
+                f(&mut buf[wire::BTP_A_HEADER_LEN..])
             })
             .map_err(|_| SendError::BufferFull)?;
 

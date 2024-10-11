@@ -1,4 +1,4 @@
-use veloce_asn1::{defs::etsi_103097_v211::etsi_ts103097Module, prelude::rasn};
+use veloce_asn1::{defs::etsi_103097_v211::etsi_ts103097_module, prelude::rasn};
 
 use crate::{
     security::{
@@ -23,29 +23,29 @@ pub fn openssl_backend() -> OpensslBackend {
     OpensslBackend::new(config).unwrap()
 }
 
-pub fn load_root_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_root_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     let input_root = include_bytes!("assets/RCA.cert");
-    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_root).unwrap()
+    rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_root).unwrap()
 }
 
-pub fn load_ea_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_ea_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     let input_ea = include_bytes!("assets/EA.cert");
-    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_ea).unwrap()
+    rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_ea).unwrap()
 }
 
-pub fn load_aa_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_aa_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     let input_aa = include_bytes!("assets/AA.cert");
-    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_aa).unwrap()
+    rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_aa).unwrap()
 }
 
-pub fn load_at_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_at_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     let input_at = include_bytes!("assets/AT.cert");
-    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_at).unwrap()
+    rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_at).unwrap()
 }
 
-pub fn load_tlm_cert() -> etsi_ts103097Module::EtsiTs103097Certificate {
+pub fn load_tlm_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     let input_tlm = include_bytes!("assets/TLM.cert");
-    rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_tlm).unwrap()
+    rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_tlm).unwrap()
 }
 
 pub fn valid_timestamp() -> Instant {

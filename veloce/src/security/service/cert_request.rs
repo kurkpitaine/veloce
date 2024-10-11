@@ -1,6 +1,6 @@
 use core::fmt;
 
-use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2::Certificate as EtsiCertificate;
+use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2::Certificate as EtsiCertificate;
 
 use crate::{
     security::certificate::{

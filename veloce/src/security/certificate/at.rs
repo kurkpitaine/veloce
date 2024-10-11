@@ -1,5 +1,5 @@
 use veloce_asn1::{
-    defs::etsi_103097_v211::ieee1609Dot2::{
+    defs::etsi_103097_v211::ieee1609_dot2::{
         self, Certificate as EtsiCertificate, IssuerIdentifier,
     },
     prelude::rasn,
@@ -54,7 +54,7 @@ impl CertificateTrait for AuthorizationTicketCertificate {
     }
 
     fn verify_constraints(cert: &EtsiCertificate) -> CertificateResult<()> {
-        use ieee1609Dot2::CertificateId;
+        use ieee1609_dot2::CertificateId;
 
         // The component issuer shall be set to sha256AndDigest or sha384AndDigest as defined in IEEE
         // Std 1609.2 clause 6.4.7.

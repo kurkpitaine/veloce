@@ -2,8 +2,8 @@ use core::fmt;
 
 use veloce_asn1::{
     defs::etsi_103097_v211::{
-        ieee1609Dot2::{self, Certificate as EtsiCertificate, VerificationKeyIndicator},
-        ieee1609Dot2Base_types::{
+        ieee1609_dot2::{self, Certificate as EtsiCertificate, VerificationKeyIndicator},
+        ieee1609_dot2_base_types::{
             self, EccP256CurvePoint, EccP384CurvePoint, PublicVerificationKey,
         },
     },
@@ -199,7 +199,7 @@ impl Certificate {
     /// Verifies the Asn.1 constraints on an EtsiTs103097Certificate.
     #[inline]
     pub fn verify_etsi_constraints(cert: &EtsiCertificate) -> CertificateResult<()> {
-        use ieee1609Dot2::CertificateId;
+        use ieee1609_dot2::CertificateId;
 
         let tbs = &cert.0.to_be_signed;
 
@@ -240,7 +240,7 @@ impl Certificate {
     /// Verifies the Asn.1 constraints on an IEEE 1609.2 Certificate.
     #[inline]
     pub fn verify_ieee_constraints(cert: &EtsiCertificate) -> CertificateResult<()> {
-        use ieee1609Dot2::CertificateType;
+        use ieee1609_dot2::CertificateType;
 
         match cert.0.r_type {
             CertificateType::explicit => {
@@ -330,7 +330,7 @@ pub trait CertificateTrait {
 
     /// Returns the temporal validity period of the certificate.
     fn validity_period(&self) -> ValidityPeriod {
-        use ieee1609Dot2Base_types::Duration as IeeeDuration;
+        use ieee1609_dot2_base_types::Duration as IeeeDuration;
         let tbs = &self.inner().0.to_be_signed;
 
         // Time in certificate is TAI seconds.
@@ -443,7 +443,7 @@ pub trait ExplicitCertificate: CertificateTrait {
 
     /// Get the issue permissions of the certificate.
     fn issue_permissions(&self) -> CertificateResult<Vec<Permission>> {
-        use ieee1609Dot2::SubjectPermissions;
+        use ieee1609_dot2::SubjectPermissions;
 
         let inner = self.inner();
         let mut permissions = Vec::new();

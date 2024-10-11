@@ -35,7 +35,7 @@ use veloce_asn1::{
 };
 
 #[cfg(feature = "proto-security")]
-use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2Base_types::ThreeDLocation;
+use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2_base_types::ThreeDLocation;
 
 use super::wgs::{Geocentric, GeocentricPosition, LocalCartesian};
 
@@ -388,7 +388,7 @@ impl Position {
     #[cfg(feature = "proto-security")]
     /// Get the [Position] as a [ThreeDLocation] for use in security..
     pub fn as_3d_location(&self) -> ThreeDLocation {
-        use veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2Base_types::{
+        use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2_base_types::{
             Elevation, Latitude, Longitude, NinetyDegreeInt, OneEightyDegreeInt, ThreeDLocation,
             Uint16,
         };

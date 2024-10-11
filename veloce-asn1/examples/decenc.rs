@@ -1,5 +1,5 @@
 use veloce_asn1::defs::etsi_102941_v221::etsi_ts102941_messages_ca::EtsiTs102941Data;
-use veloce_asn1::defs::etsi_103097_v211::etsi_ts103097Module;
+use veloce_asn1::defs::etsi_103097_v211::etsi_ts103097_module;
 use veloce_asn1::prelude::*;
 
 fn main() {
@@ -37,7 +37,7 @@ fn main() {
         0xed, 0x75, 0x6a, 0xd9, 0xd9,
     ];
 
-    match rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Data>(input_eu_ectl) {
+    match rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Data>(input_eu_ectl) {
         Ok(d) => {
             println!("EU ECTL: {:?}\n", d);
 
@@ -58,14 +58,14 @@ fn main() {
         Err(e) => println!("Cannot decode EU ECTL: {}\n", e),
     }
 
-    match rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Data>(input_vw_ectl) {
+    match rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Data>(input_vw_ectl) {
         Ok(d) => {
             println!("VW ECTL: {:?}\n", d);
 
             match &d.0.content {
-                veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2::Ieee1609Dot2Content::signedData(sd) => {
+                veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2::Ieee1609Dot2Content::signedData(sd) => {
                     match &sd.tbs_data.payload.data.as_ref().unwrap().content {
-                        veloce_asn1::defs::etsi_103097_v211::ieee1609Dot2::Ieee1609Dot2Content::unsecuredData(ud) => {
+                        veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2::Ieee1609Dot2Content::unsecuredData(ud) => {
                             match rasn::coer::decode::<EtsiTs102941Data>(&ud.0) {
                                 Ok(ed) => {
                                     println!("VW ECTL TS 102941 data: {}\n", rasn::jer::encode(&ed).unwrap());
@@ -98,7 +98,7 @@ fn main() {
         Err(e) => println!("Cannot decode VW ECTL: {}\n", e),
     }
 
-    match rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097Certificate>(input_vw_tlm) {
+    match rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_vw_tlm) {
         Ok(d) => {
             println!("VW TLM: {:?}\n", d);
 
@@ -119,7 +119,7 @@ fn main() {
         Err(e) => println!("Cannot decode VW TLM: {}\n", e),
     }
 
-    match rasn::coer::decode::<etsi_ts103097Module::EtsiTs103097DataSigned>(&input_signed_mapem) {
+    match rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097DataSigned>(&input_signed_mapem) {
         Ok(d) => {
             println!("Signed MAPEM: {:?}\n", d);
 

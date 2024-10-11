@@ -1,5 +1,6 @@
 use std::io;
 use std::net::UdpSocket;
+use std::rc::Rc;
 
 use log::{debug, info, trace};
 
@@ -32,7 +33,7 @@ fn main() {
         .unwrap()
         .expect("Failed to get device mac address");
 
-    let udp_socket = UdpSocket::bind("0.0.0.0:29000").expect("Failed to bind to address");
+    let udp_socket = Rc::new(UdpSocket::bind("0.0.0.0:29000").expect("Failed to bind to address"));
     udp_socket
         .set_nonblocking(true)
         .expect("Failed to set UDP socket as non-blocking");
@@ -63,12 +64,16 @@ fn main() {
         PacketBuffer::new(vec![socket::geonet::TxPacketMetadata::EMPTY], vec![0; 4096]);
     let gn_socket = socket::geonet::Socket::new(gn_rx_buffer, gn_tx_buffer);
 
-    // Add it to a SocketSet
+    // Create denm socket
+    let denm_socket = socket::denm::Socket::new(vec![], vec![]);
+
+    // Add them to a SocketSet
     let mut sockets = SocketSet::new(vec![]);
     let gn_handle: veloce::iface::SocketHandle = sockets.add(gn_socket);
+    let denm_handle: veloce::iface::SocketHandle = sockets.add(denm_socket);
 
     // Configure UpperTester
-    let mut ut = UpperTester::new(router.address(), gn_handle);
+    let mut ut = UpperTester::new(router.address(), gn_handle, denm_handle);
 
     loop {
         // Update timestamp.
@@ -97,7 +102,7 @@ fn main() {
             Err(e) => panic!("Failed to read data in UDP socket: {e}"),
         };
 
-        trace!("poll");
+       // trace!("poll");
         iface.poll(&mut router, &mut device, &mut sockets);
 
         let gn_socket = sockets.get_mut::<socket::geonet::Socket>(gn_handle);
@@ -109,7 +114,13 @@ fn main() {
             }
         }
 
-        trace!("wait_many");
+        let denm_socket = sockets.get_mut::<socket::denm::Socket>(denm_handle);
+        if let Some((dst, data)) = ut.ut_denm_event(denm_socket.poll(timestamp)) {
+            udp_socket.send_to(&data, dst).unwrap();
+            debug!("Sent {} bytes to {}", data.len(), dst);
+        }
+
+       // trace!("wait_many");
         wait_many(&fds, iface.poll_delay(timestamp, &sockets)).expect("wait error");
     }
 }

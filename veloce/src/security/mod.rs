@@ -3,8 +3,8 @@ use core::fmt;
 use byteorder::{ByteOrder, NetworkEndian};
 use veloce_asn1::{
     defs::etsi_103097_v211::{
-        ieee1609Dot2::IssuerIdentifier,
-        ieee1609Dot2Base_types::{
+        ieee1609_dot2::IssuerIdentifier,
+        ieee1609_dot2_base_types::{
             self, BasePublicEncryptionKey, EccP256CurvePoint, EccP256CurvePointUncompressedP256,
             EccP384CurvePoint, EccP384CurvePointUncompressedP384,
             HashAlgorithm as EtsiHashAlgorithm, PublicVerificationKey,
@@ -148,23 +148,23 @@ impl fmt::Display for HashedId8 {
     }
 }
 
-impl From<&ieee1609Dot2Base_types::HashedId8> for HashedId8 {
-    fn from(value: &ieee1609Dot2Base_types::HashedId8) -> Self {
+impl From<&ieee1609_dot2_base_types::HashedId8> for HashedId8 {
+    fn from(value: &ieee1609_dot2_base_types::HashedId8) -> Self {
         Self::from_bytes(value.0.as_slice())
     }
 }
 
-impl Into<ieee1609Dot2Base_types::HashedId8> for HashedId8 {
-    fn into(self) -> ieee1609Dot2Base_types::HashedId8 {
+impl Into<ieee1609_dot2_base_types::HashedId8> for HashedId8 {
+    fn into(self) -> ieee1609_dot2_base_types::HashedId8 {
         let hash = self.as_bytes();
-        ieee1609Dot2Base_types::HashedId8(FixedOctetString::<8>::new(hash))
+        ieee1609_dot2_base_types::HashedId8(FixedOctetString::<8>::new(hash))
     }
 }
 
-impl Into<ieee1609Dot2Base_types::HashedId3> for HashedId8 {
-    fn into(self) -> ieee1609Dot2Base_types::HashedId3 {
+impl Into<ieee1609_dot2_base_types::HashedId3> for HashedId8 {
+    fn into(self) -> ieee1609_dot2_base_types::HashedId3 {
         let hash = self.as_bytes();
-        ieee1609Dot2Base_types::HashedId3(FixedOctetString::<3>::new([hash[5], hash[6], hash[7]]))
+        ieee1609_dot2_base_types::HashedId3(FixedOctetString::<3>::new([hash[5], hash[6], hash[7]]))
     }
 }
 

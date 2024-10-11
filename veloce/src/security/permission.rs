@@ -1,7 +1,7 @@
 use core::fmt;
 
 use veloce_asn1::{
-    defs::etsi_103097_v211::ieee1609Dot2Base_types::{
+    defs::etsi_103097_v211::ieee1609_dot2_base_types::{
         BitmapSsp, BitmapSspRange, PsidSsp, PsidSspRange, ServiceSpecificPermissions, SspRange,
     },
     prelude::rasn::types::Integer,
@@ -61,17 +61,11 @@ impl TryFrom<&Integer> for AID {
     type Error = AIDUnsupportedFormatError;
 
     fn try_from(value: &Integer) -> Result<Self, Self::Error> {
-        if value < &Integer::from(0) {
-            return Err(AIDUnsupportedFormatError);
-        }
-
-        let (_, val) = value.to_u64_digits();
-
-        if val.len() != 1 {
-            return Err(AIDUnsupportedFormatError);
-        }
-
-        Ok(AID::from(val[0]))
+        use veloce_asn1::prelude::num_traits::ToPrimitive;
+        value
+            .to_u64()
+            .ok_or(AIDUnsupportedFormatError)
+            .map(|v| AID::from(v))
     }
 }
 
