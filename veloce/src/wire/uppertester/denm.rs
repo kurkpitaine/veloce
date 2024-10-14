@@ -109,35 +109,35 @@ impl<T: AsRef<[u8]>> UtDenmTrigger<T> {
     #[inline]
     pub fn has_repetition_interval(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::TRIG_FLAGS] & 0x40 == 1
+        data[field::TRIG_FLAGS] & 0x02 != 0
     }
 
     /// Query wether the transmission interval value has to be considered or not.
     #[inline]
     pub fn has_transmission_interval(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::TRIG_FLAGS] & 0x20 == 1
+        data[field::TRIG_FLAGS] & 0x04 != 0
     }
 
     /// Query wether the relevance traffic direction value has to be considered or not.
     #[inline]
     pub fn has_relevance_traffic_direction(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::TRIG_FLAGS] & 0x08 == 1
+        data[field::TRIG_FLAGS] & 0x10 != 0
     }
 
     /// Query wether the repetition duration value has to be considered or not.
     #[inline]
     pub fn has_repetition_duration(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::TRIG_FLAGS] & 0x02 == 1
+        data[field::TRIG_FLAGS] & 0x40 != 0
     }
 
     /// Query wether the validity duration value has to be considered or not.
     #[inline]
     pub fn has_validity_duration(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::TRIG_FLAGS] & 0x01 == 1
+        data[field::TRIG_FLAGS] & 0x80 != 0
     }
 
     /// Return the detection time field.
@@ -285,49 +285,49 @@ impl<T: AsRef<[u8]>> UtDenmUpdate<T> {
     #[inline]
     pub fn has_repetition_interval(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::UPD_FLAGS] & 0x40 == 1
+        data[field::UPD_FLAGS] & 0x02 != 0
     }
 
     /// Query wether the transmission interval value has to be considered or not.
     #[inline]
     pub fn has_transmission_interval(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::UPD_FLAGS] & 0x20 == 1
+        data[field::UPD_FLAGS] & 0x04 != 0
     }
 
     /// Query wether the traffic class value has to be considered or not.
     #[inline]
     pub fn has_traffic_class(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::UPD_FLAGS] & 0x10 == 1
+        data[field::UPD_FLAGS] & 0x08 != 0
     }
 
     /// Query wether the relevance traffic direction value has to be considered or not.
     #[inline]
     pub fn has_relevance_traffic_direction(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::UPD_FLAGS] & 0x08 == 1
+        data[field::UPD_FLAGS] & 0x10 != 0
     }
 
     /// Query wether the relevance distance value has to be considered or not.
     #[inline]
     pub fn has_relevance_distance(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::UPD_FLAGS] & 0x04 == 1
+        data[field::UPD_FLAGS] & 0x20 != 0
     }
 
     /// Query wether the information quality/cause code/sub-cause code values has to be considered or not.
     #[inline]
     pub fn has_info_quality_cause_code_sub_cause_code(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::UPD_FLAGS] & 0x02 == 1
+        data[field::UPD_FLAGS] & 0x40 != 0
     }
 
     /// Query wether the validity duration value has to be considered or not.
     #[inline]
     pub fn has_validity_duration(&self) -> bool {
         let data = self.buffer.as_ref();
-        data[field::UPD_FLAGS] & 0x01 == 1
+        data[field::UPD_FLAGS] & 0x80 != 0
     }
 
     /// Return the station ID field.

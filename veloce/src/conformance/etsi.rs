@@ -7,7 +7,7 @@ use crate::{
     rand::Rand,
     socket::{
         self,
-        denm::{EventHandle, EventParameters},
+        denm::{ActionId, EventHandle, EventParameters},
     },
     time::{Duration, Instant, TAI2004},
     types::{tenth_of_microdegree, Distance, Pseudonym},
@@ -471,12 +471,18 @@ impl State {
         buffer: &[u8],
     ) -> Result<EventHandle> {
         let socket = sockets.get_mut::<socket::denm::Socket>(self.denm_socket_handle);
-
         let ut_denm_trig = UtDenmTrigger::new(buffer);
         let pos = router.geo_position();
 
-        trace!("detection time: {}", ut_denm_trig.detection_time());
-        trace!("validity duration: {}", ut_denm_trig.validity_duration());
+        let pp = cdd::PathPoint::new(
+            cdd::DeltaReferencePosition::new(
+                cdd::DeltaLatitude(0),
+                cdd::DeltaLongitude(0),
+                cdd::DeltaAltitude(0),
+            ),
+            None,
+        );
+        let traces = cdd::Traces(vec![cdd::Path(vec![pp])]);
 
         let event = socket::denm::EventParameters {
             detection_time: ut_denm_trig.detection_time(),
@@ -510,7 +516,7 @@ impl State {
                                 ut_denm_trig.relevance_traffic_direction(),
                             )
                             .map_err(|_| {
-                                error!("Unsupported relevance distance value");
+                                error!("Unsupported relevance traffic direction value");
                             })?,
                         )
                     } else {
@@ -560,7 +566,7 @@ impl State {
                     None,
                 ))
             },
-            location_container: None,
+            location_container: Some(denm::LocationContainer::new(None, None, traces, None, None)),
             alacarte_container: None, // Ignore alacarte container as the test spec is not clear about it.
         };
 
@@ -584,9 +590,7 @@ impl State {
         buffer: &[u8],
     ) -> Result<EventHandle> {
         let socket = sockets.get_mut::<socket::denm::Socket>(self.denm_socket_handle);
-
         let ut_denm_upd = UtDenmUpdate::new(buffer);
-        let pos = router.geo_position();
 
         // Look for the DENM handle.
         let (evt_hdl, evt_params) = self
@@ -604,86 +608,77 @@ impl State {
                 );
             })?;
 
-        let event = socket::denm::EventParameters {
+        let mut event = socket::denm::EventParameters {
             detection_time: ut_denm_upd.detection_time(),
-            validity_duration: ut_denm_upd
-                .has_validity_duration()
-                .then(|| ut_denm_upd.validity_duration()),
-            position: cdd::ReferencePosition {
-                latitude: cdd::Latitude(pos.latitude.get::<tenth_of_microdegree>() as i32),
-                longitude: cdd::Longitude(pos.longitude.get::<tenth_of_microdegree>() as i32),
-                position_confidence_ellipse: cdd::PosConfidenceEllipse {
-                    semi_major_confidence: cdd::SemiAxisLength(4095),
-                    semi_minor_confidence: cdd::SemiAxisLength(4095),
-                    semi_major_orientation: cdd::HeadingValue(3601),
+            ..evt_params.clone()
+        };
+
+        if ut_denm_upd.has_validity_duration() {
+            event.validity_duration = Some(ut_denm_upd.validity_duration());
+        }
+
+        if ut_denm_upd.has_info_quality_cause_code_sub_cause_code() {
+            event.situation_container = event.situation_container.map_or_else(
+                || {
+                    Some(denm::SituationContainer::new(
+                        cdd::InformationQuality(ut_denm_upd.information_quality()),
+                        cdd::CauseCodeV2::new(raw_cc_and_scc_to_enum_variant(
+                            ut_denm_upd.cause_code(),
+                            ut_denm_upd.sub_cause_code(),
+                        )),
+                        None,
+                        None,
+                        None,
+                    ))
                 },
-                altitude: cdd::Altitude {
-                    altitude_value: cdd::AltitudeValue(800001),
-                    altitude_confidence: cdd::AltitudeConfidence::unavailable,
-                },
-            },
-            awareness: socket::denm::EventAwareness {
-                distance: Some(
-                    raw_relevance_distance_to_enum_variant(ut_denm_upd.relevance_distance())
-                        .map_err(|_| {
-                            error!("Unsupported relevance distance value");
-                        })?,
-                ),
-                traffic_direction: {
-                    if ut_denm_upd.has_relevance_traffic_direction() {
-                        Some(
-                            raw_relevance_traffic_direction_to_enum_variant(
-                                ut_denm_upd.relevance_traffic_direction(),
-                            )
-                            .map_err(|_| {
-                                error!("Unsupported relevance distance value");
-                            })?,
-                        )
-                    } else {
-                        None
-                    }
-                },
-            },
-            geo_area: GeoArea {
-                shape: Shape::Circle(Circle {
-                    radius: Distance::new::<meter>(100.0),
-                }),
-                position: pos,
-                angle: Angle::new::<degree>(0.0),
-            },
-            repetition: {
-                if ut_denm_upd.has_repetition_interval() {
-                    Some(socket::denm::RepetitionParameters {
-                        duration: Duration::ZERO,
-                        interval: if ut_denm_upd.has_repetition_interval() {
-                            ut_denm_upd.repetition_interval()
-                        } else {
-                            Duration::ZERO
-                        },
-                    })
-                } else {
-                    None
-                }
-            },
-            keep_alive: ut_denm_upd
-                .has_transmission_interval()
-                .then(|| ut_denm_upd.transmission_interval()),
-            traffic_class: GnTrafficClass(1),
-            situation_container: {
-                Some(denm::SituationContainer::new(
-                    cdd::InformationQuality(ut_denm_upd.information_quality()),
-                    cdd::CauseCodeV2::new(raw_cc_and_scc_to_enum_variant(
+                |mut sc| {
+                    sc.information_quality =
+                        cdd::InformationQuality(ut_denm_upd.information_quality());
+                    sc.event_type = cdd::CauseCodeV2::new(raw_cc_and_scc_to_enum_variant(
                         ut_denm_upd.cause_code(),
                         ut_denm_upd.sub_cause_code(),
-                    )),
-                    None,
-                    None,
-                    None,
-                ))
-            },
-            location_container: None,
-            alacarte_container: None, // Ignore alacarte container as the test spec is not clear about it.
-        };
+                    ));
+
+                    Some(sc)
+                },
+            );
+        }
+
+        if ut_denm_upd.has_relevance_distance() {
+            event.awareness.distance = Some(
+                raw_relevance_distance_to_enum_variant(ut_denm_upd.relevance_distance()).map_err(
+                    |_| {
+                        error!("Unsupported relevance distance value");
+                    },
+                )?,
+            );
+        }
+
+        if ut_denm_upd.has_relevance_traffic_direction() {
+            event.awareness.traffic_direction = Some(
+                raw_relevance_traffic_direction_to_enum_variant(
+                    ut_denm_upd.relevance_traffic_direction(),
+                )
+                .map_err(|_| {
+                    error!("Unsupported relevance traffic direction value");
+                })?,
+            );
+        }
+
+        if ut_denm_upd.has_traffic_class() {
+            debug!("Traffic class flag is set but value does not exists in UT packet");
+        }
+
+        if ut_denm_upd.has_transmission_interval() {
+            event.keep_alive = Some(ut_denm_upd.transmission_interval());
+        }
+
+        if ut_denm_upd.has_repetition_interval() {
+            event.repetition = Some(socket::denm::RepetitionParameters {
+                duration: ut_denm_upd.repetition_interval(),
+                interval: ut_denm_upd.repetition_interval(),
+            });
+        }
 
         socket
             .update(router, *evt_hdl, event.clone())
@@ -699,7 +694,7 @@ impl State {
 
     fn ut_denm_terminate(
         &mut self,
-        _timestamp: Instant,
+        timestamp: Instant,
         sockets: &mut SocketSet<'_>,
         router: &mut GnCore,
         buffer: &[u8],
@@ -709,32 +704,89 @@ impl State {
         let ut_denm_upd = UtDenmTermination::new(buffer);
 
         // Look for the DENM handle.
-        let (evt_hdl, evt_params) = self
+        let evt_opt = self
             .denm_handles
             .iter()
             .find(|(h, _)| {
                 h.action_id().station_id == ut_denm_upd.station_id()
                     && h.action_id().seq_num == ut_denm_upd.sequence_number()
             })
-            .map(|(h, p)| (*h, p.clone()))
-            .ok_or_else(|| {
-                error!(
-                    "Cannot find DENM {}-{} handle",
-                    ut_denm_upd.station_id(),
-                    ut_denm_upd.sequence_number()
-                );
-            })?;
+            .map(|(h, p)| (*h, p.clone()));
 
-        socket
-            .cancel(router, evt_hdl, evt_params.clone())
-            .map(|_| {
-                self.denm_handles.remove(&evt_hdl);
-                ()
-            })
-            .map_err(|e| {
-                error!("Failed to cancel DENM: {}", e);
-                ()
-            })
+        if let Some((evt_hdl, evt_params)) = evt_opt {
+            trace!(
+                "Cancelling DENM {}-{}",
+                evt_hdl.action_id().station_id,
+                evt_hdl.action_id().seq_num
+            );
+
+            socket
+                .cancel(router, evt_hdl, evt_params.clone())
+                .map(|_| {
+                    self.denm_handles.remove(&evt_hdl);
+                    ()
+                })
+                .map_err(|e| {
+                    error!("Failed to cancel DENM: {}", e);
+                    ()
+                })
+        } else {
+            trace!(
+                "Negating DENM {}-{}",
+                ut_denm_upd.station_id(),
+                ut_denm_upd.sequence_number()
+            );
+
+            let pos = router.geo_position();
+
+            let action_id = ActionId {
+                station_id: ut_denm_upd.station_id(),
+                seq_num: ut_denm_upd.sequence_number(),
+            };
+
+            let event = EventParameters {
+                detection_time: TAI2004::from_unix_instant(timestamp),
+                validity_duration: None,
+                position: cdd::ReferencePosition {
+                    latitude: cdd::Latitude(pos.latitude.get::<tenth_of_microdegree>() as i32),
+                    longitude: cdd::Longitude(pos.longitude.get::<tenth_of_microdegree>() as i32),
+                    position_confidence_ellipse: cdd::PosConfidenceEllipse {
+                        semi_major_confidence: cdd::SemiAxisLength(4095),
+                        semi_minor_confidence: cdd::SemiAxisLength(4095),
+                        semi_major_orientation: cdd::HeadingValue(3601),
+                    },
+                    altitude: cdd::Altitude {
+                        altitude_value: cdd::AltitudeValue(800001),
+                        altitude_confidence: cdd::AltitudeConfidence::unavailable,
+                    },
+                },
+                awareness: socket::denm::EventAwareness {
+                    distance: None,
+                    traffic_direction: None,
+                },
+                geo_area: GeoArea {
+                    shape: Shape::Circle(Circle {
+                        radius: Distance::new::<meter>(100.0),
+                    }),
+                    position: pos,
+                    angle: Angle::new::<degree>(0.0),
+                },
+                repetition: None,
+                keep_alive: None,
+                traffic_class: GnTrafficClass(1),
+                situation_container: None,
+                location_container: None,
+                alacarte_container: None,
+            };
+
+            socket
+                .negate(router, action_id, event)
+                .map(|_| ())
+                .map_err(|e| {
+                    error!("Failed to negate DENM: {}", e);
+                    ()
+                })
+        }
     }
 }
 

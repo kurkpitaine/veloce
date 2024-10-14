@@ -43,6 +43,10 @@ pub use self::tracer::Tracer;
     any(target_os = "linux", target_os = "android")
 ))]
 pub use self::tuntap_interface::TunTapInterface;
+#[cfg(feature = "phy-udp")]
+pub mod udp;
+#[cfg(feature = "phy-udp")]
+pub use self::udp::UdpSocket;
 
 /// Metadata associated to a packet.
 ///

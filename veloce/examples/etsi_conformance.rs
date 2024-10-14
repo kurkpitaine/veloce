@@ -7,31 +7,37 @@ use log::{debug, info, trace};
 use veloce::conformance::etsi::State as UpperTester;
 use veloce::iface::{Config, Interface, SocketSet};
 use veloce::network::{GnAddrConfigMode, GnCore, GnCoreGonfig};
-use veloce::phy::{wait_many, Medium, RawSocket};
+use veloce::phy::{self, wait_many, Medium};
 use veloce::socket;
 use veloce::storage::PacketBuffer;
 use veloce::time::Instant;
-use veloce::types::Pseudonym;
+use veloce::types::{degree, Latitude, Longitude, Pseudonym};
 use veloce::utils;
 use veloce::wire::{EthernetAddress, StationType};
 
 use std::os::unix::io::AsRawFd;
 
 use clap::Parser;
+use thread_priority::*;
 
 #[derive(Parser, Default, Debug)]
 struct Arguments {
-    dev: String,
+    // dev: String,
+    dest: String,
     log_level: String,
 }
 
 fn main() {
+    assert!(set_current_thread_priority(ThreadPriority::Max).is_ok());
+
     let args = Arguments::parse();
     utils::setup_logging(args.log_level.as_str());
 
-    let ll_addr = mac_address::mac_address_by_name(args.dev.as_str())
+    /* let ll_addr = mac_address::mac_address_by_name(args.dev.as_str())
         .unwrap()
-        .expect("Failed to get device mac address");
+        .expect("Failed to get device mac address"); */
+
+    let ll_addr = EthernetAddress([0x00, 0x0c, 0x6c, 0x0d, 0x14, 0x70]);
 
     let udp_socket = Rc::new(UdpSocket::bind("0.0.0.0:29000").expect("Failed to bind to address"));
     udp_socket
@@ -42,8 +48,9 @@ fn main() {
     info!("Uppertester server listening on 0.0.0.0:29000");
 
     // Configure geonetworking device
-    let ll_addr = EthernetAddress(ll_addr.bytes());
-    let mut device = RawSocket::new(args.dev.as_str(), Medium::Ethernet).unwrap();
+    // let ll_addr = EthernetAddress(ll_addr.bytes());
+    // let mut device = RawSocket::new(args.dev.as_str(), Medium::Ethernet).unwrap();
+    let mut device= phy::udp::UdpSocket::new("0.0.0.0:29270", args.dest.as_str(), Medium::Ethernet).unwrap();
     let dev_fd = device.as_raw_fd();
     let fds = vec![udp_fd, dev_fd];
 
@@ -52,9 +59,13 @@ fn main() {
     let mut iface = Interface::new(config, &mut device);
 
     // Build GnCore
-    let mut router_config = GnCoreGonfig::new(StationType::RoadSideUnit, Pseudonym(0xabcd));
+    let mut router_config = GnCoreGonfig::new(StationType::PassengerCar, Pseudonym(0xabcd));
     router_config.random_seed = 0xfadecafedeadbeef;
     router_config.addr_config_mode = GnAddrConfigMode::Managed(ll_addr);
+    router_config.latitude = Latitude::new::<degree>(48.276463);
+    router_config.longitude = Longitude::new::<degree>(-3.551840);
+
+    router_config.position_accurate = true;
     let mut router = GnCore::new(router_config, Instant::now());
 
     // Create gn socket

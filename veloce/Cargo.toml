@@ -25,6 +25,7 @@ approx = "0.5"
 mac_address = "1.1"
 clap = { version = "4.5", features = ["derive"] }
 tempfile = "3.12"
+thread-priority = "1.1.0"
 
 [features]
 std = ["managed/std"]
@@ -37,6 +38,7 @@ conformance = []
 "medium-ieee80211p" = []
 "medium-pc5" = []
 
+"phy-udp" = ["std"]
 "phy-raw_socket" = ["std", "dep:libc"]
 "phy-tuntap_interface" = ["std", "dep:libc", "medium-ethernet"]
 
@@ -72,6 +74,7 @@ default = [
    "medium-ethernet",
    "medium-ieee80211p",
    "medium-pc5",
+   "phy-udp",
    "phy-raw_socket",
    "proto-geonet",
    "proto-security",
@@ -95,6 +98,7 @@ required-features = [
    "std",
    "log",
    "medium-ethernet",
+   "phy-udp",
    "phy-raw_socket",
    "proto-geonet",
    "proto-btp",
