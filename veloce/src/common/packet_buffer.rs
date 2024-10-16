@@ -144,7 +144,7 @@ where
     /// Drop expired packets.
     fn drop_expired(&mut self, timestamp: Instant) {
         self.storage.retain(|node| {
-            let expired = node.expires_at >= timestamp;
+            let expired = node.expires_at <= timestamp;
             if expired {
                 self.len -= node.size;
             }
@@ -178,7 +178,7 @@ where
     {
         self.storage.retain_mut(|node| {
             // Filter expired packets
-            if node.expires_at >= timestamp {
+            if node.expires_at <= timestamp {
                 self.len -= node.size;
                 return false;
             }

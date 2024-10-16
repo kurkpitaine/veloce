@@ -7,7 +7,7 @@ use log::{debug, info, trace};
 use veloce::conformance::etsi::State as UpperTester;
 use veloce::iface::{Config, Interface, SocketSet};
 use veloce::network::{GnAddrConfigMode, GnCore, GnCoreGonfig};
-use veloce::phy::{self, wait_many, Medium};
+use veloce::phy::{wait_many, Medium, RawSocket};
 use veloce::socket;
 use veloce::storage::PacketBuffer;
 use veloce::time::Instant;
@@ -22,8 +22,7 @@ use thread_priority::*;
 
 #[derive(Parser, Default, Debug)]
 struct Arguments {
-    // dev: String,
-    dest: String,
+    dev: String,
     log_level: String,
 }
 
@@ -33,11 +32,9 @@ fn main() {
     let args = Arguments::parse();
     utils::setup_logging(args.log_level.as_str());
 
-    /* let ll_addr = mac_address::mac_address_by_name(args.dev.as_str())
+    let ll_addr = mac_address::mac_address_by_name(args.dev.as_str())
         .unwrap()
-        .expect("Failed to get device mac address"); */
-
-    let ll_addr = EthernetAddress([0x00, 0x0c, 0x6c, 0x0d, 0x14, 0x70]);
+        .expect("Failed to get device mac address");
 
     let udp_socket = Rc::new(UdpSocket::bind("0.0.0.0:29000").expect("Failed to bind to address"));
     udp_socket
@@ -48,9 +45,8 @@ fn main() {
     info!("Uppertester server listening on 0.0.0.0:29000");
 
     // Configure geonetworking device
-    // let ll_addr = EthernetAddress(ll_addr.bytes());
-    // let mut device = RawSocket::new(args.dev.as_str(), Medium::Ethernet).unwrap();
-    let mut device= phy::udp::UdpSocket::new("0.0.0.0:29270", args.dest.as_str(), Medium::Ethernet).unwrap();
+    let ll_addr = EthernetAddress(ll_addr.bytes());
+    let mut device = RawSocket::new(args.dev.as_str(), Medium::Ethernet).unwrap();
     let dev_fd = device.as_raw_fd();
     let fds = vec![udp_fd, dev_fd];
 
@@ -113,7 +109,6 @@ fn main() {
             Err(e) => panic!("Failed to read data in UDP socket: {e}"),
         };
 
-       // trace!("poll");
         iface.poll(&mut router, &mut device, &mut sockets);
 
         let gn_socket = sockets.get_mut::<socket::geonet::Socket>(gn_handle);
@@ -131,7 +126,6 @@ fn main() {
             debug!("Sent {} bytes to {}", data.len(), dst);
         }
 
-       // trace!("wait_many");
         wait_many(&fds, iface.poll_delay(timestamp, &sockets)).expect("wait error");
     }
 }

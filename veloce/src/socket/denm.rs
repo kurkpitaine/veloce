@@ -29,7 +29,7 @@ use veloce_asn1::prelude::rasn::{self, error::EncodeError};
 use super::btp::{Indication, Request};
 
 /// Default validity duration for a DENM message.
-const DEFAULT_VALIDITY: Duration = Duration::from_secs(600);
+pub const DEFAULT_VALIDITY: Duration = Duration::from_secs(600);
 
 /// Return value for the [Socket::poll] function.
 #[derive(Debug, PartialEq)]
@@ -981,7 +981,7 @@ impl<'a> Socket<'a> {
 
             // Schedule for next retransmission.
             match &event.retransmission {
-                Some(r) if r.retransmit_end > now => {
+                Some(r) if (now + r.retransmit_delay) < r.retransmit_end => {
                     event.retransmit_at = Some(now + r.retransmit_delay);
                 }
                 _ => event.retransmit_at = None,

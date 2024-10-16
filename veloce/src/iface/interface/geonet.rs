@@ -202,8 +202,8 @@ impl InterfaceInner {
             return None;
         }
 
-        // Step 2: TODO: process the BC forwarding packet buffer
-        // TODO: Process the BC forwarding packet buffer and the forwarding algorithm having caused the buffering needs to be re-executed.
+        // Step 2: process the BC forwarding packet buffer
+        ctx.bc_forwarding_buffer.mark_flush(ctx.core.now, |_| true);
 
         let packet = ch.payload();
         match ch_repr.header_type {
@@ -1691,9 +1691,10 @@ impl InterfaceInner {
             let packet_meta = GeonetRepr::Unsecured(buf_packet.into());
 
             /* Step 4: forwarding algorithm */
-            let nh_ll_addr = if GN_NON_AREA_FORWARDING_ALGORITHM
-                == GnNonAreaForwardingAlgorithm::Cbf
-            {
+            // Optimization: if the destination is a neighbor, send packet directly to it.
+            let nh_ll_addr = if entry.is_neighbour {
+                entry.position_vector.address.mac_addr()
+            } else if GN_NON_AREA_FORWARDING_ALGORITHM == GnNonAreaForwardingAlgorithm::Cbf {
                 EthernetAddress::BROADCAST
             } else {
                 /* Step 5: check if packet is buffered */
@@ -1705,7 +1706,7 @@ impl InterfaceInner {
                 addr
             };
 
-            /* Step 6: TODO: security encapsulation */
+            /* Step 6: security sign packet: done at lower level */
             /* Step 7: TODO: repetition */
             /* Step 8: media dependent procedures: done at lower level */
             /* Step 9: pass packet to access layer */
@@ -2385,7 +2386,7 @@ impl InterfaceInner {
             let dist = inner
                 .geo_destination()
                 .distance_to(&neighbor.geo_position());
-            if mfr < dist {
+            if dist < mfr {
                 next_hop = Some(neighbor.position_vector.address.mac_addr().into());
                 mfr = dist;
             }

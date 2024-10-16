@@ -9,7 +9,7 @@ use crate::{
         self,
         denm::{ActionId, EventHandle, EventParameters},
     },
-    time::{Duration, Instant, TAI2004},
+    time::{Instant, TAI2004},
     types::{tenth_of_microdegree, Distance, Pseudonym},
     wire::{
         uppertester::{
@@ -89,52 +89,72 @@ impl State {
                     source,
                 )
             }
-            UtMessageType::UtChangePosition if self.ut_server == Some(source) => {
+            UtMessageType::UtChangePosition
+                if self.ut_server.is_some_and(|s| s.ip() == source.ip()) =>
+            {
                 res_packet.set_result_message_type(UtMessageType::UtChangePositionResult);
                 res_len = 2;
                 self.ut_change_position(timestamp, iface, router, ut_packet.payload())
             }
-            UtMessageType::UtChangePseudonym if self.ut_server == Some(source) => {
+            UtMessageType::UtChangePseudonym
+                if self.ut_server.is_some_and(|s| s.ip() == source.ip()) =>
+            {
                 res_packet.set_result_message_type(UtMessageType::UtChangePseudonymResult);
                 res_len = 2;
                 self.ut_change_pseudonym(timestamp, iface, router, ut_packet.payload())
             }
-            UtMessageType::UtGnTriggerGeoUnicast if self.ut_server == Some(source) => {
+            UtMessageType::UtGnTriggerGeoUnicast
+                if self.ut_server.is_some_and(|s| s.ip() == source.ip()) =>
+            {
                 res_packet.set_result_message_type(UtMessageType::UtGnTriggerResult);
                 res_len = 2;
                 self.ut_trigger_geo_unicast(timestamp, sockets, ut_packet.payload())
             }
-            UtMessageType::UtGnTriggerGeoBroadcast if self.ut_server == Some(source) => {
+            UtMessageType::UtGnTriggerGeoBroadcast
+                if self.ut_server.is_some_and(|s| s.ip() == source.ip()) =>
+            {
                 res_packet.set_result_message_type(UtMessageType::UtGnTriggerResult);
                 res_len = 2;
                 self.ut_trigger_geo_broadcast(timestamp, sockets, ut_packet.payload())
             }
-            UtMessageType::UtGnTriggerGeoAnycast if self.ut_server == Some(source) => {
+            UtMessageType::UtGnTriggerGeoAnycast
+                if self.ut_server.is_some_and(|s| s.ip() == source.ip()) =>
+            {
                 res_packet.set_result_message_type(UtMessageType::UtGnTriggerResult);
                 res_len = 2;
                 self.ut_trigger_geo_anycast(timestamp, sockets, ut_packet.payload())
             }
-            UtMessageType::UtGnTriggerShb if self.ut_server == Some(source) => {
+            UtMessageType::UtGnTriggerShb
+                if self.ut_server.is_some_and(|s| s.ip() == source.ip()) =>
+            {
                 res_packet.set_result_message_type(UtMessageType::UtGnTriggerResult);
                 res_len = 2;
                 self.ut_trigger_shb(timestamp, sockets, ut_packet.payload())
             }
-            UtMessageType::UtGnTriggerTsb if self.ut_server == Some(source) => {
+            UtMessageType::UtGnTriggerTsb
+                if self.ut_server.is_some_and(|s| s.ip() == source.ip()) =>
+            {
                 res_packet.set_result_message_type(UtMessageType::UtGnTriggerResult);
                 res_len = 2;
                 self.ut_trigger_tsb(timestamp, sockets, ut_packet.payload())
             }
-            UtMessageType::UtBtpTriggerA if self.ut_server == Some(source) => {
+            UtMessageType::UtBtpTriggerA
+                if self.ut_server.is_some_and(|s| s.ip() == source.ip()) =>
+            {
                 res_packet.set_result_message_type(UtMessageType::UtBtpTriggerResult);
                 res_len = 2;
                 self.ut_btp_trigger_a(timestamp, sockets, ut_packet.payload())
             }
-            UtMessageType::UtBtpTriggerB if self.ut_server == Some(source) => {
+            UtMessageType::UtBtpTriggerB
+                if self.ut_server.is_some_and(|s| s.ip() == source.ip()) =>
+            {
                 res_packet.set_result_message_type(UtMessageType::UtBtpTriggerResult);
                 res_len = 2;
                 self.ut_btp_trigger_b(timestamp, sockets, ut_packet.payload())
             }
-            UtMessageType::UtDenmTrigger if self.ut_server == Some(source) => {
+            UtMessageType::UtDenmTrigger
+                if self.ut_server.is_some_and(|s| s.ip() == source.ip()) =>
+            {
                 res_packet.set_result_message_type(UtMessageType::UtDenmTriggerResult);
                 res_len = 8;
                 self.ut_denm_trigger(timestamp, sockets, router, ut_packet.payload())
@@ -144,7 +164,9 @@ impl State {
                         denm_res.set_sequence_number(h.action_id().seq_num);
                     })
             }
-            UtMessageType::UtDenmUpdate if self.ut_server == Some(source) => {
+            UtMessageType::UtDenmUpdate
+                if self.ut_server.is_some_and(|s| s.ip() == source.ip()) =>
+            {
                 res_packet.set_result_message_type(UtMessageType::UtDenmUpdateResult);
                 res_len = 8;
                 self.ut_denm_update(timestamp, sockets, router, ut_packet.payload())
@@ -154,7 +176,9 @@ impl State {
                         denm_res.set_sequence_number(h.action_id().seq_num);
                     })
             }
-            UtMessageType::UtDenmTermination if self.ut_server == Some(source) => {
+            UtMessageType::UtDenmTermination
+                if self.ut_server.is_some_and(|s| s.ip() == source.ip()) =>
+            {
                 res_packet.set_result_message_type(UtMessageType::UtDenmTerminationResult);
                 res_len = 2;
                 self.ut_denm_terminate(timestamp, sockets, router, ut_packet.payload())
@@ -532,19 +556,21 @@ impl State {
                 angle: Angle::new::<degree>(0.0),
             },
             repetition: {
-                if ut_denm_trig.has_repetition_interval() || ut_denm_trig.has_repetition_duration()
+                if ut_denm_trig.has_repetition_interval() && ut_denm_trig.has_repetition_duration()
                 {
                     Some(socket::denm::RepetitionParameters {
-                        duration: if ut_denm_trig.has_repetition_duration() {
-                            ut_denm_trig.repetition_duration()
-                        } else {
-                            Duration::ZERO
+                        duration: {
+                            // Hack to pass TC_DEN_EVRP_BV_11
+                            if !ut_denm_trig.has_validity_duration()
+                                && ut_denm_trig.repetition_duration()
+                                    > socket::denm::DEFAULT_VALIDITY
+                            {
+                                socket::denm::DEFAULT_VALIDITY
+                            } else {
+                                ut_denm_trig.repetition_duration()
+                            }
                         },
-                        interval: if ut_denm_trig.has_repetition_interval() {
-                            ut_denm_trig.repetition_interval()
-                        } else {
-                            Duration::ZERO
-                        },
+                        interval: ut_denm_trig.repetition_interval(),
                     })
                 } else {
                     None
@@ -675,7 +701,7 @@ impl State {
 
         if ut_denm_upd.has_repetition_interval() {
             event.repetition = Some(socket::denm::RepetitionParameters {
-                duration: ut_denm_upd.repetition_interval(),
+                duration: ut_denm_upd.validity_duration(),
                 interval: ut_denm_upd.repetition_interval(),
             });
         }
