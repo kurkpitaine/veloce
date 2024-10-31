@@ -1,5 +1,4 @@
 #![deny(unsafe_code)]
-
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 
 extern crate alloc;
@@ -19,12 +18,16 @@ pub mod iface;
 pub mod network;
 pub mod phy;
 pub mod rand;
+#[cfg(feature = "socket")]
 pub mod socket;
 pub mod storage;
 pub mod time;
 pub mod types;
 pub mod utils;
 pub mod wire;
+
+#[cfg(feature = "ipc")]
+pub mod ipc;
 
 #[cfg(feature = "proto-security")]
 pub mod security;

@@ -162,7 +162,9 @@ impl<'a> fmt::Display for Packet<'a> {
                 f,
                 &mut indent,
             ),
+            #[cfg(feature = "medium-ieee80211p")]
             Medium::Ieee80211p => todo!(),
+            #[cfg(feature = "medium-pc5")]
             Medium::PC5 => todo!(),
         }
     }

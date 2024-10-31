@@ -2,7 +2,7 @@ use crate::wire::{GeonetRepr, GeonetVariant};
 
 #[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[cfg(feature = "medium-ethernet")]
+#[cfg(any(feature = "medium-ethernet", feature = "medium-ieee80211p"))]
 pub(crate) enum EthernetPacket<'a> {
     Geonet(GeonetPacket<'a>),
 }

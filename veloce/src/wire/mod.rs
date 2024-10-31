@@ -108,10 +108,12 @@ impl fmt::Display for Error {
 
 pub type Result<T> = core::result::Result<T, Error>;
 
+#[cfg(feature = "medium-pc5")]
 pub use self::pc5::Layer2Address as PC5Address;
 
 use super::phy::Medium;
 
+#[cfg(feature = "medium-pc5")]
 mod pc5 {
     use super::HardwareAddress;
 
@@ -252,7 +254,7 @@ impl HardwareAddress {
             #[cfg(feature = "medium-ethernet")]
             HardwareAddress::Ethernet(_) => Medium::Ethernet,
             #[cfg(all(feature = "medium-ieee80211p", not(feature = "medium-ethernet")))]
-            HardwareAddress::Ethernet() => Medium::Ieee80211p,
+            HardwareAddress::Ethernet(_) => Medium::Ieee80211p,
         }
     }
 }

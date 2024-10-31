@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use heapless::{FnvIndexMap, Vec};
 
 use crate::{
@@ -171,6 +173,7 @@ impl Congestion {
 
     /// Computes the Global CBR value, as defined in ETSI TS 102 636-4-2 V1.3.1
     /// and schedule for next computing instant.
+    #[allow(unused)]
     pub(super) fn compute_global_cbr(
         &mut self,
         location_table: &LocationTable,
@@ -180,57 +183,67 @@ impl Congestion {
             return;
         }
 
-        let cbr_values = location_table.local_one_hop_cbr_values(timestamp);
-        let target_cbr = self.controller.inner().target_cbr();
+        #[cfg(feature = "medium-ieee80211p")]
+        let computed_cbr = {
+            let cbr_values = location_table.local_one_hop_cbr_values(timestamp);
+            let target_cbr = self.controller.inner().target_cbr();
 
-        // Step 1 and 3: Calculate the average of CBR_R_0_Hop and CBR_R_1_Hop.
-        let (cbr_r_0_hop, cbr_r_1_hop) = {
-            let (sum_r_0, sum_r_1) = cbr_values.iter().fold((0.0, 0.0), |acc, e| {
-                (acc.0 + e.0.as_ratio(), acc.1 + e.1.as_ratio())
-            });
-            (
-                sum_r_0 / cbr_values.len() as f64,
-                sum_r_1 / cbr_values.len() as f64,
-            )
-        };
+            // Step 1 and 3: Calculate the average of CBR_R_0_Hop and CBR_R_1_Hop.
+            let (cbr_r_0_hop, cbr_r_1_hop) = {
+                let (sum_r_0, sum_r_1) = cbr_values.iter().fold((0.0, 0.0), |acc, e| {
+                    (acc.0 + e.0.as_ratio(), acc.1 + e.1.as_ratio())
+                });
+                (
+                    sum_r_0 / cbr_values.len() as f64,
+                    sum_r_1 / cbr_values.len() as f64,
+                )
+            };
 
-        // Split in two vecs.
-        let (mut r_0_values, mut r_1_values): (
-            Vec<ChannelBusyRatio, GN_LOC_TABLE_ENTRY_COUNT>,
-            Vec<ChannelBusyRatio, GN_LOC_TABLE_ENTRY_COUNT>,
-        ) = cbr_values.into_iter().unzip();
+            // Split in two vecs.
+            let (mut r_0_values, mut r_1_values): (
+                Vec<ChannelBusyRatio, GN_LOC_TABLE_ENTRY_COUNT>,
+                Vec<ChannelBusyRatio, GN_LOC_TABLE_ENTRY_COUNT>,
+            ) = cbr_values.into_iter().unzip();
 
-        // Sort values in reverse order.
-        // Safety: we never push NAN in location table.
-        r_0_values.sort_unstable_by(|a, b| b.as_ratio().partial_cmp(&a.as_ratio()).unwrap());
-        r_1_values.sort_unstable_by(|a, b| b.as_ratio().partial_cmp(&a.as_ratio()).unwrap());
-
-        // Step 2
-        let cbr_l_1_hop = if r_0_values.len() > 1 {
-            if cbr_r_0_hop > target_cbr.as_ratio() {
-                r_0_values[0].as_ratio()
-            } else {
-                r_0_values[1].as_ratio()
+            // Sort values in reverse order.
+            // Safety: we never push NAN in location table.
+            {
+                r_0_values
+                    .sort_unstable_by(|a, b| b.as_ratio().partial_cmp(&a.as_ratio()).unwrap());
+                r_1_values
+                    .sort_unstable_by(|a, b| b.as_ratio().partial_cmp(&a.as_ratio()).unwrap());
             }
-        } else {
-            0.0
-        };
 
-        // Step 4
-        let cbr_l_2_hop = if r_1_values.len() > 1 {
-            if cbr_r_1_hop > target_cbr.as_ratio() {
-                r_1_values[0].as_ratio()
+            // Step 2
+            let cbr_l_1_hop = if r_0_values.len() > 1 {
+                if cbr_r_0_hop > target_cbr.as_ratio() {
+                    r_0_values[0].as_ratio()
+                } else {
+                    r_0_values[1].as_ratio()
+                }
             } else {
-                r_1_values[1].as_ratio()
-            }
-        } else {
-            0.0
+                0.0
+            };
+
+            // Step 4
+            let cbr_l_2_hop = if r_1_values.len() > 1 {
+                if cbr_r_1_hop > target_cbr.as_ratio() {
+                    r_1_values[0].as_ratio()
+                } else {
+                    r_1_values[1].as_ratio()
+                }
+            } else {
+                0.0
+            };
+
+            [self.prev_local_cbr.as_ratio(), cbr_l_1_hop, cbr_l_2_hop]
+                .into_iter()
+                .max_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap() // Safety: we have 3 values inside the slice.
         };
 
-        let computed_cbr = [self.prev_local_cbr.as_ratio(), cbr_l_1_hop, cbr_l_2_hop]
-            .into_iter()
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap(); // Safety: we have 3 values inside the slice.
+        #[cfg(not(feature = "medium-ieee80211p"))]
+        let computed_cbr = 0.0;
 
         self.global_cbr = ChannelBusyRatio::from_ratio(computed_cbr);
         self.prev_local_cbr = self.controller.inner().local_cbr();

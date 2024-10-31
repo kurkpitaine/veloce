@@ -12,7 +12,10 @@ and implementations of it:
     on the host OS.
 */
 
-use crate::{time::Instant, types::Power, wire::HardwareAddress};
+#[cfg(feature = "medium-ieee80211p")]
+use crate::wire::HardwareAddress;
+
+use crate::{time::Instant, types::Power};
 
 #[cfg(all(
     any(feature = "phy-raw_socket", feature = "phy-tuntap_interface"),
@@ -151,7 +154,9 @@ impl DeviceCapabilities {
             Medium::Ethernet => {
                 self.max_transmission_unit - crate::wire::EthernetFrame::<&[u8]>::header_len()
             }
+            #[cfg(feature = "medium-ieee80211p")]
             Medium::Ieee80211p => self.max_transmission_unit,
+            #[cfg(feature = "medium-pc5")]
             Medium::PC5 => self.max_transmission_unit,
         }
     }

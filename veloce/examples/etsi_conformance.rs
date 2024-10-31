@@ -2,7 +2,7 @@ use std::io;
 use std::net::UdpSocket;
 use std::rc::Rc;
 
-use log::{debug, info, trace};
+use log::{debug, info};
 
 use veloce::conformance::etsi::State as UpperTester;
 use veloce::iface::{Config, Interface, SocketSet};

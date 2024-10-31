@@ -8,24 +8,23 @@ use std::fs;
 use std::path::PathBuf;
 
 use clap::Parser;
-use log::{/* debug,*/ error, info};
+use log::error;
 
 use mio::event::Source;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
 use veloce::iface::{Config, CongestionControl, Interface, SocketSet};
+use veloce::ipc::IpcDispatcher;
 use veloce::network::core::SecurityConfig;
 use veloce::network::{GnCore, GnCoreGonfig};
 use veloce::phy::Device;
 use veloce::security::{SecurityBackend, TrustChain};
 use veloce::socket;
-use veloce::socket::denm::EventParameters;
 use veloce::time::Instant;
 use veloce::types::{Power, Pseudonym};
 use veloce::utils;
 use veloce::wire::{EthernetAddress, StationType};
 use veloce_gnss::Gpsd;
-use veloce_ipc::denm::{ApiResult, ApiResultCode};
 use veloce_ipc::prelude::zmq;
 use veloce_ipc::{IpcEvent, IpcEventType};
 use veloce_ipc::{ZmqPublisher, ZmqReplier};
@@ -46,9 +45,9 @@ struct Arguments {
     log_level: String,
 }
 
-const DEV_TOKEN: Token = Token(0);
-const GPSD_TOKEN: Token = Token(1);
-const IPC_REP_TOKEN: Token = Token(2);
+const RX_TOKEN: Token = Token(0);
+const GPSD_TOKEN: Token = Token(10);
+const IPC_REP_TOKEN: Token = Token(11);
 
 fn main() {
     let args = Arguments::parse();
@@ -83,7 +82,7 @@ fn main() {
 
     // Register it into the polling registry
     poll.registry()
-        .register(&mut device, DEV_TOKEN, Interest::READABLE)
+        .register(&mut device, RX_TOKEN, Interest::READABLE)
         .unwrap();
 
     // Register IPC rep.
@@ -160,17 +159,22 @@ fn main() {
     )
     .expect("malformed GPSD server address");
 
+    // IPC dispatcher.
+    let ipc_dispatcher = IpcDispatcher {
+        denm_socket_handle: denm_handle,
+    };
+
     loop {
         // Update timestamp.
         let now = Instant::now();
         router.set_timestamp(now);
 
-        // For DENM IPC.
-        let mut event_params = None;
-
         // Process each event.
         for event in events.iter() {
             match event.token() {
+                RX_TOKEN => {
+                    iface.poll_ingress_single(&mut router, device.inner_mut(), &mut sockets);
+                }
                 GPSD_TOKEN => {
                     gpsd.ready(event).then(|| {
                         gpsd.fetch_position()
@@ -181,125 +185,58 @@ fn main() {
                             .ok();
                     });
                 }
-                DEV_TOKEN => {
-                    //debug!("Rx available");
-                }
-                IPC_REP_TOKEN => {
-                    info!("IPC_REP_TOKEN");
-                    loop {
-                        match ipc_rep.events() {
-                            Ok(evts) if evts.contains(zmq::POLLIN) => {
-                                info!("ZMQ readable");
-                                match ipc_rep.recv() {
-                                    Ok(data) => match IpcEvent::deserialize(&data) {
-                                        Ok(evt) => {
-                                            if let Some(evt_type) = evt.event_type {
-                                                match evt_type {
-                                                    IpcEventType::DenmTrigger(trigger) => {
-                                                        if let Some(params) = trigger.parameters {
-                                                            if let Ok(params) =
-                                                                EventParameters::try_from(params)
-                                                            {
-                                                                event_params =
-                                                                    Some((trigger.id, params));
-                                                            } else {
-                                                                error!(
-                                                                    "EventParameters is malformed"
-                                                                );
-                                                            }
-                                                        }
-                                                    }
-                                                    _ => error!("Unsupported"),
-                                                }
-                                            } else {
-                                                error!("IPC data malformed.");
-                                            }
-                                        }
-                                        Err(err) => error!("Cannot deserialize IPC event: {}", err),
-                                    },
-                                    Err(e) => error!("Cannot recv: {}", e),
+                IPC_REP_TOKEN => loop {
+                    match ipc_rep.events() {
+                        Ok(evts) if evts.contains(zmq::POLLIN) => match ipc_rep.recv() {
+                            Ok(data) => match IpcEvent::deserialize(&data) {
+                                Ok(evt) => {
+                                    let Ok(resp) =
+                                        ipc_dispatcher.dispatch(evt, &router, &mut sockets)
+                                    else {
+                                        error!("IPC data malformed.");
+                                        continue;
+                                    };
+
+                                    if let Some(resp) = resp {
+                                        let serialized = resp.serialize_to_vec();
+                                        ipc_rep.send(&serialized).unwrap();
+                                    }
                                 }
-                            }
-                            Ok(_) => break,
-                            Err(err) => error!("Cannot query ZMQ events: {}", err),
-                        }
+                                Err(err) => error!("Cannot deserialize IPC event: {}", err),
+                            },
+                            Err(e) => error!("Cannot recv: {}", e),
+                        },
+                        Ok(_) => break,
+                        Err(err) => error!("Cannot query ZMQ events: {}", err),
                     }
-                }
+                },
                 // We don't expect any events with tokens other than those we provided.
                 _ => unreachable!(),
             }
         }
 
-        //trace!("gpsd poll");
-        let _ = gpsd.poll();
+        // Poll the Gnss source.
+        gpsd.poll().ok();
 
-        // trace!("iface poll");
+        // Poll the stack for egress or internal processing.
         iface.poll(&mut router, device.inner_mut(), &mut sockets);
 
         let denm_socket = sockets.get_mut::<socket::denm::Socket>(denm_handle);
         denm_socket.poll(now);
 
-        if let Some((id_req, p)) = event_params {
-            match denm_socket.trigger(&router, p) {
-                Ok(handle) => {
-                    info!("Triggered DENM: {:?}", handle);
-                    let res = ApiResult {
-                        id: id_req,
-                        result: ApiResultCode::Ok.into(),
-                        message: None,
-                        handle: Some(handle.into()),
-                    };
-                    let evt = IpcEvent::new(IpcEventType::DenmResult(res));
-                    let bytes = evt.serialize_to_vec();
-                    ipc_rep.send(&bytes).unwrap();
-                }
-                Err(err) => {
-                    error!("Cannot trigger DENM: {}", err);
-                    let (result, message) = match err {
-                        socket::denm::ApiError::NoFreeSlot => (ApiResultCode::NoFreeSlot, None),
-                        socket::denm::ApiError::Expired => (ApiResultCode::Expired, None),
-                        socket::denm::ApiError::InvalidDetectionTime => {
-                            (ApiResultCode::InvalidDetectionTime, None)
-                        }
-                        socket::denm::ApiError::InvalidValidityDuration => {
-                            (ApiResultCode::InvalidValidityDuration, None)
-                        }
-                        socket::denm::ApiError::InvalidRepetitionDuration => {
-                            (ApiResultCode::InvalidRepetitionDuration, None)
-                        }
-                        socket::denm::ApiError::InvalidRepetitionInterval => {
-                            (ApiResultCode::InvalidRepetitionInterval, None)
-                        }
-                        socket::denm::ApiError::InvalidKeepAliveTransmissionInterval => {
-                            (ApiResultCode::InvalidKeepAliveTransmissionInterval, None)
-                        }
-                        socket::denm::ApiError::InvalidContent(s) => {
-                            (ApiResultCode::InvalidContent, Some(s.to_string()))
-                        }
-                        socket::denm::ApiError::NotFound => (ApiResultCode::NotFound, None),
-                        socket::denm::ApiError::ActionIdInOrigMsgtable => {
-                            (ApiResultCode::ActionIdInOrigMsgtable, None)
-                        }
-                        socket::denm::ApiError::Unauthorized => (ApiResultCode::Unauthorized, None),
-                    };
-                    let res = ApiResult {
-                        id: id_req,
-                        result: result.into(),
-                        message,
-                        handle: None,
-                    };
-                    let evt = IpcEvent::new(IpcEventType::DenmResult(res));
-                    let bytes = evt.serialize_to_vec();
-                    ipc_rep.send(&bytes).unwrap();
-                }
-            }
-        }
-
         let iface_timeout = iface.poll_delay(now, &sockets);
 
         // Poll Mio for events, blocking until we get an event or a timeout.
-        poll.poll(&mut events, iface_timeout.map(|t| t.into()))
-            .unwrap();
+        loop {
+            match poll.poll(&mut events, iface_timeout.map(|t| t.into())) {
+                Ok(_) => break,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => {
+                    error!("Failed to poll: {}", e);
+                    break;
+                }
+            }
+        }
     }
 }
 

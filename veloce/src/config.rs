@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use super::time::Duration;
 use super::wire::GnTrafficClass;
 use core::fmt;
@@ -55,6 +57,7 @@ pub(crate) const GN_LIFETIME_LOC_TE_X: Duration = Duration::from_secs(1);
 /// Trigger interval for calculation of CBR_G.
 pub(crate) const GN_CBR_G_TRIGGER_INTERVAL: Duration = Duration::from_millis(100);
 
+#[cfg(any(feature = "socket-cam", feature = "socket-denm"))]
 /// Maximum payload length carried by a BTP packet.
 pub(crate) const BTP_MAX_PL_SIZE: usize = GN_MAX_SDU_SIZE - 4;
 

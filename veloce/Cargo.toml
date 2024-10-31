@@ -56,8 +56,8 @@ conformance = []
 "socket-btp-a" = ["socket", "proto-geonet"]
 "socket-btp-b" = ["socket", "proto-geonet"]
 
-"socket-cam" = ["socket", "proto-cam", "asn1"]
-"socket-denm" = ["socket", "proto-denm", "asn1"]
+"socket-cam" = ["socket-btp-b", "proto-cam", "asn1"]
+"socket-denm" = ["socket-btp-b", "proto-denm", "asn1"]
 
 "packetmeta-id" = []
 "packetmeta-power" = []
@@ -105,6 +105,7 @@ required-features = [
    "socket-geonet",
    "socket-btp-a",
    "socket-btp-b",
+   "socket-denm",
    "conformance",
 ]
 

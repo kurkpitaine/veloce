@@ -4,9 +4,10 @@ use crate::config::{
     GN_MAX_PACKET_DATA_RATE_EMA_BETA,
 };
 
-use crate::phy::ChannelBusyRatio;
-use crate::time::{Instant, TAI2004};
-use crate::types::Power;
+#[cfg(feature = "medium-ieee80211p")]
+use crate::{phy::ChannelBusyRatio, time::TAI2004, types::Power};
+
+use crate::time::Instant;
 use crate::wire::geonet::PositionVectorTimestamp;
 use crate::wire::GnAddress;
 use crate::wire::{
@@ -38,6 +39,7 @@ pub(super) struct LocationTableEntry {
     /// Packet data rate last update time point.
     pub packet_data_rate_updated_at: Instant,
     /// Extensions for the station.
+    #[allow(unused)]
     pub extensions: Option<LocationTableAnyExtension>,
     /// Time point at which this entry expires.
     pub expires_at: Instant,
@@ -302,6 +304,7 @@ impl LocationTable {
     }
 
     /// Removes all the entries of the Location Table.
+    #[cfg(feature = "conformance")]
     pub fn clear(&mut self) {
         self.storage.clear();
     }
@@ -367,6 +370,7 @@ impl LocationTableAnyExtension {
     }
 }
 
+#[cfg(feature = "medium-ieee80211p")]
 impl From<LocationTableG5Extension> for LocationTableAnyExtension {
     fn from(value: LocationTableG5Extension) -> Self {
         LocationTableAnyExtension::G5(value)

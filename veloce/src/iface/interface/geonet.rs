@@ -2,23 +2,25 @@ use uom::si::angle::{degree, radian};
 use uom::si::f64::{Angle, Length};
 use uom::si::length::meter;
 
+#[cfg(feature = "medium-ieee80211p")]
+use crate::{iface::location_table::LocationTableG5Extension, phy::Medium, wire::G5Extension};
+
 use crate::common::CbfIdentifier;
 use crate::config::{
     GN_BROADCAST_CBF_DEF_SECTOR_ANGLE, GN_CBF_MAX_TIME, GN_CBF_MIN_TIME,
     GN_DEFAULT_MAX_COMMUNICATION_RANGE, VELOCE_CBF_MAX_RETRANSMIT,
 };
 use crate::iface::location_service::LocationServiceRequest;
-use crate::iface::location_table::LocationTableG5Extension;
 use crate::iface::packet::GeonetPacket;
 use crate::iface::{Congestion, SocketSet};
 use crate::network::{
     GeoAnycastReqMeta, GeoBroadcastReqMeta, GnCore, Indication, SingleHopReqMeta,
     TopoScopedReqMeta, UnicastReqMeta, UpperProtocol,
 };
-use crate::phy::{Medium, PacketMeta};
+use crate::phy::PacketMeta;
 use crate::wire::geonet::geonet::unicast_to_variant_repr;
 use crate::wire::{
-    G5Extension, GeonetBeacon, GeonetGeoAnycast, GeonetGeoBroadcast, GeonetLocationServiceReply,
+    GeonetBeacon, GeonetGeoAnycast, GeonetGeoBroadcast, GeonetLocationServiceReply,
     GeonetLocationServiceRequest, GeonetSingleHop, GeonetTopoBroadcast, GeonetVariant,
 };
 use crate::{
@@ -653,7 +655,10 @@ impl InterfaceInner {
                     local_cbr: g5_ext.cbr_l0_hop(),
                     one_hop_cbr: g5_ext.cbr_l1_hop(),
                     tx_power: g5_ext.tx_power(),
+                    #[cfg(feature = "packetmeta-power")]
                     rx_power: meta.power,
+                    #[cfg(not(feature = "packetmeta-power"))]
+                    rx_power: None,
                 };
 
                 entry.extensions = Some(extension.into());
@@ -1885,6 +1890,7 @@ impl InterfaceInner {
         };
 
         /* Step 1c: set the fields of the shb header */
+        #[allow(unused_mut)]
         let mut shb_repr = SingleHopHeaderRepr {
             source_position_vector: ctx.core.ego_position_vector(),
             extension: [0; SingleHopHeaderRepr::extension_len()],
@@ -2713,6 +2719,7 @@ impl InterfaceInner {
     }
 
     /// Pass received Geonetworking payload to upper layer.
+    #[allow(unused_variables)]
     fn pass_up(
         &mut self,
         ctx: &InterfaceContext,
@@ -2743,19 +2750,25 @@ impl InterfaceInner {
         };
 
         #[cfg(feature = "socket-geonet")]
-        let handled_by_geonet_socket = self.geonet_socket_filter(sockets, ind.clone(), payload);
+        let handled_by_gn_socket = self.geonet_socket_filter(sockets, ind.clone(), payload);
         #[cfg(not(feature = "socket-geonet"))]
-        let handled_by_geonet_socket = false;
+        let handled_by_gn_socket = false;
 
         match &ind.upper_proto {
+            #[cfg(feature = "socket-btp-a")]
             UpperProtocol::BtpA => {
-                self.process_btp_a(ctx, sockets, ind, handled_by_geonet_socket, packet, payload)
+                self.process_btp_a(ctx, sockets, ind, handled_by_gn_socket, packet, payload)
             }
+            #[cfg(not(feature = "socket-btp-a"))]
+            UpperProtocol::BtpA => {}
+            #[cfg(feature = "socket-btp-b")]
             UpperProtocol::BtpB => {
-                self.process_btp_b(ctx, sockets, ind, handled_by_geonet_socket, payload)
+                self.process_btp_b(ctx, sockets, ind, handled_by_gn_socket, payload)
             }
+            #[cfg(not(feature = "socket-btp-b"))]
+            UpperProtocol::BtpB => {}
             UpperProtocol::Any => {}
-            UpperProtocol::Ipv6 => {} // _ if handled_by_geonet_socket => None,
+            UpperProtocol::Ipv6 => {} // _ if handled_by_gn_socket => None,
         };
     }
 }

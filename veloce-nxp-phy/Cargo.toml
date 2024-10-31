@@ -7,7 +7,7 @@ description = "Veloce NXP SAF5x00 PHY"
 
 [dependencies]
 rusb = "0.9"
-veloce = { path = "../veloce" }
+veloce = { path = "../veloce", features = ["packetmeta-power", "medium-ieee80211p"] }
 heapless = { git = "https://github.com/rust-embedded/heapless.git", branch = "main" }
 log = { version = "0.4", default-features = false }
 

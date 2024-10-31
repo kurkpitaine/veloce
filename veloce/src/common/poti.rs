@@ -16,8 +16,14 @@ use uom::si::{
 };
 
 use crate::{
-    time::{Duration, TAI2004},
-    types::{decidegree, tenth_of_microdegree, Heading, Latitude, Longitude, Speed},
+    time::TAI2004,
+    types::{Heading, Latitude, Longitude, Speed},
+};
+
+#[cfg(feature = "asn1")]
+use crate::{
+    time::Duration,
+    types::{decidegree, tenth_of_microdegree},
 };
 
 #[cfg(feature = "asn1")]
@@ -777,6 +783,7 @@ impl PathHistory {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::time::Duration;
     use approx::assert_relative_eq;
 
     fn one_meter_latitude() -> Latitude {

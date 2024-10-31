@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests;
 
-#[cfg(feature = "proto-btp")]
+#[cfg(any(feature = "socket-btp-a", feature = "socket-btp-b"))]
 mod btp;
 #[cfg(feature = "proto-geonet")]
 pub mod congestion;
@@ -12,10 +12,13 @@ mod geonet;
 #[cfg(feature = "medium-ieee80211p")]
 mod ieee80211p;
 
-use super::congestion::{AnyController, Congestion, CongestionSuccess};
+#[cfg(feature = "proto-geonet")]
+use super::{
+    congestion::{AnyController, Congestion, CongestionSuccess},
+    location_service::LocationService,
+    location_table::LocationTable,
+};
 
-use super::location_service::LocationService;
-use super::location_table::LocationTable;
 use super::packet::*;
 
 use super::socket_set::SocketSet;
@@ -27,22 +30,31 @@ use crate::config::{
     GN_UC_FORWARDING_PACKET_BUFFER_SIZE as UC_BUF_SIZE,
 };
 use crate::network::GnCore;
-use crate::network::Indication;
-use crate::phy::{
-    Device, DeviceCapabilities, MacFilterCapabilities, Medium, PacketMeta, RxToken, TxToken,
-};
+use crate::phy::{Device, DeviceCapabilities, Medium, PacketMeta, RxToken, TxToken};
 
 #[cfg(feature = "proto-security")]
 use crate::security::service::{decap::DecapConfirm, SecurityServiceError};
 
+#[cfg(feature = "socket-geonet")]
+use crate::network::Indication;
+
+#[cfg(feature = "socket-geonet")]
 use crate::socket::geonet::Socket as GeonetSocket;
 use crate::socket::*;
 use crate::time::{Duration, Instant};
 
-use crate::wire::ieee80211::{FrameControl, QoSControl};
 use crate::wire::{
     EthernetAddress, EthernetFrame, EthernetProtocol, GeonetRepr, GeonetUnicast, GeonetVariant,
-    HardwareAddress, Ieee80211Frame, Ieee80211Repr, LlcFrame, LlcRepr, SequenceNumber,
+    HardwareAddress, SequenceNumber,
+};
+
+#[cfg(feature = "medium-ieee80211p")]
+use crate::{
+    phy::MacFilterCapabilities,
+    wire::{
+        ieee80211::{FrameControl, QoSControl},
+        Ieee80211Frame, Ieee80211Repr, LlcFrame, LlcRepr,
+    },
 };
 
 macro_rules! check {
@@ -227,6 +239,11 @@ pub(crate) struct InterfaceContext<'a> {
     pub decap_context: &'a mut DecapContext,
 }
 
+#[cfg(not(feature = "proto-geonet"))]
+pub(crate) struct InterfaceContext<'a> {
+    phantom: core::marker::PhantomData<&'a ()>,
+}
+
 #[cfg(feature = "proto-security")]
 #[derive(Default, Clone)]
 pub(crate) struct DecapContext {
@@ -262,21 +279,31 @@ impl Interface {
             (Medium::Ieee80211p, HardwareAddress::Ethernet(_)) => {}
             #[cfg(feature = "medium-pc5")]
             (Medium::PC5, HardwareAddress::PC5(_)) => {}
+            #[allow(unreachable_patterns)]
             _ => panic!("The hardware address does not match the medium of the interface."),
         }
 
         Interface {
+            #[cfg(feature = "proto-geonet")]
             location_service: LocationService::new(),
+            #[cfg(feature = "proto-geonet")]
             ls_buffer: PacketBuffer::new(),
+            #[cfg(feature = "proto-geonet")]
             uc_forwarding_buffer: PacketBuffer::new(),
+            #[cfg(feature = "proto-geonet")]
             bc_forwarding_buffer: PacketBuffer::new(),
+            #[cfg(feature = "proto-geonet")]
             cb_forwarding_buffer: ContentionBuffer::new(),
+            #[cfg(feature = "proto-geonet")]
             congestion_control: Congestion::new(AnyController::new()),
             inner: InterfaceInner {
                 caps,
                 hardware_addr: config.hardware_addr,
+                #[cfg(feature = "proto-geonet")]
                 retransmit_beacon_at: Instant::from_millis(0),
+                #[cfg(feature = "proto-geonet")]
                 location_table: LocationTable::new(),
+                #[cfg(feature = "proto-geonet")]
                 sequence_number: SequenceNumber(0),
             },
         }
@@ -310,9 +337,6 @@ impl Interface {
         D: Device + ?Sized,
     {
         let mut res = PollResult::None;
-
-        #[cfg(feature = "proto-geonet")]
-        self.run_congestion_control(core.now, device.channel_busy_ratio());
 
         // Process ingress while there's packets available.
         loop {
@@ -348,14 +372,16 @@ impl Interface {
         D: Device + ?Sized,
     {
         #[cfg(feature = "proto-geonet")]
-        self.congestion_control_egress(core, device);
-
-        self.ls_buffered_egress(core, device);
-        self.uc_buffered_egress(core, device);
-        self.bc_buffered_egress(core, device);
-        self.cb_buffered_egress(core, device);
-        self.location_service_egress(core, device);
-        self.beacon_service_egress(core, device);
+        {
+            self.run_congestion_control(core.now, device.channel_busy_ratio());
+            self.congestion_control_egress(core, device);
+            self.ls_buffered_egress(core, device);
+            self.uc_buffered_egress(core, device);
+            self.bc_buffered_egress(core, device);
+            self.cb_buffered_egress(core, device);
+            self.location_service_egress(core, device);
+            self.beacon_service_egress(core, device);
+        }
 
         self.socket_egress(core, device, sockets)
     }
@@ -376,9 +402,6 @@ impl Interface {
     where
         D: Device + ?Sized,
     {
-        #[cfg(feature = "proto-geonet")]
-        self.run_congestion_control(core.now, device.channel_busy_ratio());
-
         self.socket_ingress(core, device, sockets)
     }
 
@@ -457,6 +480,7 @@ impl Interface {
             }
 
             let mut sec_buf = SecuredDataBuffer::default();
+            #[cfg(feature = "proto-geonet")]
             let ctx = InterfaceContext {
                 core,
                 ls: &mut self.location_service,
@@ -467,6 +491,10 @@ impl Interface {
                 cb_forwarding_buffer: &mut self.cb_forwarding_buffer,
                 #[cfg(feature = "proto-security")]
                 decap_context: &mut DecapContext::default(),
+            };
+            #[cfg(not(feature = "proto-geonet"))]
+            let ctx = InterfaceContext {
+                phantom: core::marker::PhantomData,
             };
 
             match self.inner.caps.medium {
@@ -572,6 +600,7 @@ impl Interface {
             #[cfg(feature = "proto-security")]
             let mut sec_ctx = DecapContext::default();
 
+            #[cfg(feature = "proto-geonet")]
             let srv = InterfaceContext {
                 core,
                 ls: &mut self.location_service,
@@ -584,6 +613,12 @@ impl Interface {
                 decap_context: &mut sec_ctx,
             };
 
+            #[cfg(not(feature = "proto-geonet"))]
+            let srv = InterfaceContext {
+                phantom: core::marker::PhantomData,
+            };
+
+            #[cfg(feature = "proto-geonet")]
             let result = match &mut item.socket {
                 #[cfg(feature = "socket-geonet")]
                 Socket::Geonet(socket) => socket.dispatch(
@@ -661,6 +696,9 @@ impl Interface {
                     },
                 ),
             };
+
+            #[cfg(not(feature = "proto-geonet"))]
+            let result = Ok(());
 
             match result {
                 Err(EgressError::Exhausted) => break, // Device buffer full.
@@ -1209,6 +1247,7 @@ impl InterfaceInner {
         Tx: TxToken,
     {
         match packet {
+            #[cfg(feature = "proto-geonet")]
             EthernetPacket::Geonet(packet) => self.dispatch_geonet(
                 tx_token,
                 core,
@@ -1220,6 +1259,7 @@ impl InterfaceInner {
         }
     }
 
+    #[cfg(feature = "proto-geonet")]
     fn dispatch_geonet<Tx: TxToken>(
         &mut self,
         mut tx_token: Tx,

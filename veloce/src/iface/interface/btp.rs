@@ -2,12 +2,18 @@ use crate::{
     iface::SocketSet,
     network::Indication,
     socket::{btp::Indication as BtpIndication, *},
-    wire::{BtpAHeader, BtpARepr, BtpBHeader, BtpBRepr, GeonetVariant},
 };
+
+#[cfg(feature = "socket-btp-a")]
+use crate::wire::{BtpAHeader, BtpARepr, GeonetVariant};
+
+#[cfg(feature = "socket-btp-b")]
+use crate::wire::{BtpBHeader, BtpBRepr};
 
 use super::{check, InterfaceContext, InterfaceInner};
 
 impl InterfaceInner {
+    #[cfg(feature = "socket-btp-a")]
     /// Processes a BTP-A packet.
     pub(super) fn process_btp_a(
         &mut self,
@@ -51,6 +57,7 @@ impl InterfaceInner {
         }
     }
 
+    #[cfg(feature = "socket-btp-b")]
     /// Processes a BTP-B packet.
     pub(super) fn process_btp_b(
         &mut self,

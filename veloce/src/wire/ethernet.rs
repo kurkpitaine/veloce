@@ -1,3 +1,4 @@
+#[cfg(feature = "medium-pc5")]
 use crate::wire::PC5Address;
 use crate::wire::{Error, Result};
 use byteorder::{ByteOrder, NetworkEndian};
@@ -81,6 +82,7 @@ impl Address {
 }
 
 /// Convert the given PC5 Layer 2 address into an Ethernet address.
+#[cfg(feature = "medium-pc5")]
 impl From<PC5Address> for Address {
     fn from(pc5_addr: PC5Address) -> Self {
         let mut addr = [0u8; 6];

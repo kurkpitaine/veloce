@@ -3,11 +3,13 @@ use crate::{
     network::GnCore,
     phy::{ChannelBusyRatio, Device, Medium, TxToken},
     time::{Duration, Instant},
-    wire::{
-        ieee80211::{FrameControl, QoSControl},
-        EthernetAddress, EthernetFrame, EthernetProtocol, GeonetRepr, GeonetVariant,
-        Ieee80211Frame, Ieee80211Repr, LlcFrame, LlcRepr,
-    },
+    wire::{EthernetAddress, EthernetFrame, EthernetProtocol, GeonetRepr, GeonetVariant},
+};
+
+#[cfg(feature = "medium-ieee80211p")]
+use crate::wire::{
+    ieee80211::{FrameControl, QoSControl},
+    Ieee80211Frame, Ieee80211Repr, LlcFrame, LlcRepr,
 };
 
 use super::{GeonetPacket, Interface, InterfaceInner};
@@ -160,6 +162,7 @@ impl InterfaceInner {
                 repr.basic_header_len() + encapsulated.len()
             }
             GeonetRepr::Unsecured(u) => u.buffer_len(),
+            #[cfg(feature = "proto-security")]
             _ => unreachable!(),
         };
 
@@ -230,6 +233,7 @@ impl InterfaceInner {
         };
 
         // Emit function for the Geonetworking header and payload.
+        #[allow(unused_mut)]
         let emit_gn = |gn_repr: &GeonetRepr<GeonetVariant>, mut tx_buffer: &mut [u8]| {
             #[cfg(feature = "proto-security")]
             if let GeonetRepr::Secured { encapsulated, .. } = gn_repr {

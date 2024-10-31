@@ -1,11 +1,17 @@
+#[cfg(feature = "socket-btp-a")]
 pub mod type_a;
+#[cfg(feature = "socket-btp-b")]
 pub mod type_b;
 
 use core::fmt;
 
+#[cfg(feature = "socket-btp-a")]
 pub use type_a as a;
+#[cfg(feature = "socket-btp-a")]
 pub use type_a::Socket as SocketA;
+#[cfg(feature = "socket-btp-b")]
 pub use type_b as b;
+#[cfg(feature = "socket-btp-b")]
 pub use type_b::Socket as SocketB;
 
 use crate::{

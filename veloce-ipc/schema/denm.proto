@@ -86,16 +86,18 @@ enum ApiResultCode {
    Ok = 0;
    // Some content is wrong or missing.
    Malformed = 1;
+   // ActionId is malformed.
+   MalformedActionId = 2;
    // Awareness distance is invalid.
-   InvalidAwarenessDistance = 2;
+   InvalidAwarenessDistance = 3;
    // Awareness traffic direction is invalid.
-   InvalidAwarenessTrafficDirection = 3;
+   InvalidAwarenessTrafficDirection = 4;
    // Situation container is invalid. Cannot decode it.
-   InvalidSituationContainer = 4;
+   InvalidSituationContainer = 5;
    // Location container is invalid. Cannot decode it.
-   InvalidLocationContainer = 5;
+   InvalidLocationContainer = 6;
    // A la carte container is invalid. Cannot decode it.
-   InvalidAlacarteContainer = 6;
+   InvalidAlacarteContainer = 7;
    // No available slot in the originating message table.
    NoFreeSlot = 10;
    // Event is already expired.

@@ -1095,24 +1095,8 @@ mod ipc {
     use uom::si::{angle::degree, f64::Angle, length::meter};
     use veloce_ipc::denm::{self as ipc_denm};
 
-    /// Error type returned by the IPC interface.
-    pub enum IpcError {
-        /// Some content is wrong or missing.
-        Malformed,
-        /// Awareness distance is invalid.
-        InvalidAwarenessDistance,
-        /// Awareness traffic direction is invalid.
-        InvalidAwarenessTrafficDirection,
-        /// Situation container is invalid. Cannot decode it.
-        InvalidSituationContainer,
-        /// Location container is invalid. Cannot decode it.
-        InvalidLocationContainer,
-        /// A la carte container is invalid. Cannot decode it.
-        InvalidAlacarteContainer,
-    }
-
     impl TryFrom<ipc_denm::ApiParameters> for EventParameters {
-        type Error = IpcError;
+        type Error = ipc_denm::ApiResultCode;
 
         fn try_from(value: ipc_denm::ApiParameters) -> Result<Self, Self::Error> {
             let detec_instant = Instant::from_millis_const(value.detection_time as i64);
@@ -1122,7 +1106,7 @@ mod ipc {
                 value.situation_container
             {
                 let dec = rasn::uper::decode::<denm::SituationContainer>(&situation_container_uper)
-                    .map_err(|_| IpcError::InvalidSituationContainer)?;
+                    .map_err(|_| ipc_denm::ApiResultCode::InvalidSituationContainer)?;
                 Some(dec)
             } else {
                 None
@@ -1132,7 +1116,7 @@ mod ipc {
             let location_container = if let Some(location_container_uper) = value.location_container
             {
                 let dec = rasn::uper::decode::<denm::LocationContainer>(&location_container_uper)
-                    .map_err(|_| IpcError::InvalidLocationContainer)?;
+                    .map_err(|_| ipc_denm::ApiResultCode::InvalidLocationContainer)?;
                 Some(dec)
             } else {
                 None
@@ -1142,19 +1126,21 @@ mod ipc {
             let alacarte_container = if let Some(alacarte_container_uper) = value.alacarte_container
             {
                 let dec = rasn::uper::decode::<denm::AlacarteContainer>(&alacarte_container_uper)
-                    .map_err(|_| IpcError::InvalidAlacarteContainer)?;
+                    .map_err(|_| ipc_denm::ApiResultCode::InvalidAlacarteContainer)?;
                 Some(dec)
             } else {
                 None
             };
 
-            let geo_area = value.geo_area.ok_or(IpcError::Malformed)?;
+            let geo_area = value.geo_area.ok_or(ipc_denm::ApiResultCode::Malformed)?;
 
-            let position = value.position.ok_or(IpcError::Malformed)?;
+            let position = value.position.ok_or(ipc_denm::ApiResultCode::Malformed)?;
             let pos_confidence = position
                 .position_confidence_ellipse
-                .ok_or(IpcError::Malformed)?;
-            let alt = position.altitude.ok_or(IpcError::Malformed)?;
+                .ok_or(ipc_denm::ApiResultCode::Malformed)?;
+            let alt = position
+                .altitude
+                .ok_or(ipc_denm::ApiResultCode::Malformed)?;
 
             let altitude = cdd::Altitude {
                 altitude_value: alt.altitude.map_or(cdd::AltitudeValue(800001), |a| {
@@ -1209,7 +1195,7 @@ mod ipc {
 
             let awareness_distance = if let Some(ad) = value.awareness_distance {
                 match ipc_denm::EtsiStandardLength3b::try_from(ad)
-                    .map_err(|_| IpcError::InvalidAwarenessDistance)?
+                    .map_err(|_| ipc_denm::ApiResultCode::InvalidAwarenessDistance)?
                 {
                     ipc_denm::EtsiStandardLength3b::LessThan50m => {
                         Some(cdd::StandardLength3b::lessThan50m)
@@ -1241,7 +1227,7 @@ mod ipc {
             };
 
             let awareness_traffic_direction = if let Some(td) = value.awareness_traffic_direction {
-                match ipc_denm::EtsiTrafficDirection::try_from(td).map_err(|_| IpcError::InvalidAwarenessTrafficDirection)? {
+                match ipc_denm::EtsiTrafficDirection::try_from(td).map_err(|_| ipc_denm::ApiResultCode::InvalidAwarenessTrafficDirection)? {
                     ipc_denm::EtsiTrafficDirection::AllTrafficDirections => Some(cdd::TrafficDirection::allTrafficDirections),
                     ipc_denm::EtsiTrafficDirection::SameAsReferenceDirectionUpstreamOfReferencePosition => Some(cdd::TrafficDirection::sameAsReferenceDirection_upstreamOfReferencePosition),
                     ipc_denm::EtsiTrafficDirection::SameAsReferenceDirectionDownstreamOfReferencePosition => Some(cdd::TrafficDirection::sameAsReferenceDirection_downstreamOfReferencePosition),
@@ -1280,10 +1266,10 @@ mod ipc {
     }
 
     impl TryFrom<ipc_denm::GeoArea> for GeoArea {
-        type Error = IpcError;
+        type Error = ipc_denm::ApiResultCode;
 
         fn try_from(value: ipc_denm::GeoArea) -> Result<Self, Self::Error> {
-            let shp = value.shape.ok_or(IpcError::Malformed)?;
+            let shp = value.shape.ok_or(ipc_denm::ApiResultCode::Malformed)?;
             let shape = match shp {
                 ipc_denm::geo_area::Shape::Circle(c) => Shape::Circle(Circle {
                     radius: Distance::new::<meter>(c.radius as f64),
@@ -1310,10 +1296,10 @@ mod ipc {
     }
 
     impl TryFrom<ipc_denm::Handle> for EventHandle {
-        type Error = IpcError;
+        type Error = ipc_denm::ApiResultCode;
 
         fn try_from(value: ipc_denm::Handle) -> Result<Self, Self::Error> {
-            let action_id = value.action_id.ok_or(IpcError::Malformed)?;
+            let action_id = value.action_id.ok_or(ipc_denm::ApiResultCode::Malformed)?;
 
             Ok(Self {
                 idx: value.idx as usize,
@@ -1334,6 +1320,20 @@ mod ipc {
                     sequence_number: self.action_id.seq_num.into(),
                 }),
             }
+        }
+    }
+
+    impl TryFrom<ipc_denm::ActionId> for ActionId {
+        type Error = ipc_denm::ApiResultCode;
+
+        fn try_from(value: ipc_denm::ActionId) -> Result<Self, Self::Error> {
+            Ok(ActionId {
+                station_id: value.station_id,
+                seq_num: value
+                    .sequence_number
+                    .try_into()
+                    .map_err(|_| ipc_denm::ApiResultCode::MalformedActionId)?,
+            })
         }
     }
 }
@@ -1814,7 +1814,7 @@ mod test {
         let repet_ends_at = now + repet.duration;
         let mut first_tx = true;
 
-        while now <= repet_ends_at {
+        while now < repet_ends_at {
             // Something should have been sent.
             let msg = send(&mut s, now).unwrap();
 

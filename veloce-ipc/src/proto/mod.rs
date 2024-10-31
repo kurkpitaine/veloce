@@ -21,7 +21,7 @@ impl event::Event {
         self.encode_to_vec()
     }
 
-    /// Deserialize from a
+    /// Deserialize from a buffer.
     pub fn deserialize(buf: &[u8]) -> Result<Self, prost::DecodeError> {
         Self::decode(buf)
     }
