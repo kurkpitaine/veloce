@@ -1,6 +1,6 @@
 use veloce_ipc::IpcEvent;
 
-#[cfg(any(feature = "socket-denm"))]
+#[cfg(any(feature = "socket-cam", feature = "socket-denm"))]
 use veloce_ipc::IpcEventType;
 
 use crate::{

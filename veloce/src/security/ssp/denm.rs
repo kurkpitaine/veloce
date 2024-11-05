@@ -251,18 +251,12 @@ impl DenmSsp {
 
     /// Query whether the DENM SSP is version 1.
     pub const fn is_v1(&self) -> bool {
-        match self {
-            DenmSsp::V1(_) => true,
-            _ => false,
-        }
+        matches!(self, DenmSsp::V1(_))
     }
 
     /// Query whether the DENM SSP is version 2.
     pub const fn is_v2(&self) -> bool {
-        match self {
-            DenmSsp::V2(_) => true,
-            _ => false,
-        }
+        matches!(self, DenmSsp::V2(_))
     }
 
     /// Query whether the DENM SSP has the given permission.
@@ -333,6 +327,12 @@ pub struct DenmSspV1(SspContainer<DENM_SSP_V1_LEN>);
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Decentralized Event Notification Message Service Specific Permissions version 2.
 pub struct DenmSspV2(SspContainer<DENM_SSP_V2_LEN>);
+
+impl Default for DenmSspV1 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl DenmSspV1 {
     /// Constructs a [DenmSspV1].
@@ -652,6 +652,12 @@ impl SspTrait for DenmSspV1 {
                 .write_bit::<{ field::POST_CRASH.0 }, { field::POST_CRASH.1 }>(false),
             _ => {}
         }
+    }
+}
+
+impl Default for DenmSspV2 {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

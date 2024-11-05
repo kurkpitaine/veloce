@@ -50,8 +50,8 @@ impl InterfaceInner {
             .items_mut()
             .filter_map(|i| btp::SocketA::downcast_mut(&mut i.socket))
         {
-            if btp_socket.accepts(self, &srv, &uc_repr, &btp_a_repr) {
-                btp_socket.process(self, &srv, btp_ind, &uc_repr, &btp_a_repr, payload);
+            if btp_socket.accepts(self, srv, uc_repr, &btp_a_repr) {
+                btp_socket.process(self, srv, btp_ind, uc_repr, &btp_a_repr, payload);
                 return;
             }
         }

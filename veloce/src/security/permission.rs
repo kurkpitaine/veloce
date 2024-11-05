@@ -65,13 +65,13 @@ impl TryFrom<&Integer> for AID {
         value
             .to_u64()
             .ok_or(AIDUnsupportedFormatError)
-            .map(|v| AID::from(v))
+            .map(AID::from)
     }
 }
 
-impl Into<Integer> for AID {
-    fn into(self) -> Integer {
-        u64::from(self).into()
+impl From<AID> for Integer {
+    fn from(value: AID) -> Self {
+        u64::from(value).into()
     }
 }
 
@@ -218,39 +218,39 @@ impl<'a> TryFrom<&'a PsidSsp> for Permission {
 
         let res = match aid {
             AID::CA => {
-                let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let raw = extract_ssp(value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CamSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
                 Permission::CAM(PermissionSspContainer { ssp, mask: None })
             }
             AID::DEN => {
-                let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let raw = extract_ssp(value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = DenmSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
                 Permission::DENM(PermissionSspContainer { ssp, mask: None })
             }
             AID::CRL => {
-                let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let raw = extract_ssp(value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CrlSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
                 Permission::CRL(PermissionSspContainer { ssp, mask: None })
             }
             AID::CTL => {
-                let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let raw = extract_ssp(value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CtlSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
 
                 Permission::CTL(PermissionSspContainer { ssp, mask: None })
             }
             AID::GnMgmt => Permission::GnMgmt,
             AID::SCR => {
-                let raw = extract_ssp(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let raw = extract_ssp(value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = ScrSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
 
                 Permission::SCR(PermissionSspContainer { ssp, mask: None })
             }
             _ => {
-                let raw = extract_ssp(&value)?;
+                let raw = extract_ssp(value)?;
 
                 Permission::Unknown {
                     aid: aid.into(),
-                    ssp: raw.and_then(|v| Some(v.0.to_vec())),
+                    ssp: raw.map(|v| v.0.to_vec()),
                     mask: None,
                 }
             }
@@ -287,28 +287,28 @@ impl<'a> TryFrom<&'a PsidSspRange> for Permission {
 
         let res = match aid {
             AID::CA => {
-                let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let range = extract_ssp_range(value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CamSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
                 let mask = Some(range.ssp_bitmask.to_vec());
 
                 Permission::CAM(PermissionSspContainer { ssp, mask })
             }
             AID::DEN => {
-                let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let range = extract_ssp_range(value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = DenmSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
                 let mask = Some(range.ssp_bitmask.to_vec());
 
                 Permission::DENM(PermissionSspContainer { ssp, mask })
             }
             AID::CRL => {
-                let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let range = extract_ssp_range(value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CrlSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
                 let mask = Some(range.ssp_bitmask.to_vec());
 
                 Permission::CRL(PermissionSspContainer { ssp, mask })
             }
             AID::CTL => {
-                let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let range = extract_ssp_range(value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = CtlSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
                 let mask = Some(range.ssp_bitmask.to_vec());
 
@@ -316,19 +316,19 @@ impl<'a> TryFrom<&'a PsidSspRange> for Permission {
             }
             AID::GnMgmt => Permission::GnMgmt,
             AID::SCR => {
-                let range = extract_ssp_range(&value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let range = extract_ssp_range(value)?.ok_or(PermissionError::NoSSP(aid))?;
                 let ssp = ScrSsp::parse(&range.ssp_value).map_err(PermissionError::SSP)?;
                 let mask = Some(range.ssp_bitmask.to_vec());
 
                 Permission::SCR(PermissionSspContainer { ssp, mask })
             }
             _ => {
-                let range = extract_ssp_range(&value)?;
+                let range = extract_ssp_range(value)?;
 
                 Permission::Unknown {
                     aid: aid.into(),
-                    ssp: range.and_then(|r| Some(r.ssp_value.to_vec())),
-                    mask: range.and_then(|r| Some(r.ssp_bitmask.to_vec())),
+                    ssp: range.map(|r| r.ssp_value.to_vec()),
+                    mask: range.map(|r| r.ssp_bitmask.to_vec()),
                 }
             }
         };

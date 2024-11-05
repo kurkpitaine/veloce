@@ -63,9 +63,9 @@ impl TryFrom<&EtsiHashAlgorithm> for HashAlgorithm {
     }
 }
 
-impl Into<EtsiHashAlgorithm> for HashAlgorithm {
-    fn into(self) -> EtsiHashAlgorithm {
-        match self {
+impl From<HashAlgorithm> for EtsiHashAlgorithm {
+    fn from(value: HashAlgorithm) -> Self {
+        match value {
             HashAlgorithm::SHA256 => EtsiHashAlgorithm::sha256,
             HashAlgorithm::SHA384 => EtsiHashAlgorithm::sha384,
         }
@@ -154,17 +154,17 @@ impl From<&ieee1609_dot2_base_types::HashedId8> for HashedId8 {
     }
 }
 
-impl Into<ieee1609_dot2_base_types::HashedId8> for HashedId8 {
-    fn into(self) -> ieee1609_dot2_base_types::HashedId8 {
-        let hash = self.as_bytes();
-        ieee1609_dot2_base_types::HashedId8(FixedOctetString::<8>::new(hash))
+impl From<HashedId8> for ieee1609_dot2_base_types::HashedId8 {
+    fn from(value: HashedId8) -> Self {
+        let hash = value.as_bytes();
+        Self(FixedOctetString::<8>::new(hash))
     }
 }
 
-impl Into<ieee1609_dot2_base_types::HashedId3> for HashedId8 {
-    fn into(self) -> ieee1609_dot2_base_types::HashedId3 {
-        let hash = self.as_bytes();
-        ieee1609_dot2_base_types::HashedId3(FixedOctetString::<3>::new([hash[5], hash[6], hash[7]]))
+impl From<HashedId8> for ieee1609_dot2_base_types::HashedId3 {
+    fn from(value: HashedId8) -> Self {
+        let hash = value.as_bytes();
+        Self(FixedOctetString::<3>::new([hash[5], hash[6], hash[7]]))
     }
 }
 

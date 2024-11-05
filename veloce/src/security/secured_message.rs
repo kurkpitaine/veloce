@@ -63,9 +63,9 @@ impl TryFrom<&ieee1609_dot2::SignerIdentifier> for SignerIdentifier {
     }
 }
 
-impl Into<ieee1609_dot2::SignerIdentifier> for SignerIdentifier {
-    fn into(self) -> ieee1609_dot2::SignerIdentifier {
-        match self {
+impl From<SignerIdentifier> for ieee1609_dot2::SignerIdentifier {
+    fn from(value: SignerIdentifier) -> Self {
+        match value {
             SignerIdentifier::Digest(digest) => ieee1609_dot2::SignerIdentifier::digest(digest),
             SignerIdentifier::Certificate(cert) => {
                 let seq = ieee1609_dot2::SequenceOfCertificate(vec![cert]);
@@ -204,7 +204,7 @@ impl SecuredMessage {
             return Err(SecuredMessageError::NotSigned);
         };
 
-        Ok(rasn::coer::encode(&sd.tbs_data).map_err(SecuredMessageError::Asn1Encode)?)
+        rasn::coer::encode(&sd.tbs_data).map_err(SecuredMessageError::Asn1Encode)
     }
 
     /// Get a reference on the secured message payload.
@@ -355,7 +355,7 @@ impl SecuredMessage {
             .header_info
             .inline_p2pcd_request
             .as_ref()
-            .map_or_else(|| Vec::new(), |p2pcd| p2pcd.0.clone());
+            .map_or_else(Vec::new, |p2pcd| p2pcd.0.clone());
 
         Ok(res)
     }
@@ -410,7 +410,7 @@ impl SecuredMessage {
 
     #[inline]
     fn encode(data: &EtsiTs103097DataSigned) -> SecuredMessageResult<Vec<u8>> {
-        Self::verify_etsi_data_signed_constraints(&data)?;
+        Self::verify_etsi_data_signed_constraints(data)?;
         rasn::coer::encode(data).map_err(SecuredMessageError::Asn1Encode)
     }
 

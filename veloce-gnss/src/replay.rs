@@ -173,7 +173,7 @@ impl Replay {
 
                 if delta >= TimeDelta::zero() {
                     self.next_sentence_at =
-                        timestamp + Duration::from_millis(delta.num_milliseconds().abs() as u64);
+                        timestamp + Duration::from_millis(delta.num_milliseconds().unsigned_abs());
                 } else {
                     // Rewind to the beginning of the sequence.
                     self.cache =
@@ -201,7 +201,7 @@ impl Replay {
         self.next_sentence_at - timestamp
     }
 
-    fn update_cache(&mut self, sentence: &String) -> bool {
+    fn update_cache(&mut self, sentence: &str) -> bool {
         match self.cache.parse_for_fix(sentence) {
             Ok(_) => {
                 self.position.fix.time = Some(Utc::now());
@@ -217,19 +217,12 @@ impl Replay {
                 };
 
                 self.position.fix.mode = mode;
-
-                self.position.fix.latitude = self
+                self.position.fix.latitude = self.cache.latitude.map(Angle::new::<degree>);
+                self.position.fix.longitude = self.cache.longitude.map(Angle::new::<degree>);
+                self.position.fix.altitude = self
                     .cache
-                    .latitude
-                    .map(|latitude| Angle::new::<degree>(latitude as f64));
-
-                self.position.fix.longitude = self
-                    .cache
-                    .longitude
-                    .map(|longitude| Angle::new::<degree>(longitude as f64));
-
-                self.position.fix.altitude =
-                    self.cache.altitude.map(|alt| Length::new::<meter>(alt.into()));
+                    .altitude
+                    .map(|alt| Length::new::<meter>(alt.into()));
 
                 self.position.fix.track = self
                     .cache

@@ -18,10 +18,11 @@ use crate::network::{
     TopoScopedReqMeta, UnicastReqMeta, UpperProtocol,
 };
 use crate::phy::PacketMeta;
-use crate::wire::geonet::geonet::unicast_to_variant_repr;
+use crate::wire::geonet::packet::unicast_to_variant_repr;
 use crate::wire::{
     GeonetBeacon, GeonetGeoAnycast, GeonetGeoBroadcast, GeonetLocationServiceReply,
     GeonetLocationServiceRequest, GeonetSingleHop, GeonetTopoBroadcast, GeonetVariant,
+    HardwareAddress,
 };
 use crate::{
     common::geo_area::{DistanceAB, GeoArea, Shape},
@@ -133,16 +134,17 @@ impl InterfaceInner {
             #[cfg(not(feature = "proto-security"))]
             BHNextHeader::SecuredHeader => {
                 net_trace!("network: secured header not supported");
-                return None;
+                None
             }
             BHNextHeader::Unknown(_) => {
                 net_trace!("network: unknown basic header next header field value");
-                return None;
+                None
             }
         }
     }
 
     #[cfg(feature = "proto-security")]
+    #[allow(clippy::too_many_arguments)]
     fn process_secured_header<'packet, 'ctx>(
         &mut self,
         ctx: InterfaceContext<'ctx>,
@@ -211,7 +213,7 @@ impl InterfaceInner {
         match ch_repr.header_type {
             GeonetPacketType::Any => {
                 net_trace!("network: discard 'Any' packet type");
-                return None;
+                None
             }
             GeonetPacketType::Beacon => {
                 self.process_beacon(ctx, bh_repr, ch_repr, packet, link_layer)
@@ -243,7 +245,7 @@ impl InterfaceInner {
             }
             GeonetPacketType::Unknown(u) => {
                 net_trace!("network: discard 'Unknown={}' packet type", u);
-                return None;
+                None
             }
         }
     }
@@ -269,9 +271,8 @@ impl InterfaceInner {
         /* Step 3: perform duplicate address detection. */
         ctx.core
             .duplicate_address_detection(link_layer.src_addr, beacon_repr.src_addr())
-            .and_then(|addr| {
-                self.hardware_addr = addr.into();
-                Some(addr)
+            .inspect(|addr| {
+                self.hardware_addr = HardwareAddress::from(*addr);
             });
 
         /* Step 4: update Location table */
@@ -348,9 +349,8 @@ impl InterfaceInner {
         /* Step 4: perform duplicate address detection. */
         ctx.core
             .duplicate_address_detection(link_layer.src_addr, ls_req_repr.src_addr())
-            .and_then(|addr| {
-                self.hardware_addr = addr.into();
-                Some(addr)
+            .inspect(|addr| {
+                self.hardware_addr = HardwareAddress::from(*addr);
             });
 
         /* Step 5-6: add/update location table */
@@ -429,15 +429,11 @@ impl InterfaceInner {
                 self.non_area_greedy_forwarding(&mut ctx, &packet, &[])
             };
 
-            let Some(addr) = addr_opt else {
-                return None;
-            };
-
             /* Step 10: Security sign packet done at lower level */
             /* Step 11: Media dependent procedures done at lower level */
 
             /* Step 12: Return packet. */
-            Some((ctx, addr, GeonetPacket::new(packet, None)))
+            Some((ctx, addr_opt?, GeonetPacket::new(packet, None)))
         } else {
             /* We are a forwarder */
             /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
@@ -530,9 +526,8 @@ impl InterfaceInner {
             /* Step 3: perform duplicate address detection. */
             ctx.core
                 .duplicate_address_detection(link_layer.src_addr, ls_rep_repr.src_addr())
-                .and_then(|addr| {
-                    self.hardware_addr = addr.into();
-                    Some(addr)
+                .inspect(|addr| {
+                    self.hardware_addr = HardwareAddress::from(*addr);
                 });
 
             /* Step 4: update Location table */
@@ -584,6 +579,7 @@ impl InterfaceInner {
     }
 
     /// Processes a Single-Hop Broadcast packet.
+    #[allow(clippy::too_many_arguments)]
     fn process_single_hop_broadcast<'packet, 'ctx>(
         &mut self,
         ctx: InterfaceContext<'ctx>,
@@ -611,9 +607,8 @@ impl InterfaceInner {
         /* Step 3: perform duplicate address detection. */
         ctx.core
             .duplicate_address_detection(link_layer.src_addr, shb_repr.src_addr())
-            .and_then(|addr| {
-                self.hardware_addr = addr.into();
-                Some(addr)
+            .inspect(|addr| {
+                self.hardware_addr = HardwareAddress::from(*addr);
             });
 
         let ls_pending = {
@@ -692,6 +687,7 @@ impl InterfaceInner {
     }
 
     /// Processes a Topologically Scoped Broadcast packet.
+    #[allow(clippy::too_many_arguments)]
     fn process_topo_scoped_broadcast<'packet, 'ctx>(
         &mut self,
         ctx: InterfaceContext<'ctx>,
@@ -728,9 +724,8 @@ impl InterfaceInner {
         /* Step 4: perform duplicate address detection. */
         ctx.core
             .duplicate_address_detection(link_layer.src_addr, tsb_repr.src_addr())
-            .and_then(|addr| {
-                self.hardware_addr = addr.into();
-                Some(addr)
+            .inspect(|addr| {
+                self.hardware_addr = HardwareAddress::from(*addr);
             });
 
         let ls_pending = {
@@ -834,6 +829,7 @@ impl InterfaceInner {
     }
 
     /// Process a unicast packet.
+    #[allow(clippy::too_many_arguments)]
     fn process_unicast<'packet, 'ctx>(
         &mut self,
         ctx: InterfaceContext<'ctx>,
@@ -920,9 +916,8 @@ impl InterfaceInner {
         /* Step 3: perform duplicate address detection. */
         ctx.core
             .duplicate_address_detection(link_layer.src_addr, uc_repr.src_addr())
-            .and_then(|addr| {
-                self.hardware_addr = addr.into();
-                Some(addr)
+            .inspect(|addr| {
+                self.hardware_addr = HardwareAddress::from(*addr);
             });
 
         /* Step 4: update Location table */
@@ -1020,17 +1015,14 @@ impl InterfaceInner {
         };
 
         /* Step 13: Check forwarding algorithm result. */
-        let Some(addr) = addr_opt else {
-            return None;
-        };
-
         /* Step 14: TODO: execute media dependent procedures */
         /* Step 15: return packet */
-        Some((ctx, addr, GeonetPacket::new(packet, Some(payload))))
+        Some((ctx, addr_opt?, GeonetPacket::new(packet, Some(payload))))
     }
 
     /// Receiver (destination) operations for a unicast packet.
-    fn receive_unicast<'payload>(
+    #[allow(clippy::too_many_arguments)]
+    fn receive_unicast(
         &mut self,
         ctx: InterfaceContext,
         sockets: &mut SocketSet,
@@ -1038,7 +1030,7 @@ impl InterfaceInner {
         bh_repr: BasicHeaderRepr,
         ch_repr: CommonHeaderRepr,
         uc_repr: UnicastRepr,
-        payload: &'payload [u8],
+        payload: &[u8],
         link_layer: EthernetRepr,
     ) {
         /* Step 3: duplicate packet detection */
@@ -1053,9 +1045,8 @@ impl InterfaceInner {
         /* Step 4: perform duplicate address detection */
         ctx.core
             .duplicate_address_detection(link_layer.src_addr, uc_repr.src_addr())
-            .and_then(|addr| {
-                self.hardware_addr = addr.into();
-                Some(addr)
+            .inspect(|addr| {
+                self.hardware_addr = HardwareAddress::from(*addr);
             });
 
         /* Step 5-6: update Location table */
@@ -1111,6 +1102,7 @@ impl InterfaceInner {
     }
 
     /// Process a Geo Broadcast packet.
+    #[allow(clippy::too_many_arguments)]
     fn process_geo_broadcast<'packet, 'ctx>(
         &mut self,
         mut ctx: InterfaceContext<'ctx>,
@@ -1155,9 +1147,8 @@ impl InterfaceInner {
         /* Step 4: perform duplicate address detection. */
         ctx.core
             .duplicate_address_detection(link_layer.src_addr, gbc_repr.src_addr())
-            .and_then(|addr| {
-                self.hardware_addr = addr.into();
-                Some(addr)
+            .inspect(|addr| {
+                self.hardware_addr = HardwareAddress::from(*addr);
             });
 
         let ls_pending = {
@@ -1251,16 +1242,17 @@ impl InterfaceInner {
             self.forwarding_algorithm(&mut ctx, &packet, payload, Some(link_layer));
 
         /* Step 12: check if packet has been buffered or dropped */
-        let Some(dst_addr) = dst_ll_addr_opt else {
-            return None;
-        };
-
         /* Step 13: TODO: execute media dependent procedures */
         /* Step 14: return packet */
-        Some((ctx, dst_addr, GeonetPacket::new(packet, Some(payload))))
+        Some((
+            ctx,
+            dst_ll_addr_opt?,
+            GeonetPacket::new(packet, Some(payload)),
+        ))
     }
 
     /// Process a Geo Anycast packet.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn process_geo_anycast<'packet, 'ctx>(
         &mut self,
         mut ctx: InterfaceContext<'ctx>,
@@ -1297,9 +1289,8 @@ impl InterfaceInner {
         /* Step 4: perform duplicate address detection. */
         ctx.core
             .duplicate_address_detection(link_layer.src_addr, gac_repr.src_addr())
-            .and_then(|addr| {
-                self.hardware_addr = addr.into();
-                Some(addr)
+            .inspect(|addr| {
+                self.hardware_addr = HardwareAddress::from(*addr);
             });
 
         /* Step 5-6: update Location table */
@@ -1393,13 +1384,13 @@ impl InterfaceInner {
             self.forwarding_algorithm(&mut ctx, &packet, payload, Some(link_layer));
 
         /* Step 12: check if packet has been buffered or dropped */
-        let Some(dst_addr) = dst_ll_addr_opt else {
-            return None;
-        };
-
         /* Step 12: TODO: execute media dependent procedures */
         /* Step 13: return packet */
-        Some((ctx, dst_addr, GeonetPacket::new(packet, Some(payload))))
+        Some((
+            ctx,
+            dst_ll_addr_opt?,
+            GeonetPacket::new(packet, Some(payload)),
+        ))
     }
 
     /// Dispatch beacons packets.
@@ -1642,14 +1633,14 @@ impl InterfaceInner {
                 #[cfg(feature = "proto-security")]
                 let metadata = if ctx.core.security.is_some() {
                     GeonetRepr::ToSecure {
-                        repr: buf_packet.into(),
+                        repr: buf_packet,
                         permission: metadata.its_aid,
                     }
                 } else {
-                    GeonetRepr::Unsecured(buf_packet.into())
+                    GeonetRepr::Unsecured(buf_packet)
                 };
                 #[cfg(not(feature = "proto-security"))]
-                let metadata = GeonetRepr::Unsecured(buf_packet.into());
+                let metadata = GeonetRepr::Unsecured(buf_packet);
 
                 ctx.ls_buffer.enqueue(metadata, payload, ctx.core.now).ok();
 
@@ -1665,14 +1656,14 @@ impl InterfaceInner {
                 #[cfg(feature = "proto-security")]
                 let packet_meta = if ctx.core.security.is_some() {
                     GeonetRepr::ToSecure {
-                        repr: buf_packet.into(),
+                        repr: buf_packet,
                         permission: metadata.its_aid,
                     }
                 } else {
-                    GeonetRepr::Unsecured(buf_packet.into())
+                    GeonetRepr::Unsecured(buf_packet)
                 };
                 #[cfg(not(feature = "proto-security"))]
-                let packet_meta = GeonetRepr::Unsecured(buf_packet.into());
+                let packet_meta = GeonetRepr::Unsecured(buf_packet);
 
                 ctx.uc_forwarding_buffer
                     .enqueue(packet_meta, payload, ctx.core.now)
@@ -1681,7 +1672,7 @@ impl InterfaceInner {
                 return Ok(());
             }
 
-            let buf_packet = GeonetUnicast::new(bh_repr.clone(), ch_repr.clone(), uc_repr.clone());
+            let buf_packet = GeonetUnicast::new(bh_repr, ch_repr, uc_repr);
 
             #[cfg(feature = "proto-security")]
             let packet_meta = if ctx.core.security.is_some() {
@@ -1727,8 +1718,10 @@ impl InterfaceInner {
             };
 
             /* Add a LocTE entry for the station */
-            let mut pv = LongPositionVector::default();
-            pv.address = metadata.destination;
+            let pv = LongPositionVector {
+                address: metadata.destination,
+                ..Default::default()
+            };
             let entry = self.location_table.update_mut(ctx.core.now, &pv);
             entry.ls_pending = Some(handle);
 
@@ -1747,19 +1740,19 @@ impl InterfaceInner {
             #[cfg(feature = "proto-security")]
             let metadata = if ctx.core.security.is_some() {
                 GeonetRepr::ToSecure {
-                    repr: buf_packet.into(),
+                    repr: buf_packet,
                     permission: metadata.its_aid,
                 }
             } else {
-                GeonetRepr::Unsecured(buf_packet.into())
+                GeonetRepr::Unsecured(buf_packet)
             };
             #[cfg(not(feature = "proto-security"))]
-            let metadata = GeonetRepr::Unsecured(buf_packet.into());
+            let metadata = GeonetRepr::Unsecured(buf_packet);
 
             ctx.ls_buffer.enqueue(metadata, payload, ctx.core.now).ok();
         }
 
-        return Ok(());
+        Ok(())
     }
 
     /// Dispatch a Topologically Scoped Broadcast packet.
@@ -1981,11 +1974,11 @@ impl InterfaceInner {
         /* Step 1b: set the fields of the common header */
         let ch_repr = CommonHeaderRepr {
             next_header: metadata.upper_proto.into(),
-            header_type: (|| match metadata.destination.shape {
+            header_type: (match metadata.destination.shape {
                 Shape::Circle(_) => GeonetPacketType::GeoBroadcastCircle,
                 Shape::Rectangle(_) => GeonetPacketType::GeoBroadcastRect,
                 Shape::Ellipse(_) => GeonetPacketType::GeoBroadcastElip,
-            })(),
+            }),
             traffic_class: metadata.traffic_class,
             mobile: GN_IS_MOBILE,
             payload_len: payload.len(),
@@ -2080,11 +2073,11 @@ impl InterfaceInner {
         /* Step 1b: set the fields of the common header */
         let ch_repr = CommonHeaderRepr {
             next_header: metadata.upper_proto.into(),
-            header_type: (|| match metadata.destination.shape {
+            header_type: (match metadata.destination.shape {
                 Shape::Circle(_) => GeonetPacketType::GeoAnycastCircle,
                 Shape::Rectangle(_) => GeonetPacketType::GeoAnycastRect,
                 Shape::Ellipse(_) => GeonetPacketType::GeoAnycastElip,
-            })(),
+            }),
             traffic_class: metadata.traffic_class,
             mobile: GN_IS_MOBILE,
             payload_len: payload.len(),
@@ -2182,7 +2175,7 @@ impl InterfaceInner {
                 self,
                 ctx.core,
                 ctx.congestion_control,
-                (dest_mac_addr, variant.into(), packet.payload()),
+                (dest_mac_addr, variant, packet.payload()),
             )
         })
     }
@@ -2225,7 +2218,7 @@ impl InterfaceInner {
                 self,
                 ctx.core,
                 ctx.congestion_control,
-                (dest_addr, variant.into(), packet.payload()),
+                (dest_addr, variant, packet.payload()),
             )
         })
     }
@@ -2393,59 +2386,55 @@ impl InterfaceInner {
                 .geo_destination()
                 .distance_to(&neighbor.geo_position());
             if dist < mfr {
-                next_hop = Some(neighbor.position_vector.address.mac_addr().into());
+                next_hop = Some(neighbor.position_vector.address.mac_addr());
                 mfr = dist;
             }
         }
 
-        let ll_addr = if mfr < dist_ego_dest {
+        if mfr < dist_ego_dest {
             next_hop
+        } else if inner.traffic_class().store_carry_forward() {
+            match inner {
+                GeonetVariant::Unicast(u) => {
+                    let buf_packet = match packet {
+                        GeonetRepr::Unsecured(_) => GeonetRepr::Unsecured(u.to_owned()),
+                        #[cfg(feature = "proto-security")]
+                        GeonetRepr::SecuredDecap {
+                            secured_message,
+                            secured_message_size,
+                            ..
+                        } => GeonetRepr::SecuredDecap {
+                            repr: u.to_owned(),
+                            secured_message: secured_message.to_owned(),
+                            secured_message_size: *secured_message_size,
+                        },
+                        #[cfg(feature = "proto-security")]
+                        GeonetRepr::ToSecure { permission, .. } => GeonetRepr::ToSecure {
+                            repr: u.to_owned(),
+                            permission: permission.to_owned(),
+                        },
+                        #[cfg(feature = "proto-security")]
+                        GeonetRepr::Secured { encapsulated, .. } => GeonetRepr::Secured {
+                            repr: u.to_owned(),
+                            encapsulated: encapsulated.to_owned(),
+                        },
+                    };
+                    ctx.uc_forwarding_buffer
+                        .enqueue(buf_packet, payload, ctx.core.now)
+                        .ok();
+                }
+                GeonetVariant::Anycast(_) | GeonetVariant::Broadcast(_) => {
+                    ctx.bc_forwarding_buffer
+                        .enqueue(packet.to_owned(), payload, ctx.core.now)
+                        .ok();
+                }
+                _ => unreachable!(),
+            };
+
+            None
         } else {
-            if inner.traffic_class().store_carry_forward() {
-                match inner {
-                    GeonetVariant::Unicast(u) => {
-                        let buf_packet = match packet {
-                            GeonetRepr::Unsecured(_) => GeonetRepr::Unsecured(u.to_owned()),
-                            #[cfg(feature = "proto-security")]
-                            GeonetRepr::SecuredDecap {
-                                secured_message,
-                                secured_message_size,
-                                ..
-                            } => GeonetRepr::SecuredDecap {
-                                repr: u.to_owned(),
-                                secured_message: secured_message.to_owned(),
-                                secured_message_size: *secured_message_size,
-                            },
-                            #[cfg(feature = "proto-security")]
-                            GeonetRepr::ToSecure { permission, .. } => GeonetRepr::ToSecure {
-                                repr: u.to_owned(),
-                                permission: permission.to_owned(),
-                            },
-                            #[cfg(feature = "proto-security")]
-                            GeonetRepr::Secured { encapsulated, .. } => GeonetRepr::Secured {
-                                repr: u.to_owned(),
-                                encapsulated: encapsulated.to_owned(),
-                            },
-                        };
-                        ctx.uc_forwarding_buffer
-                            .enqueue(buf_packet, payload, ctx.core.now)
-                            .ok();
-                    }
-                    GeonetVariant::Anycast(_) | GeonetVariant::Broadcast(_) => {
-                        ctx.bc_forwarding_buffer
-                            .enqueue(packet.to_owned(), payload, ctx.core.now)
-                            .ok();
-                    }
-                    _ => unreachable!(),
-                };
-
-                None
-            } else {
-                Some(EthernetAddress::BROADCAST.into())
-            }
-        };
-
-        ll_addr
+            Some(EthernetAddress::BROADCAST)
+        }
     }
 
     /// Executes the non area contention algorithm as
@@ -2464,7 +2453,7 @@ impl InterfaceInner {
         net_trace!("non_area_contention_based_forwarding");
 
         let Some(EthernetRepr { src_addr, .. }) = link_layer else {
-            return Some(EthernetAddress::BROADCAST.into());
+            return Some(EthernetAddress::BROADCAST);
         };
 
         let inner = packet.inner();
@@ -2520,7 +2509,7 @@ impl InterfaceInner {
     ///
     /// Always return the link layer broadcast address.
     fn area_simple_forwarding(&self) -> Option<EthernetAddress> {
-        Some(EthernetAddress::BROADCAST.into())
+        Some(EthernetAddress::BROADCAST)
     }
 
     /// Executes the non area contention algorithm as
@@ -2539,7 +2528,7 @@ impl InterfaceInner {
         net_trace!("area_contention_based_forwarding");
 
         let Some(EthernetRepr { src_addr, .. }) = link_layer else {
-            return Some(EthernetAddress::BROADCAST.into());
+            return Some(EthernetAddress::BROADCAST);
         };
 
         let inner = packet.inner();
@@ -2592,7 +2581,7 @@ impl InterfaceInner {
             src_addr, dst_addr, ..
         }) = link_layer
         else {
-            return Some(EthernetAddress::BROADCAST.into());
+            return Some(EthernetAddress::BROADCAST);
         };
 
         let inner = packet.inner();
@@ -2651,51 +2640,48 @@ impl InterfaceInner {
             }
         }) {
             None
+        } else if dst_addr == ctx.core.address().mac_addr() {
+            let nh = self.non_area_greedy_forwarding(ctx, packet, payload);
+            ctx.cb_forwarding_buffer
+                .enqueue(
+                    packet.to_owned(),
+                    payload,
+                    cbf_id,
+                    GN_CBF_MAX_TIME,
+                    ctx.core.now,
+                    src_addr,
+                )
+                .ok();
+            nh
         } else {
-            if dst_addr == ctx.core.address().mac_addr() {
-                let nh = self.non_area_greedy_forwarding(ctx, packet, payload);
-                ctx.cb_forwarding_buffer
-                    .enqueue(
-                        packet.to_owned(),
-                        payload,
-                        cbf_id,
-                        GN_CBF_MAX_TIME,
-                        ctx.core.now,
-                        src_addr,
-                    )
-                    .ok();
-                nh
-            } else {
-                /* Contention buffering. There is a modification in our implementation since the condition
-                ((PV_SE EXISTS) OR (PV_SE = EPV)) AND (PAI_SE = TRUE)) is weird and does not make sense.
-                PV_SE cannot be EPV since SE is deduced from the link layer sender mac address, the OR condition
-                seems to be a mistake. On ETSI EN 302 636-4-1 V1.2.1, this condition does not exists, our
-                implementation follows that version.
-                */
-                let entry_opt = self.location_table.find(&src_addr);
-                let pai_ego = ctx.core.ego_position_vector.is_accurate;
+            /* Contention buffering. There is a modification in our implementation since the condition
+            ((PV_SE EXISTS) OR (PV_SE = EPV)) AND (PAI_SE = TRUE)) is weird and does not make sense.
+            PV_SE cannot be EPV since SE is deduced from the link layer sender mac address, the OR condition
+            seems to be a mistake. On ETSI EN 302 636-4-1 V1.2.1, this condition does not exists, our
+            implementation follows that version.
+            */
+            let entry_opt = self.location_table.find(&src_addr);
+            let pai_ego = ctx.core.ego_position_vector.is_accurate;
 
-                let cbf_timer = match (entry_opt, pai_ego) {
-                    (Some(entry), true) if entry.position_vector.is_accurate => {
-                        let dist_se_ego =
-                            entry.geo_position().distance_to(&ctx.core.geo_position());
-                        Self::cbf_timeout_equation(dist_se_ego)
-                    }
-                    _ => GN_CBF_MAX_TIME,
-                };
-                ctx.cb_forwarding_buffer
-                    .enqueue(
-                        packet.to_owned(),
-                        payload,
-                        cbf_id,
-                        cbf_timer,
-                        ctx.core.now,
-                        src_addr,
-                    )
-                    .ok();
+            let cbf_timer = match (entry_opt, pai_ego) {
+                (Some(entry), true) if entry.position_vector.is_accurate => {
+                    let dist_se_ego = entry.geo_position().distance_to(&ctx.core.geo_position());
+                    Self::cbf_timeout_equation(dist_se_ego)
+                }
+                _ => GN_CBF_MAX_TIME,
+            };
+            ctx.cb_forwarding_buffer
+                .enqueue(
+                    packet.to_owned(),
+                    payload,
+                    cbf_id,
+                    cbf_timer,
+                    ctx.core.now,
+                    src_addr,
+                )
+                .ok();
 
-                None
-            }
+            None
         };
 
         rc
@@ -2737,13 +2723,13 @@ impl InterfaceInner {
                 .decap_context
                 .decap_confirm
                 .as_ref()
-                .map_or_else(|| Default::default(), |d| d.permissions.clone()),
+                .map_or_else(Default::default, |d| d.permissions.clone()),
             #[cfg(feature = "proto-security")]
             cert_id: ctx
                 .decap_context
                 .decap_confirm
                 .as_ref()
-                .map_or_else(|| Default::default(), |d| d.cert_id),
+                .map_or_else(Default::default, |d| d.cert_id),
             rem_lifetime: packet.lifetime(),
             rem_hop_limit: packet.hop_limit(),
             traffic_class: packet.traffic_class(),

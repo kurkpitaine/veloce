@@ -176,7 +176,7 @@ impl Core {
 
     /// Returns the Ego Position Vector as a [`LongPositionVector`].
     pub fn ego_position_vector(&self) -> LongPositionVector {
-        self.ego_position_vector.clone()
+        self.ego_position_vector
     }
 
     /// Returns the position carried inside the Ego Position Vector
@@ -269,7 +269,7 @@ impl Core {
 
     /// Set the position of the local ITS Station.
     pub fn set_position(&mut self, fix: PotiFix) -> Result<(), PotiError> {
-        self.poti.push_fix(fix).and_then(|fix| {
+        self.poti.push_fix(fix).map(|fix| {
             self.ego_position_vector.timestamp = TAI2004::now().into();
             self.ego_position_vector.latitude = fix
                 .position
@@ -290,15 +290,11 @@ impl Core {
                 .map_or(Speed::new::<meter_per_second>(0.0), |spd| spd);
 
             if let Some(major_confidence) = fix.confidence.position.semi_major {
-                if major_confidence.get::<meter>() < (config::GN_PAI_INTERVAL / 2.0) {
-                    self.ego_position_vector.is_accurate = true;
-                } else {
-                    self.ego_position_vector.is_accurate = false;
-                }
+                self.ego_position_vector.is_accurate =
+                    major_confidence.get::<meter>() < (config::GN_PAI_INTERVAL / 2.0);
             } else {
                 self.ego_position_vector.is_accurate = false;
             }
-            Ok(())
         })
     }
 }

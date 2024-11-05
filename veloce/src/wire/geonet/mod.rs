@@ -1,12 +1,12 @@
 use crate::{time::TAI2004, wire::ethernet::Address as MacAddress};
 use byteorder::{ByteOrder, NetworkEndian};
-use core::{cmp, fmt, ops, u16};
+use core::{cmp, fmt, ops};
 
 pub mod anycast_broadcast_header;
 pub mod basic_header;
 pub mod beacon_header;
 pub mod common_header;
-pub mod geonet;
+pub mod packet;
 pub mod location_service_req_header;
 pub mod long_position_vector;
 pub mod short_position_vector;
@@ -58,7 +58,7 @@ pub struct SequenceNumber(pub u16);
 
 impl fmt::Display for SequenceNumber {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0 as u16)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -178,9 +178,9 @@ impl From<TrafficParticipantType> for StationType {
 }
 
 #[cfg(feature = "asn1")]
-impl Into<TrafficParticipantType> for StationType {
-    fn into(self) -> TrafficParticipantType {
-        match self {
+impl From<StationType> for TrafficParticipantType {
+    fn from(value: StationType) -> Self {
+        match value {
             StationType::Pedestrian => TrafficParticipantType(1),
             StationType::Cyclist => TrafficParticipantType(2),
             StationType::Moped => TrafficParticipantType(3),
@@ -227,9 +227,9 @@ impl From<CddStationType> for StationType {
 }
 
 #[cfg(feature = "asn1")]
-impl Into<CddStationType> for StationType {
-    fn into(self) -> CddStationType {
-        match self {
+impl From<StationType> for CddStationType {
+    fn from(value: StationType) -> Self {
+        match value {
             StationType::Pedestrian => CddStationType(1),
             StationType::Cyclist => CddStationType(2),
             StationType::Moped => CddStationType(3),

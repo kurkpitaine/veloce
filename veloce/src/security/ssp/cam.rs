@@ -76,6 +76,12 @@ const CAM_SSP_LEN: usize = 3;
 /// Secured Certificate Request Service Specific Permissions.
 pub struct CamSsp(SspContainer<CAM_SSP_LEN>);
 
+impl Default for CamSsp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CamSsp {
     /// Constructs a [CamSsp].
     pub const fn new() -> CamSsp {

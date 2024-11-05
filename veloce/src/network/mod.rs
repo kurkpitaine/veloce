@@ -43,9 +43,9 @@ impl From<GnProtocol> for UpperProtocol {
     }
 }
 
-impl Into<GnProtocol> for UpperProtocol {
-    fn into(self) -> GnProtocol {
-        match self {
+impl From<UpperProtocol> for GnProtocol {
+    fn from(value: UpperProtocol) -> Self {
+        match value {
             UpperProtocol::Any => GnProtocol::Any,
             UpperProtocol::BtpA => GnProtocol::BtpA,
             UpperProtocol::BtpB => GnProtocol::BtpB,

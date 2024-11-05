@@ -12,4 +12,4 @@ pub use zmq::{
 };
 
 pub use proto::denm;
-pub use proto::event::{event::EventType as IpcEventType, Event as IpcEvent};
+pub use proto::message::{event::EventType as IpcEventType, Event as IpcEvent};

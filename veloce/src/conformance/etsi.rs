@@ -310,7 +310,6 @@ impl State {
             .send_slice(&ut_guc_pkt.payload()[..ut_guc_pkt.payload_len()], req_meta)
             .map_err(|e| {
                 error!("Failed to send GUC packet: {}", e);
-                ()
             })
     }
 
@@ -333,7 +332,6 @@ impl State {
             .send_slice(&ut_shb_pkt.payload()[..ut_shb_pkt.payload_len()], req_meta)
             .map_err(|e| {
                 error!("Failed to send SHB packet: {}", e);
-                ()
             })
     }
 
@@ -358,7 +356,6 @@ impl State {
             .send_slice(&ut_tsb_pkt.payload()[..ut_tsb_pkt.payload_len()], req_meta)
             .map_err(|e| {
                 error!("Failed to send TSB packet: {}", e);
-                ()
             })
     }
 
@@ -382,7 +379,6 @@ impl State {
             .send_slice(&ut_gbc_pkt.payload()[..ut_gbc_pkt.payload_len()], req_meta)
             .map_err(|e| {
                 error!("Failed to send GBC packet: {}", e);
-                ()
             })
     }
 
@@ -406,7 +402,6 @@ impl State {
             .send_slice(&ut_gbc_pkt.payload()[..ut_gbc_pkt.payload_len()], req_meta)
             .map_err(|e| {
                 error!("Failed to send GAC packet: {}", e);
-                ()
             })
     }
 
@@ -431,7 +426,6 @@ impl State {
             .send_slice(&btp_buf, Default::default())
             .map_err(|e| {
                 error!("Failed to send BTP-A packet: {}", e);
-                ()
             })
     }
 
@@ -456,7 +450,6 @@ impl State {
             .send_slice(&btp_buf, Default::default())
             .map_err(|e| {
                 error!("Failed to send BTP-B packet: {}", e);
-                ()
             })
     }
 
@@ -598,13 +591,11 @@ impl State {
 
         socket
             .trigger(router, event.clone())
-            .map(|h| {
-                self.denm_handles.insert(h, event);
-                h
+            .inspect(|h| {
+                self.denm_handles.insert(*h, event);
             })
             .map_err(|e| {
                 error!("Failed to trigger DENM: {}", e);
-                ()
             })
     }
 
@@ -708,13 +699,11 @@ impl State {
 
         socket
             .update(router, *evt_hdl, event.clone())
-            .map(|h| {
+            .inspect(|_| {
                 *evt_params = event;
-                h
             })
             .map_err(|e| {
                 error!("Failed to update DENM: {}", e);
-                ()
             })
     }
 
@@ -750,11 +739,9 @@ impl State {
                 .cancel(router, evt_hdl, evt_params.clone())
                 .map(|_| {
                     self.denm_handles.remove(&evt_hdl);
-                    ()
                 })
                 .map_err(|e| {
                     error!("Failed to cancel DENM: {}", e);
-                    ()
                 })
         } else {
             trace!(
@@ -810,7 +797,6 @@ impl State {
                 .map(|_| ())
                 .map_err(|e| {
                     error!("Failed to negate DENM: {}", e);
-                    ()
                 })
         }
     }

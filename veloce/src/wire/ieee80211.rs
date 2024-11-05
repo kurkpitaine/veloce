@@ -10,6 +10,7 @@ pub struct FrameControl(pub [u8; 2]);
 
 impl FrameControl {
     /// Construct an Ieee 802.11 Frame Control
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         version: u8,
         r#type: u8,
@@ -428,8 +429,7 @@ impl QoSControl {
 
     /// Return the QoS `Ack policy` field.
     pub fn ack_policy(&self) -> u8 {
-        let raw = (self.0[0] >> 5) & 0x03;
-        raw as u8
+        (self.0[0] >> 5) & 0x03
     }
 
     /// Set the QoS `Ack policy` field.

@@ -211,7 +211,7 @@ impl InterfaceInner {
                 frame_control: frame_ctrl,
                 duration_or_id: Default::default(),
                 dst_addr: dst_hw_addr,
-                src_addr: src_addr,
+                src_addr,
                 bss_id: EthernetAddress::BROADCAST,
                 sequence_control: Default::default(),
                 qos_control: qos_ctrl,
@@ -240,7 +240,7 @@ impl InterfaceInner {
                 // Emit the basic header.
                 gn_repr.inner().emit_basic_header(&mut tx_buffer);
                 // Put the encapsulated content in the tx buffer.
-                tx_buffer[gn_repr.inner().basic_header_len()..].copy_from_slice(&encapsulated);
+                tx_buffer[gn_repr.inner().basic_header_len()..].copy_from_slice(encapsulated);
             } else {
                 gn_repr.inner().emit(&mut tx_buffer);
                 packet.emit_payload(&mut tx_buffer[gn_repr.inner().header_len()..]);
@@ -268,7 +268,7 @@ impl InterfaceInner {
                 tx_buffer = &mut tx_buffer[pl_start..];
             }
 
-            emit_gn(&gn_repr, tx_buffer);
+            emit_gn(gn_repr, tx_buffer);
             Ok(total_len)
         })
     }

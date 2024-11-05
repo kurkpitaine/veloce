@@ -83,9 +83,9 @@ impl Subscriber {
         let timeout = timeout.map_or(-1, |t| t.as_millis() as i64);
 
         loop {
-            match self.socket.poll(zmq::POLLIN, timeout as i64) {
+            match self.socket.poll(zmq::POLLIN, timeout) {
                 Ok(_) => return Ok(()),
-                Err(e) if e == Error::EINTR => {}
+                Err(Error::EINTR) => {}
                 Err(e) => {
                     return Err(e.into());
                 }
@@ -156,9 +156,9 @@ impl Replier {
         let timeout = timeout.map_or(-1, |t| t.as_millis() as i64);
 
         loop {
-            match self.socket.poll(zmq::POLLIN, timeout as i64) {
+            match self.socket.poll(zmq::POLLIN, timeout) {
                 Ok(_) => return Ok(()),
-                Err(e) if e == Error::EINTR => {}
+                Err(Error::EINTR) => {}
                 Err(e) => {
                     return Err(e.into());
                 }
@@ -233,9 +233,9 @@ impl Requester {
         let timeout = timeout.map_or(-1, |t| t.as_millis() as i64);
 
         loop {
-            match self.socket.poll(zmq::POLLIN, timeout as i64) {
+            match self.socket.poll(zmq::POLLIN, timeout) {
                 Ok(_) => return Ok(()),
-                Err(e) if e == Error::EINTR => {}
+                Err(Error::EINTR) => {}
                 Err(e) => {
                     return Err(e.into());
                 }

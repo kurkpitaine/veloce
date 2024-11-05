@@ -128,14 +128,9 @@ impl CertificateTrait for RootCertificate {
         let has_permissions = app_permissions
             .0
             .iter()
-            .filter_map(|e| {
-                if e.psid == Psid(Integer::from(u64::from(AID::CRL)))
+            .filter(|e| {
+                e.psid == Psid(Integer::from(u64::from(AID::CRL)))
                     || e.psid == Psid(Integer::from(u64::from(AID::CTL))) && e.ssp.is_some()
-                {
-                    Some(e)
-                } else {
-                    None
-                }
             })
             .count()
             >= 2;

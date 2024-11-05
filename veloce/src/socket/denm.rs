@@ -166,11 +166,11 @@ impl From<cdd::ActionId> for ActionId {
     }
 }
 
-impl Into<cdd::ActionId> for ActionId {
-    fn into(self) -> cdd::ActionId {
-        cdd::ActionId {
-            originating_station_id: cdd::StationId(self.station_id),
-            sequence_number: cdd::SequenceNumber(self.seq_num),
+impl From<ActionId> for cdd::ActionId {
+    fn from(value: ActionId) -> Self {
+        Self {
+            originating_station_id: cdd::StationId(value.station_id),
+            sequence_number: cdd::SequenceNumber(value.seq_num),
         }
     }
 }
@@ -353,6 +353,9 @@ const DENM_RX_BUF_NUM: usize = 5;
 /// Maximum size of data in receive buffer.
 const DENM_RX_BUF_SIZE: usize = DENM_RX_BUF_NUM * BTP_MAX_PL_SIZE;
 
+/// Rx/Tx callback type.
+type RxTxCallback = Box<dyn FnMut(&[u8], &denm::DENM)>;
+
 /// An ETSI DENM type socket.
 ///
 /// A DENM socket executes the Decentralized Event Notification Message protocol,
@@ -372,11 +375,11 @@ pub struct Socket<'a> {
     recv_msg_table: ManagedSlice<'a, Option<ReceivedDenm>>,
     /// Function to call when a DENM message is successfully received by the DENM socket,
     /// ie: whose content is valid and not expired, including repeated messages.
-    rx_callback: Option<Box<dyn FnMut(&[u8], &denm::DENM)>>,
+    rx_callback: Option<RxTxCallback>,
     /// Function to call when a DENM message is successfully transmitted to the lower layer,
     /// including repeated messages. Keep in mind some mechanisms, like congestion control,
     /// may silently drop the message at a lower layer before any transmission occur.
-    tx_callback: Option<Box<dyn FnMut(&[u8], &denm::DENM)>>,
+    tx_callback: Option<RxTxCallback>,
     /// Dispatch event to return when polling this socket.
     dispatch_event: Option<PollDispatchEvent>,
     /// Process event to return when polling this socket.
@@ -524,8 +527,7 @@ impl<'a> Socket<'a> {
             .orig_msg_table
             .iter()
             .flatten()
-            .find(|d| d.inner.action_id == action_id)
-            .is_some()
+            .any(|d| d.inner.action_id == action_id)
         {
             return Err(ApiError::ActionIdInOrigMsgtable);
         }
@@ -793,7 +795,7 @@ impl<'a> Socket<'a> {
         }
 
         let now = srv.core.now;
-        let termination = decoded.denm.management.termination.clone();
+        let termination = decoded.denm.management.termination;
         let detection_time = TAI2004::from(decoded.denm.management.detection_time.clone());
         let reference_time = TAI2004::from(decoded.denm.management.reference_time.clone());
         let expires_at = detection_time.as_unix_instant()
@@ -873,7 +875,6 @@ impl<'a> Socket<'a> {
             }
             _ => {
                 net_debug!("Cannot process DENM {} - terminated", action_id);
-                return;
             }
         };
     }
@@ -971,12 +972,10 @@ impl<'a> Socket<'a> {
                 return Ok(());
             };
 
-            self.inner.dispatch(cx, srv, emit).map(|res| {
+            self.inner.dispatch(cx, srv, emit).inspect(|_| {
                 if let Some(tx_cb) = &mut self.tx_callback {
                     tx_cb(&event.encoded, &event.denm_msg);
                 };
-
-                res
             })?;
 
             // Schedule for next retransmission.
@@ -1144,7 +1143,7 @@ mod ipc {
 
             let altitude = cdd::Altitude {
                 altitude_value: alt.altitude.map_or(cdd::AltitudeValue(800001), |a| {
-                    cdd::AltitudeValue(a.max(-100000).min(800000))
+                    cdd::AltitudeValue(a.clamp(-100000, 800000))
                 }),
                 altitude_confidence: alt.confidence.map_or(
                     cdd::AltitudeConfidence::unavailable,
@@ -1287,8 +1286,8 @@ mod ipc {
             Ok(GeoArea {
                 shape,
                 position: GeoPosition {
-                    latitude: Latitude::new::<degree>(value.latitude as f64),
-                    longitude: Longitude::new::<degree>(value.longitude as f64),
+                    latitude: Latitude::new::<degree>(value.latitude),
+                    longitude: Longitude::new::<degree>(value.longitude),
                 },
                 angle: Angle::new::<degree>(value.angle as f64),
             })
@@ -1311,13 +1310,13 @@ mod ipc {
         }
     }
 
-    impl Into<ipc_denm::Handle> for EventHandle {
-        fn into(self) -> ipc_denm::Handle {
+    impl From<EventHandle> for ipc_denm::Handle {
+        fn from(value: EventHandle) -> Self {
             ipc_denm::Handle {
-                idx: self.idx as u64,
+                idx: value.idx as u64,
                 action_id: Some(ipc_denm::ActionId {
-                    station_id: self.action_id.station_id,
-                    sequence_number: self.action_id.seq_num.into(),
+                    station_id: value.action_id.station_id,
+                    sequence_number: value.action_id.seq_num.into(),
                 }),
             }
         }

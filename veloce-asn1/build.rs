@@ -25,7 +25,7 @@ fn main() {
     ))]
     match Compiler::<RasnBackend, _>::new()
         .add_asn_sources_by_path(
-            vec![
+            [
                 #[cfg(feature = "etsi-cdd-r2")]
                 PathBuf::from("asn/messages/etsi_102894-2_v2.2.1/ETSI-ITS-CDD.asn"),
                 #[cfg(feature = "etsi-cam-r2")]
@@ -55,7 +55,7 @@ fn main() {
     if gen_ts {
         match Compiler::<TypescriptBackend, _>::new()
             .add_asn_sources_by_path(
-                vec![
+                [
                     #[cfg(feature = "etsi-cdd-r2")]
                     PathBuf::from("asn/messages/etsi_102894-2_v2.2.1/ETSI-ITS-CDD.asn"),
                     #[cfg(feature = "etsi-cam-r2")]
@@ -82,7 +82,7 @@ fn main() {
     #[cfg(feature = "etsi-security-r2")]
     match Compiler::<RasnBackend, _>::new()
         .add_asn_sources_by_path(
-            vec![
+            [
                 PathBuf::from("asn/security/etsi_103097_v2.1.1/Ieee1609Dot2.asn"),
                 PathBuf::from("asn/security/etsi_103097_v2.1.1/Ieee1609Dot2BaseTypes.asn"),
                 PathBuf::from("asn/security/etsi_103097_v2.1.1/EtsiTs103097ExtensionModule.asn"),
@@ -126,7 +126,7 @@ fn main() {
     #[cfg(feature = "etsi-pki-r2")]
     match Compiler::<RasnBackend, _>::new()
         .add_asn_sources_by_path(
-            vec![
+            [
                 PathBuf::from("asn/security/etsi_102941_v2.2.1/EtsiTs102941BaseTypes.asn"),
                 PathBuf::from("asn/security/etsi_102941_v2.2.1/EtsiTs102941MessagesCa.asn"),
                 PathBuf::from(
@@ -200,7 +200,7 @@ fn main() {
     #[cfg(feature = "ieee1609dot2-2023-wip-do-not-use")]
     match Compiler::<RasnBackend, _>::new()
         .add_asn_sources_by_path(
-            vec![
+            [
                 PathBuf::from("asn/security/ieee1609_2023/Ieee1609Dot2.asn"),
                 PathBuf::from("asn/security/ieee1609_2023/Ieee1609Dot2BaseTypes.asn"),
                 PathBuf::from("asn/security/ieee1609_2023/Ieee1609Dot2Crl.asn"),

@@ -15,7 +15,7 @@ use super::{
     HashedId8, SecurityBackend,
 };
 
-pub(self) mod cert_request;
+mod cert_request;
 pub(crate) mod decap;
 pub(crate) mod encap;
 pub(crate) mod sign;

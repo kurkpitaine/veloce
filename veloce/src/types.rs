@@ -1,3 +1,5 @@
+#![allow(clippy::excessive_precision)]
+
 pub use uom::si::angle::{degree, radian};
 pub use uom::si::f64::Angle;
 use uom::si::f64::*;
@@ -23,7 +25,7 @@ pub trait LatitudeTrait {
 impl LatitudeTrait for Latitude {
     fn is_valid_latitude_value(&self) -> bool {
         let raw_lat = self.get::<tenth_of_microdegree>();
-        raw_lat >= -900_000_000.0 && raw_lat <= 900_000_000.0
+        (-900_000_000.0..=900_000_000.0).contains(&raw_lat)
     }
 }
 
@@ -35,8 +37,8 @@ pub trait LongitudeTrait {
 
 impl LongitudeTrait for Longitude {
     fn is_valid_longitude_value(&self) -> bool {
-        let raw_lat = self.get::<tenth_of_microdegree>();
-        raw_lat >= -1_800_000_000.0 && raw_lat <= 1_800_000_000.0
+        let raw_lon = self.get::<tenth_of_microdegree>();
+        (-1_800_000_000.0..=1_800_000_000.0).contains(&raw_lon)
     }
 }
 
@@ -62,7 +64,7 @@ pub trait SpeedTrait {
 impl SpeedTrait for Speed {
     fn is_valid_speed_value(&self) -> bool {
         let raw_spd = self.get::<centimeter_per_second>();
-        raw_spd >= -16384.0 && raw_spd <= 16383.0
+        (-16384.0..=16383.0).contains(&raw_spd)
     }
 }
 

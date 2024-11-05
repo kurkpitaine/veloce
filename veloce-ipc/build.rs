@@ -4,6 +4,6 @@ pub fn main() {
         //.message_attribute(".", "#[derive(Hash, Eq, Ord, PartialOrd)]")
         //.enum_attribute("event_type", "#[derive(Hash, Eq, Ord, PartialOrd)]")
         .out_dir("src/proto")
-        .compile_protos(&["event.proto", "denm.proto"], &["schema"])
+        .compile_protos(&["message.proto", "denm.proto"], &["schema"])
         .expect("Could not compile protobuf types in event.proto");
 }

@@ -35,7 +35,7 @@ pub use geonet::{
         Header as CommonHeader, HeaderType as GeonetPacketType, Repr as CommonHeaderRepr,
         HEADER_LEN as COMMON_HEADER_LEN,
     },
-    geonet::{
+    packet::{
         GeonetBeacon, GeonetGeoAnycast, GeonetGeoBroadcast, GeonetLocationServiceReply,
         GeonetLocationServiceRequest, GeonetSingleHop, GeonetTopoBroadcast, GeonetUnicast,
         Protocol as GnProtocol, Repr as GeonetRepr, Variant as GeonetVariant,

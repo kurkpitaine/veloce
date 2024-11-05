@@ -508,7 +508,7 @@ impl<'a> Socket<'a> {
             let meta = UnicastReqMeta::new(
                 UpperProtocol::BtpA,
                 packet_meta.endpoint.addr,
-                req.ali_id,
+                (),
                 req.its_aid.clone(),
                 req.max_lifetime,
                 req.max_hop_limit,
@@ -519,7 +519,7 @@ impl<'a> Socket<'a> {
             let meta = UnicastReqMeta::new(
                 UpperProtocol::BtpA,
                 packet_meta.endpoint.addr,
-                req.ali_id,
+                (),
                 req.max_lifetime,
                 req.max_hop_limit,
                 req.traffic_class,

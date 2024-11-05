@@ -94,8 +94,7 @@ impl LocationTableEntry {
         let duplicate = self
             .dup_packet_list
             .oldest_ordered()
-            .find(|s| **s == seq_number)
-            .is_some();
+            .any(|s| *s == seq_number);
 
         if !duplicate {
             self.dup_packet_list.write(seq_number);
@@ -284,7 +283,7 @@ impl LocationTable {
     /// Query whether the Location Table contains at least one entry where
     /// the ìs_neighbour` flag is set.
     pub fn has_neighbour(&self) -> bool {
-        self.storage.iter().find(|(_, v)| v.is_neighbour).is_some()
+        self.storage.iter().any(|(_, v)| v.is_neighbour)
     }
 
     /// Performs the duplicate packet detection for an incoming packet from `address` with sequence number `seq_number`.
@@ -294,13 +293,9 @@ impl LocationTable {
         address: GnAddress,
         seq_number: SequenceNumber,
     ) -> Option<bool> {
-        if let Some(entry) = self.storage.get_mut(&address.mac_addr()) {
-            // Address found, execute duplicate packet detection.
-            Some(entry.check_duplicate(seq_number))
-        } else {
-            // Address not found
-            None
-        }
+        self.storage
+            .get_mut(&address.mac_addr())
+            .map(|entry| entry.check_duplicate(seq_number))
     }
 
     /// Removes all the entries of the Location Table.

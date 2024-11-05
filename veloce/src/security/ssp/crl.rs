@@ -8,6 +8,12 @@ const CRL_SSP_LEN: usize = 1;
 /// Certificate Trust List Service Specific Permissions.
 pub struct CrlSsp(SspContainer<CRL_SSP_LEN>);
 
+impl Default for CrlSsp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CrlSsp {
     /// Get the size of [CrlSsp] in buffer.
     pub const fn buf_size() -> usize {

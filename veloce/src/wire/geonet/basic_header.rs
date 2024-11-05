@@ -104,7 +104,7 @@ impl<T: AsRef<[u8]>> Header<T> {
         let base = data[field::LIFETIME] & !0xfc;
         match base {
             0 => Duration::from_millis(multiplier * 50),
-            1 => Duration::from_secs(multiplier * 1),
+            1 => Duration::from_secs(multiplier),
             2 => Duration::from_secs(multiplier * 10),
             3 => Duration::from_secs(multiplier * 100),
             _ => panic!("Decoding of Lifetime base failed"),
@@ -166,7 +166,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
             (value.secs() << 2) | 0x01
         } else {
             // base is 50 milliseconds
-            ((value.millis() / 50) << 2) as u64
+            (value.millis() / 50) << 2
         };
         data[field::LIFETIME] = raw as u8;
     }
@@ -243,7 +243,7 @@ impl Repr {
     }
 }
 
-impl<'a> fmt::Display for Repr {
+impl fmt::Display for Repr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,

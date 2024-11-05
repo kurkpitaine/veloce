@@ -161,9 +161,9 @@ impl From<TimestampIts> for TAI2004 {
 }
 
 #[cfg(feature = "asn1")]
-impl Into<TimestampIts> for TAI2004 {
-    fn into(self) -> TimestampIts {
-        TimestampIts(self.total_millis() as u64)
+impl From<TAI2004> for TimestampIts {
+    fn from(value: TAI2004) -> Self {
+        TimestampIts(value.total_millis() as u64)
     }
 }
 

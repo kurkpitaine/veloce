@@ -67,9 +67,8 @@ impl USB {
 
         self.handle
             .read_bulk(self.read_addr, &mut self.rx_buffer, timeout)
-            .and_then(|s| {
-                self.rx_len = s;
-                Ok(s)
+            .inspect(|s| {
+                self.rx_len = *s;
             })
             .map_err(|e| match e {
                 rusb::Error::Timeout => Error::Timeout,
@@ -100,7 +99,6 @@ impl USB {
         let timeout = core::time::Duration::from_millis(1);
         self.handle
             .read_bulk(self.read_addr, buffer, timeout)
-            .and_then(|size| Ok(size))
             .map_err(|e| match e {
                 rusb::Error::Timeout => Error::Timeout,
                 _ => Error::USB,

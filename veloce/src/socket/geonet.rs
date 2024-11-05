@@ -317,7 +317,7 @@ impl<'a> Socket<'a> {
                     let meta = UnicastReqMeta::new(
                         req.upper_proto,
                         destination,
-                        req.ali_id,
+                        (),
                         #[cfg(feature = "proto-security")]
                         req.its_aid.clone(),
                         req.max_lifetime,
@@ -337,7 +337,7 @@ impl<'a> Socket<'a> {
                     let meta = GeoAnycastReqMeta::new(
                         req.upper_proto,
                         destination,
-                        req.ali_id,
+                        (),
                         #[cfg(feature = "proto-security")]
                         req.its_aid.clone(),
                         req.max_lifetime,
@@ -357,7 +357,7 @@ impl<'a> Socket<'a> {
                     let meta = GeoBroadcastReqMeta::new(
                         req.upper_proto,
                         destination,
-                        req.ali_id,
+                        (),
                         #[cfg(feature = "proto-security")]
                         req.its_aid.clone(),
                         req.max_lifetime,
@@ -376,7 +376,7 @@ impl<'a> Socket<'a> {
                 Transport::SingleHopBroadcast => {
                     let meta = SingleHopReqMeta::new(
                         req.upper_proto,
-                        req.ali_id,
+                        (),
                         #[cfg(feature = "proto-security")]
                         req.its_aid.clone(),
                         req.max_lifetime,
@@ -395,7 +395,7 @@ impl<'a> Socket<'a> {
                 Transport::TopoBroadcast => {
                     let meta = TopoScopedReqMeta::new(
                         req.upper_proto,
-                        req.ali_id,
+                        (),
                         #[cfg(feature = "proto-security")]
                         req.its_aid.clone(),
                         req.max_lifetime,

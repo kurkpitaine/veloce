@@ -65,6 +65,15 @@ where
     len: usize,
 }
 
+impl<T, const C: usize> Default for PacketBuffer<T, C>
+where
+    T: BufferMeta,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T, const C: usize> PacketBuffer<T, C>
 where
     T: BufferMeta,
@@ -194,14 +203,11 @@ where
     where
         F: FnOnce(&mut Node<T>) -> Result<(), E>,
     {
-        let Some((pos, fm)) = self
+        let (pos, fm) = self
             .storage
             .iter_mut()
             .enumerate()
-            .find(|(_, e)| e.flushable)
-        else {
-            return None;
-        };
+            .find(|(_, e)| e.flushable)?;
 
         let rc = f(fm);
         self.len -= fm.size;
@@ -215,12 +221,8 @@ where
     where
         F: FnOnce(&mut Node<T>) -> Result<S, E>,
     {
-        let Some(mut node) = self.storage.pop_front() else {
-            return None;
-        };
-
+        let mut node = self.storage.pop_front()?;
         let rc = f(&mut node);
-
         self.len -= node.size;
 
         Some(rc)

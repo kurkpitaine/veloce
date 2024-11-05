@@ -45,8 +45,8 @@ impl GeoPosition {
     pub fn distance_to(&self, rhs: &GeoPosition) -> Length {
         let r = Length::new::<meter>(6371008.8); // Mean earth radius in meters.
         let haversine = |theta: Angle| (theta / 2.0).sin().powi(P2::new());
-        let delta_lat = self.latitude - self.latitude;
-        let delta_lon = self.longitude - self.longitude;
+        let delta_lat = self.latitude - rhs.latitude;
+        let delta_lon = self.longitude - rhs.longitude;
 
         let a =
             haversine(delta_lat) + self.latitude.cos() * rhs.latitude.cos() * haversine(delta_lon);

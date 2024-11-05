@@ -154,14 +154,11 @@ impl Congestion {
         };
 
         // Special treatment for empty payload.
-        let payload = match packet.payload() {
-            Some(pl) => pl,
-            None => &[],
-        };
+        let payload = packet.payload().unwrap_or_default();
 
         queue
             .enqueue(pkt, payload, timestamp)
-            .map_err(|_| Error::BufferError)?;
+            .map_err(|_| Error::Buffer)?;
 
         // Schedule for egress.
         if self.egress_at.is_none() {
@@ -281,7 +278,7 @@ pub(crate) enum Error {
     NoMatchingQueue,
     /// Generic buffer error, ie: the packet
     /// is too big to fit in the buffer.
-    BufferError,
+    Buffer,
 }
 
 /// Transmit Rate Control controller algorithm.

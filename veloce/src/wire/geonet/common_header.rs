@@ -2,7 +2,7 @@ use crate::wire::{Error, Result};
 use byteorder::{ByteOrder, NetworkEndian};
 use core::fmt;
 
-use super::{geonet::Protocol, TrafficClass};
+use super::{packet::Protocol, TrafficClass};
 
 enum_with_unknown! {
    /// Geonetworking Header Type / Header Sub-Type values.
@@ -176,7 +176,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     #[inline]
     pub fn clear_reserved(&mut self) {
         let data = self.buffer.as_mut();
-        data[field::NXT_HDR_R] = data[field::NXT_HDR_R] & 0xf0;
+        data[field::NXT_HDR_R] &= 0xf0;
         data[field::RESERVED] = 0;
     }
 
@@ -231,7 +231,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> Header<T> {
     }
 }
 
-impl<'a, T: AsRef<[u8]> + ?Sized> fmt::Display for Header<&'a T> {
+impl<T: AsRef<[u8]> + ?Sized> fmt::Display for Header<&T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match Repr::parse(self) {
             Ok(repr) => write!(f, "{}", repr),
@@ -297,7 +297,7 @@ impl Repr {
     }
 }
 
-impl<'a> fmt::Display for Repr {
+impl fmt::Display for Repr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,

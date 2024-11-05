@@ -204,14 +204,11 @@ where
     where
         F: FnOnce(&mut Node<T>) -> bool,
     {
-        let Some((idx, fm)) = self
+        let (idx, fm) = self
             .storage
             .iter_mut()
             .enumerate()
-            .find(|(_, n)| n.cbf_identifier == id)
-        else {
-            return None;
-        };
+            .find(|(_, n)| n.cbf_identifier == id)?;
 
         let rc = if f(fm) {
             self.storage.remove(idx);
@@ -229,14 +226,11 @@ where
     where
         F: FnOnce(&mut Node<T>) -> Result<(), E>,
     {
-        let Some((idx, fm)) = self
+        let (idx, fm) = self
             .storage
             .iter_mut()
             .enumerate()
-            .find(|(_, e)| e.cbf_expires_at >= timestamp)
-        else {
-            return None;
-        };
+            .find(|(_, e)| e.cbf_expires_at >= timestamp)?;
 
         let rc = f(fm);
         self.storage.remove(idx);
@@ -259,6 +253,15 @@ where
         self.storage.clear();
         self.len = 0;
         self.poll_at = None;
+    }
+}
+
+impl<T, const C: usize> Default for ContentionBuffer<T, C>
+where
+    T: BufferMeta,
+{
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -126,7 +126,7 @@ impl TryInto<PotiFix> for GpsInfo {
                     },
                 );
 
-                return Ok(PotiFix {
+                Ok(PotiFix {
                     mode: self.fix.mode.into(),
                     timestamp: TAI2004::from_unix_instant(Instant::from_micros_const(
                         time.timestamp_micros(),
@@ -147,15 +147,15 @@ impl TryInto<PotiFix> for GpsInfo {
                         speed: self.fix.eps,
                         heading: self.fix.epd,
                     },
-                });
+                })
             }
             Some(_) => {
                 error!("latitude or longitude out of bounds");
-                return Err(());
+                Err(())
             }
             None => {
                 error!("no time or position in GpsInfo");
-                return Err(());
+                Err(())
             }
         }
     }
@@ -333,9 +333,9 @@ impl From<gpsd_proto::Mode> for FixMode {
 }
 
 #[cfg(feature = "gpsd")]
-impl Into<PotiMode> for FixMode {
-    fn into(self) -> PotiMode {
-        match self {
+impl From<FixMode> for PotiMode {
+    fn from(value: FixMode) -> Self {
+        match value {
             FixMode::NotUpdated | FixMode::NoFix => PotiMode::NoFix,
             FixMode::Fix2d => PotiMode::Fix2d,
             FixMode::Fix3d => PotiMode::Fix3d,

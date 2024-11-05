@@ -27,6 +27,7 @@ impl WakerRegistration {
     }
 
     /// Wake the registered waker, if any.
+    #[allow(clippy::option_map_unit_fn)]
     pub fn wake(&mut self) {
         self.waker.take().map(|w| w.wake());
     }

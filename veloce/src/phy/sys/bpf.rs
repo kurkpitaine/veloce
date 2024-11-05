@@ -151,10 +151,10 @@ impl BpfDevice {
             );
 
             if len == -1 {
-                Err(io::Error::last_os_error()).unwrap()
+                Err(io::Error::last_os_error())
+            } else {
+                Ok(len as usize)
             }
-
-            Ok(len as usize)
         }
     }
 }

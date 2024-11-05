@@ -80,7 +80,7 @@ impl Gpsd {
             cache: GpsInfo::default(),
             last_rx_time: DateTime::default(),
             state: ClientState::Initial(Instant::now()),
-            registry: registry,
+            registry,
             token: reg_token,
             server_addr,
             buffer: vec![0; BUFFER_SIZE],
@@ -301,8 +301,7 @@ impl Gpsd {
                         Ok(content) => {
                             let responses = content
                                 .split_terminator('\n')
-                                .into_iter()
-                                .flat_map(|sentence| match serde_json::from_str(&sentence) {
+                                .flat_map(|sentence| match serde_json::from_str(sentence) {
                                     Ok(resp) => Some(resp),
                                     Err(e) => {
                                         error!("failed to parse JSON: {e}");
@@ -388,16 +387,13 @@ impl Gpsd {
             match data {
                 GpsdResponse::Tpv(tpv) => {
                     let tpv_time = match tpv.time {
-                        Some(datetime_str) => {
-                            let utc_time = match DateTime::parse_from_rfc3339(&datetime_str) {
-                                Ok(datetime) => datetime.to_utc(),
-                                Err(_) => {
-                                    error!("failed to parse TPV time - using system time");
-                                    Utc::now()
-                                }
-                            };
-                            utc_time
-                        }
+                        Some(datetime_str) => match DateTime::parse_from_rfc3339(&datetime_str) {
+                            Ok(datetime) => datetime.to_utc(),
+                            Err(_) => {
+                                error!("failed to parse TPV time - using system time");
+                                Utc::now()
+                            }
+                        },
                         None => {
                             // If no fix time info from GPSD, get the local system time.
                             Utc::now()
@@ -425,19 +421,15 @@ impl Gpsd {
 
                     self.cache.fix.time = Some(tpv_time);
 
-                    self.cache.fix.ept = tpv.ept.map(|ept| Duration::from_secs_f32(ept));
-                    self.cache.fix.latitude = tpv
-                        .lat
-                        .map(|latitude| Angle::new::<degree>(latitude as f64));
-                    self.cache.fix.epy = tpv.epy.map(|epy| Length::new::<meter>(epy as f64));
-                    self.cache.fix.longitude = tpv
-                        .lon
-                        .map(|longitude| Angle::new::<degree>(longitude as f64));
-                    self.cache.fix.epx = tpv.epx.map(|epx| Length::new::<meter>(epx as f64));
-                    self.cache.fix.eph = tpv.eph.map(|eph| Length::new::<meter>(eph as f64));
+                    self.cache.fix.ept = tpv.ept.map(Duration::from_secs_f32);
+                    self.cache.fix.latitude = tpv.lat.map(Angle::new::<degree>);
+                    self.cache.fix.epy = tpv.epy.map(|epy| Length::new::<meter>(epy.into()));
+                    self.cache.fix.longitude = tpv.lon.map(Angle::new::<degree>);
+                    self.cache.fix.epx = tpv.epx.map(|epx| Length::new::<meter>(epx.into()));
+                    self.cache.fix.eph = tpv.eph.map(|eph| Length::new::<meter>(eph.into()));
                     self.cache.fix.altitude =
-                        tpv.alt_hae.map(|alt| Length::new::<meter>(alt as f64));
-                    self.cache.fix.epv = tpv.epv.map(|epv| Length::new::<meter>(epv as f64));
+                        tpv.alt_hae.map(|alt| Length::new::<meter>(alt.into()));
+                    self.cache.fix.epv = tpv.epv.map(|epv| Length::new::<meter>(epv.into()));
                     self.cache.fix.track =
                         tpv.track.map(|track| Angle::new::<degree>(track.into()));
                     self.cache.fix.epd = tpv.epd.map(|epd| Angle::new::<degree>(epd.into()));

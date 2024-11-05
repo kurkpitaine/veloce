@@ -262,22 +262,21 @@ impl Certificate {
                 // structure is invalid if it indicates the choice x-only.
                 // We apply the same requirement for EccP384CurvePoints.
                 match key {
-                    PublicVerificationKey::ecdsaNistP256(p) => match p {
-                        EccP256CurvePoint::x_only(_) => return Err(CertificateError::Malformed),
-                        _ => {}
-                    },
-                    PublicVerificationKey::ecdsaBrainpoolP256r1(p) => match p {
-                        EccP256CurvePoint::x_only(_) => return Err(CertificateError::Malformed),
-                        _ => {}
-                    },
-                    PublicVerificationKey::ecdsaBrainpoolP384r1(p) => match p {
-                        EccP384CurvePoint::x_only(_) => return Err(CertificateError::Malformed),
-                        _ => {}
-                    },
-                    PublicVerificationKey::ecdsaNistP384(p) => match p {
-                        EccP384CurvePoint::x_only(_) => return Err(CertificateError::Malformed),
-                        _ => {}
-                    },
+                    PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(_)) => {
+                        return Err(CertificateError::Malformed)
+                    }
+
+                    PublicVerificationKey::ecdsaBrainpoolP256r1(EccP256CurvePoint::x_only(_)) => {
+                        return Err(CertificateError::Malformed)
+                    }
+
+                    PublicVerificationKey::ecdsaBrainpoolP384r1(EccP384CurvePoint::x_only(_)) => {
+                        return Err(CertificateError::Malformed)
+                    }
+
+                    PublicVerificationKey::ecdsaNistP384(EccP384CurvePoint::x_only(_)) => {
+                        return Err(CertificateError::Malformed)
+                    }
                     _ => {}
                 }
 
@@ -320,7 +319,7 @@ pub trait CertificateTrait {
 
     /// Get the inner certificate `to_be_signed` content bytes, encoded as Asn.1 COER.
     fn to_be_signed_bytes(&self) -> CertificateResult<Vec<u8>> {
-        Ok(rasn::coer::encode(&self.inner().0.to_be_signed).map_err(|_| CertificateError::Asn1)?)
+        rasn::coer::encode(&self.inner().0.to_be_signed).map_err(|_| CertificateError::Asn1)
     }
 
     /// Returns the [Issuer] identifier of the certificate.
@@ -450,15 +449,11 @@ pub trait ExplicitCertificate: CertificateTrait {
 
         if let Some(seq) = &inner.0.to_be_signed.cert_issue_permissions {
             for group in &seq.0 {
-                match &group.subject_permissions {
-                    SubjectPermissions::explicit(s) => {
-                        for psr in &s.0 {
-                            let p =
-                                Permission::try_from(psr).map_err(CertificateError::Permission)?;
-                            permissions.push(p);
-                        }
+                if let SubjectPermissions::explicit(s) = &group.subject_permissions {
+                    for psr in &s.0 {
+                        let p = Permission::try_from(psr).map_err(CertificateError::Permission)?;
+                        permissions.push(p);
                     }
-                    _ => {}
                 }
             }
         }
@@ -503,12 +498,10 @@ pub trait ExplicitCertificate: CertificateTrait {
         // Check issuing permissions consistency between self and signer.
         let signer_permissions = signer_cert.issue_permissions()?;
         let permissions = self.issue_permissions()?;
-        if !permissions.iter().all(|p| {
-            signer_permissions
-                .iter()
-                .find(|e| e.aid() == p.aid())
-                .is_some()
-        }) {
+        if !permissions
+            .iter()
+            .all(|p| signer_permissions.iter().any(|e| e.aid() == p.aid()))
+        {
             return Err(CertificateError::InconsistentPermissions);
         }
 

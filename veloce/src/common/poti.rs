@@ -121,10 +121,9 @@ impl Poti {
 
     /// Push a new [Fix] to the [Poti] module.
     pub fn push_fix(&mut self, fix: Fix) -> Result<Fix, Error> {
-        self.push_fix_inner(fix).map_err(|e| {
+        self.push_fix_inner(fix).inspect_err(|_| {
             // Keep the old fix but set it as gnss signal lost mode.
             self.fix.mode = Mode::Lost;
-            e
         })
     }
 
@@ -156,11 +155,8 @@ impl Poti {
         }
 
         // Heading latch.
-        match (fix.should_latch_heading(), self.fix.motion.heading) {
-            (Ok(true), Some(prev_hdg)) => {
-                fix.motion.heading = Some(prev_hdg);
-            }
-            _ => {}
+        if let (Ok(true), Some(prev_hdg)) = (fix.should_latch_heading(), self.fix.motion.heading) {
+            fix.motion.heading = Some(prev_hdg);
         }
 
         // C2C Consortium Vehicle C-ITS station profile, requirement RS_BSP_215.
@@ -713,7 +709,7 @@ impl PathHistory {
             let previous = self.samples.oldest_ordered().nth(1).ok_or(())?;
 
             // Step 2: calculate the chord length between the starting point and the next point.
-            let chord_length = starting.distance_to(&next);
+            let chord_length = starting.distance_to(next);
 
             //  K_PH_CHORDLENGTHTHRESHOLD = pTraceMaxDeltaDistance = 22.5m
             let actual_error = if chord_length > Length::new::<meter>(22.5) {
@@ -765,9 +761,9 @@ impl PathHistory {
                 .take_while(|(p_prev, p_curr)| {
                     // K_PHDISTANCE_M = pCamTraceMinLength = 200m.
                     if distance >= Length::new::<meter>(200.0) {
-                        return false;
+                        false
                     } else {
-                        distance += p_prev.distance_to(*p_curr);
+                        distance += p_prev.distance_to(p_curr);
                         true
                     }
                 })

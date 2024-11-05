@@ -2,11 +2,11 @@ use prost::Message;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Contains all the events emitted and received with the IPC.
-pub mod event;
+pub mod message;
 pub mod denm;
 
-impl event::Event {
-    pub fn new(r#type: event::event::EventType) -> Self {
+impl message::Event {
+    pub fn new(r#type: message::event::EventType) -> Self {
         Self {
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)

@@ -259,9 +259,7 @@ impl<T: AsRef<[u8]>> PrettyPrint for Frame<T> {
         };
         write!(f, "{indent}{frame}")?;
 
-        match frame.ethertype() {
-            _ => Ok(()),
-        }
+        Ok(())
     }
 }
 

@@ -74,13 +74,11 @@ macro_rules! check {
 
 #[cfg(feature = "proto-geonet")]
 macro_rules! next_sequence_number {
-    ($handler:ident) => {
-        (|| {
-            let sn = $handler.sequence_number.clone();
-            $handler.sequence_number += 1;
-            sn
-        })()
-    };
+    ($handler:ident) => {{
+        let sn = $handler.sequence_number.clone();
+        $handler.sequence_number += 1;
+        sn
+    }};
 }
 
 #[cfg(all(feature = "proto-geonet", feature = "proto-security"))]
@@ -1269,7 +1267,7 @@ impl InterfaceInner {
         packet: GeonetPacket,
         trc: &mut Congestion,
     ) -> Result<(), DispatchError> {
-        self.defer_beacon(core, &packet.repr().inner());
+        self.defer_beacon(core, packet.repr().inner());
 
         #[cfg(feature = "proto-security")]
         let position = core.position().position;
@@ -1401,7 +1399,7 @@ impl InterfaceInner {
                 frame_control: frame_ctrl,
                 duration_or_id: Default::default(),
                 dst_addr: dst_hw_addr,
-                src_addr: src_addr,
+                src_addr,
                 bss_id: EthernetAddress::BROADCAST,
                 sequence_control: Default::default(),
                 qos_control: qos_ctrl,
@@ -1430,7 +1428,7 @@ impl InterfaceInner {
                 // Emit the basic header.
                 gn_repr.inner().emit_basic_header(&mut tx_buffer);
                 // Put the encapsulated content in the tx buffer.
-                tx_buffer[gn_repr.inner().basic_header_len()..].copy_from_slice(&encapsulated);
+                tx_buffer[gn_repr.inner().basic_header_len()..].copy_from_slice(encapsulated);
             } else {
                 gn_repr.inner().emit(&mut tx_buffer);
                 packet.emit_payload(&mut tx_buffer[gn_repr.inner().header_len()..]);
@@ -1459,17 +1457,16 @@ impl InterfaceInner {
                     tx_buffer = &mut tx_buffer[pl_start..];
                 }
 
-                emit_gn(&gn_repr, tx_buffer);
+                emit_gn(gn_repr, tx_buffer);
                 Ok(())
             })
-            .and_then(|_| {
+            .inspect(|_| {
                 // G5 bandwidth is 6 Mbps.
                 let bytes_per_usec: f64 = 6.144 / 8.0;
                 let tx_duration_usec = bytes_per_usec * total_len as f64;
                 trc.controller
                     .inner_mut()
                     .notify_tx(core.now, Duration::from_micros(tx_duration_usec as u64));
-                Ok(())
             })
     }
 

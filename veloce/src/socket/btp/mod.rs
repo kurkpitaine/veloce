@@ -162,7 +162,7 @@ pub struct Endpoint {
 impl Endpoint {
     /// Create an endpoint address from given address and port.
     pub const fn new(addr: GnAddress, port: u16) -> Endpoint {
-        Endpoint { addr: addr, port }
+        Endpoint { addr, port }
     }
 }
 

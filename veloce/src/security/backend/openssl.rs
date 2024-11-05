@@ -137,7 +137,7 @@ impl OpensslBackend {
             }
         };
 
-        let mut content = File::open(&path)?;
+        let mut content = File::open(path)?;
         let mut buf = Vec::new();
         content.read_to_end(&mut buf)?;
 
@@ -266,7 +266,7 @@ impl BackendTrait for OpensslBackend {
         let signature = EcdsaSig::from_private_components(r, s).map_err(BackendError::OpenSSL)?;
         let sig_der = signature.to_der().map_err(BackendError::OpenSSL)?;
 
-        Ok(verifier.verify(&sig_der).map_err(BackendError::OpenSSL)?)
+        verifier.verify(&sig_der).map_err(BackendError::OpenSSL)
     }
 
     fn generate_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature> {

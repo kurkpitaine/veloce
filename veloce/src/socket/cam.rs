@@ -91,6 +91,9 @@ impl fmt::Display for TxPeriodOverride {
     }
 }
 
+/// Rx/Tx callback type.
+type RxTxCallback = Box<dyn FnMut(&[u8], &cam::CAM)>;
+
 /// An ETSI CAM type socket.
 ///
 /// A CAM socket executes the Cooperative Awareness protocol,
@@ -122,11 +125,11 @@ pub struct Socket<'a> {
     /// CAM transmission period override parameters.
     generation_override: Option<TxPeriodOverride>,
     /// Function to call when a CAM message is successfully received.
-    rx_callback: Option<Box<dyn FnMut(&[u8], &cam::CAM)>>,
+    rx_callback: Option<RxTxCallback>,
     /// Function to call when a CAM message is successfully transmitted to the lower layer.
     /// Keep in mind some mechanisms, like congestion control, may silently drop the message
     /// at a lower layer before any transmission occur.
-    tx_callback: Option<Box<dyn FnMut(&[u8], &cam::CAM)>>,
+    tx_callback: Option<RxTxCallback>,
 }
 
 impl fmt::Debug for Socket<'_> {
@@ -137,6 +140,12 @@ impl fmt::Debug for Socket<'_> {
             .field("retransmit_delay", &self.retransmit_delay)
             .field("prev_low_dynamic_at", &self.prev_low_dynamic_at)
             .finish_non_exhaustive()
+    }
+}
+
+impl<'a> Default for Socket<'a> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -387,24 +396,22 @@ impl<'a> Socket<'a> {
                     self.retransmit_at = now + CAM_CHECK_CAM_GEN;
                 }
             }
+        } else if ego_station_type == StationType::RoadSideUnit {
+            self.retransmit_delay = CAM_GEN_CAM_MAX;
+            self.retransmit_at = now + self.retransmit_delay;
         } else {
-            if ego_station_type == StationType::RoadSideUnit {
-                self.retransmit_delay = CAM_GEN_CAM_MAX;
-                self.retransmit_at = now + self.retransmit_delay;
-            } else {
-                self.retransmit_at = now + CAM_CHECK_CAM_GEN;
-                let motion_trigger = self.motion_trigger(ego_path_point);
+            self.retransmit_at = now + CAM_CHECK_CAM_GEN;
+            let motion_trigger = self.motion_trigger(ego_path_point);
 
-                if motion_trigger || elapsed >= self.retransmit_delay {
-                    if motion_trigger {
-                        self.retransmit_delay =
-                            (now - self.prev_cam_at).clamp(CAM_GEN_CAM_MIN, CAM_GEN_CAM_MAX);
-                        self.n_gen_cam = CAM_N_GEN_CAM;
-                    }
-                } else {
-                    net_debug!("CAM cannot be sent: wait time not exceeded");
-                    return Ok(());
+            if motion_trigger || elapsed >= self.retransmit_delay {
+                if motion_trigger {
+                    self.retransmit_delay =
+                        (now - self.prev_cam_at).clamp(CAM_GEN_CAM_MIN, CAM_GEN_CAM_MAX);
+                    self.n_gen_cam = CAM_N_GEN_CAM;
                 }
+            } else {
+                net_debug!("CAM cannot be sent: wait time not exceeded");
+                return Ok(());
             }
         }
 
@@ -435,7 +442,7 @@ impl<'a> Socket<'a> {
             }
         }
 
-        self.inner.dispatch(cx, srv, emit).map(|res| {
+        self.inner.dispatch(cx, srv, emit).inspect(|_| {
             if self.has_low_dynamic_container(&cam) {
                 self.prev_low_dynamic_at = now;
             }
@@ -455,8 +462,6 @@ impl<'a> Socket<'a> {
             if let Some(tx_cb) = &mut self.tx_callback {
                 tx_cb(&raw_cam, &cam);
             };
-
-            res
         })
     }
 
@@ -596,7 +601,7 @@ impl<'a> Socket<'a> {
                 let vehicle_lf = BasicVehicleContainerLowFrequency {
                     vehicle_role: VehicleRole::default,
                     exterior_lights: ExteriorLights(ext_lights),
-                    path_history: path_history,
+                    path_history,
                 };
 
                 Some(LowFrequencyContainer::basicVehicleContainerLowFrequency(
@@ -634,18 +639,18 @@ impl<'a> Socket<'a> {
 
         match &cam.cam.cam_parameters.high_frequency_container {
             cam::HighFrequencyContainer::basicVehicleContainerHighFrequency(hfc) => {
-                hfc.cen_dsrc_tolling_zone.as_ref().map(|_| {
+                if hfc.cen_dsrc_tolling_zone.as_ref().is_some() {
                     expected.set_permission(
                         CamPermission::CenDsrcTollingZoneOrProtectedCommunicationZonesRSU,
                     )
-                });
+                }
             }
             cam::HighFrequencyContainer::rsuContainerHighFrequency(hfc) => {
-                hfc.protected_communication_zones_rsu.as_ref().map(|_| {
+                if hfc.protected_communication_zones_rsu.as_ref().is_some() {
                     expected.set_permission(
                         CamPermission::CenDsrcTollingZoneOrProtectedCommunicationZonesRSU,
                     )
-                });
+                }
             }
             _ => {}
         }
@@ -663,30 +668,31 @@ impl<'a> Socket<'a> {
                 }
                 cam::SpecialVehicleContainer::roadWorksContainerBasic(rc) => {
                     expected.set_permission(CamPermission::Roadwork);
-                    rc.closed_lanes
-                        .as_ref()
-                        .map(|_| expected.set_permission(CamPermission::ClosedLanes));
+                    if rc.closed_lanes.as_ref().is_some() {
+                        expected.set_permission(CamPermission::ClosedLanes);
+                    }
                 }
                 cam::SpecialVehicleContainer::rescueContainer(_) => {
                     expected.set_permission(CamPermission::Rescue)
                 }
                 cam::SpecialVehicleContainer::emergencyContainer(ec) => {
                     expected.set_permission(CamPermission::Emergency);
-                    ec.emergency_priority.as_ref().map(|ep| {
-                        ep.0.get(0)
-                            .map(|_| expected.set_permission(CamPermission::RequestForRightOfWay));
-                        ep.0.get(1).map(|_| {
+                    if let Some(ep) = ec.emergency_priority.as_ref() {
+                        if ep.0.get(0).is_some() {
+                            expected.set_permission(CamPermission::RequestForRightOfWay);
+                        }
+                        if ep.0.get(1).is_some() {
                             expected.set_permission(
                                 CamPermission::RequestForFreeCrossingAtATrafficLight,
-                            )
-                        });
-                    });
+                            );
+                        }
+                    }
                 }
                 cam::SpecialVehicleContainer::safetyCarContainer(scc) => {
                     expected.set_permission(CamPermission::SafetyCar);
-                    scc.speed_limit
-                        .as_ref()
-                        .map(|_| expected.set_permission(CamPermission::SpeedLimit));
+                    if scc.speed_limit.as_ref().is_some() {
+                        expected.set_permission(CamPermission::SpeedLimit);
+                    }
 
                     match scc.traffic_rule {
                         Some(TrafficRule::noPassing) => {

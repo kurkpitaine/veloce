@@ -91,7 +91,7 @@ impl CertificateTrait for TrustListManagerCertificate {
 
         let ssp = match raw_ssp {
             ServiceSpecificPermissions::opaque(opaque) => {
-                CtlSsp::parse(&opaque).map_err(|_| CertificateError::IllegalPermissions)?
+                CtlSsp::parse(opaque).map_err(|_| CertificateError::IllegalPermissions)?
             }
             ServiceSpecificPermissions::bitmapSsp(bitmap) => {
                 CtlSsp::parse(&bitmap.0).map_err(|_| CertificateError::IllegalPermissions)?
