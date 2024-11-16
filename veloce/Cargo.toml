@@ -1,9 +1,10 @@
 [package]
 name = "veloce"
 version = "0.1.0"
-authors = ["Thibaud Rouillé <veloce@ferroxyde.com>"]
+authors = ["Veloce developers <veloce@ferroxyde.com>"]
 edition = "2021"
 description = "A V2x stack for embedded devices"
+license = "GPL-3.0-only OR LicenseRef-Veloce-Software-1.0"
 
 [dependencies]
 byteorder = "1.5"

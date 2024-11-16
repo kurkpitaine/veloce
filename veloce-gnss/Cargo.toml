@@ -1,9 +1,10 @@
 [package]
 name = "veloce-gnss"
 version = "0.1.0"
-authors = ["Thibaud Rouillé <veloce@ferroxyde.com>"]
+authors = ["Veloce developers <veloce@ferroxyde.com>"]
 edition = "2021"
 description = "Veloce GNSS position provider"
+license = "GPL-3.0-only OR LicenseRef-Veloce-Software-1.0"
 
 [dependencies]
 veloce = { path = "../veloce" }

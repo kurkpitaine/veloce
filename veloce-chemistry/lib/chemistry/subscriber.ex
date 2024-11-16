@@ -3,7 +3,7 @@ require Logger
 defmodule Chemistry.Subscriber do
   use GenServer
 
-  alias Proto.Event.Event
+  alias Proto.Message.Event
 
   def child_spec(host: host, port: port) do
     %{
