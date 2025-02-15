@@ -646,7 +646,7 @@ EXPORTS ALL;
  * @class Signature
  *
  * @brief This structure represents a signature for a supported public key
- * algorithm. It may be contained within SignedData or Certificate.
+ * algorithm. It may be contained within SecuredMessage or Certificate.
  *
  * <br><br><b>Critical information fields</b>: If present, this is a critical
  * information field as defined in 5.2.5. An implementation that does not

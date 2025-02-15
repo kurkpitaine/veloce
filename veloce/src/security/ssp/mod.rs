@@ -91,6 +91,11 @@ impl<const N: usize> SspContainer<N> {
         Self { inner }
     }
 
+    /// Consume the container, returning the underlying buffer.
+    pub const fn into_inner(self) -> [u8; N] {
+        self.inner
+    }
+
     /// Returns the version field of the SSP.
     pub const fn version(&self) -> u8 {
         self.inner[0]

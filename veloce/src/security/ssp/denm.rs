@@ -249,6 +249,15 @@ impl DenmSsp {
         }
     }
 
+    /// Emit the SSP as a vector of bytes, consuming itself.
+    pub fn emit(self) -> Vec<u8> {
+        match self {
+            DenmSsp::V1(v1_ssp) => v1_ssp.emit().to_vec(),
+            DenmSsp::V2(v2_ssp) => v2_ssp.emit().to_vec(),
+            DenmSsp::Unknown(u_ssp) => u_ssp.emit().to_vec(),
+        }
+    }
+
     /// Query whether the DENM SSP is version 1.
     pub const fn is_v1(&self) -> bool {
         matches!(self, DenmSsp::V1(_))
@@ -369,6 +378,11 @@ impl DenmSspV1 {
         }
 
         Ok(DenmSspV1(SspContainer::from_bytes(buf)))
+    }
+
+    /// Emit the SSP as a byte array, consuming itself.
+    pub const fn emit(self) -> [u8; DENM_SSP_V1_LEN] {
+        self.0.into_inner()
     }
 }
 
@@ -697,6 +711,11 @@ impl DenmSspV2 {
         }
 
         Ok(DenmSspV2(SspContainer::from_bytes(buf)))
+    }
+
+    /// Emit the SSP as a byte array, consuming itself.
+    pub const fn emit(self) -> [u8; DENM_SSP_V2_LEN] {
+        self.0.into_inner()
     }
 }
 

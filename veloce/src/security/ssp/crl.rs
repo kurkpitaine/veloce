@@ -40,6 +40,11 @@ impl CrlSsp {
 
         Ok(CrlSsp(SspContainer::from_bytes(buf)))
     }
+
+    /// Emit the SSP as a byte array, consuming itself.
+    pub const fn emit(self) -> [u8; CRL_SSP_LEN] {
+        self.0.into_inner()
+    }
 }
 
 impl SspTrait for CrlSsp {

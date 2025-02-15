@@ -1,10 +1,18 @@
 use core::fmt;
 
 use veloce_asn1::{
-    defs::etsi_103097_v211::ieee1609_dot2_base_types::{
-        BitmapSsp, BitmapSspRange, PsidSsp, PsidSspRange, ServiceSpecificPermissions, SspRange,
+    defs::{
+        etsi_102941_v221::ieee1609_dot2_base_types::{
+            BitmapSsp as Etsi102941BitmapSsp, Psid, PsidSsp as Etsi102941PsidSsp,
+            ServiceSpecificPermissions as Etsi102941ServiceSpecificPermissions,
+        },
+        etsi_103097_v211::ieee1609_dot2_base_types::{
+            BitmapSsp as Etsi103097BitmapSsp, BitmapSspRange, PsidSsp as Etsi103097PsidSsp,
+            PsidSspRange, ServiceSpecificPermissions as Etsi103097ServiceSpecificPermissions,
+            SspRange,
+        },
     },
-    prelude::rasn::types::Integer,
+    prelude::rasn::types::{Integer, OctetString},
 };
 
 use super::ssp::{
@@ -97,7 +105,7 @@ impl<S: SspTrait> From<S> for PermissionSspContainer<S> {
 pub enum PermissionError {
     /// AID format is not supported, ie: too big for our platform.
     UnsupportedAIDFormat,
-    /// Unsupported SSP format. Should be bitmapssp.
+    /// Unsupported SSP format. Should be [Etsi102941ServiceSpecificPermissions::bitmapSsp].
     UnsupportedSSPFormat,
     /// No SSP present for [AID], but it should be.
     NoSSP(AID),
@@ -196,22 +204,23 @@ impl Permission {
     }
 }
 
-impl<'a> TryFrom<&'a PsidSsp> for Permission {
+impl<'a> TryFrom<&'a Etsi103097PsidSsp> for Permission {
     type Error = PermissionError;
 
-    fn try_from(value: &'a PsidSsp) -> Result<Self, Self::Error> {
-        let extract_ssp = |r: &'a PsidSsp| -> Result<Option<&'a BitmapSsp>, PermissionError> {
-            let Some(ssp_range) = &r.ssp else {
-                return Ok(None);
-            };
+    fn try_from(value: &'a Etsi103097PsidSsp) -> Result<Self, Self::Error> {
+        let extract_ssp =
+            |r: &'a Etsi103097PsidSsp| -> Result<Option<&'a Etsi103097BitmapSsp>, PermissionError> {
+                let Some(ssp_range) = &r.ssp else {
+                    return Ok(None);
+                };
 
-            let b = match ssp_range {
-                ServiceSpecificPermissions::bitmapSsp(b) => b,
-                _ => return Err(PermissionError::UnsupportedSSPFormat),
-            };
+                let b = match ssp_range {
+                    Etsi103097ServiceSpecificPermissions::bitmapSsp(b) => b,
+                    _ => return Err(PermissionError::UnsupportedSSPFormat),
+                };
 
-            Ok(Some(b))
-        };
+                Ok(Some(b))
+            };
 
         let aid =
             AID::try_from(&value.psid.0).map_err(|_| PermissionError::UnsupportedAIDFormat)?;
@@ -257,6 +266,91 @@ impl<'a> TryFrom<&'a PsidSsp> for Permission {
         };
 
         Ok(res)
+    }
+}
+
+impl<'a> TryFrom<&'a Etsi102941PsidSsp> for Permission {
+    type Error = PermissionError;
+
+    fn try_from(value: &'a Etsi102941PsidSsp) -> Result<Self, Self::Error> {
+        let extract_ssp =
+            |r: &'a Etsi102941PsidSsp| -> Result<Option<&'a Etsi102941BitmapSsp>, PermissionError> {
+                let Some(ssp_range) = &r.ssp else {
+                    return Ok(None);
+                };
+
+                let b = match ssp_range {
+                    Etsi102941ServiceSpecificPermissions::bitmapSsp(b) => b,
+                    _ => return Err(PermissionError::UnsupportedSSPFormat),
+                };
+
+                Ok(Some(b))
+            };
+
+        let aid =
+            AID::try_from(&value.psid.0).map_err(|_| PermissionError::UnsupportedAIDFormat)?;
+
+        let res = match aid {
+            AID::CA => {
+                let raw = extract_ssp(value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let ssp = CamSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
+                Permission::CAM(PermissionSspContainer { ssp, mask: None })
+            }
+            AID::DEN => {
+                let raw = extract_ssp(value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let ssp = DenmSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
+                Permission::DENM(PermissionSspContainer { ssp, mask: None })
+            }
+            AID::CRL => {
+                let raw = extract_ssp(value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let ssp = CrlSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
+                Permission::CRL(PermissionSspContainer { ssp, mask: None })
+            }
+            AID::CTL => {
+                let raw = extract_ssp(value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let ssp = CtlSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
+
+                Permission::CTL(PermissionSspContainer { ssp, mask: None })
+            }
+            AID::GnMgmt => Permission::GnMgmt,
+            AID::SCR => {
+                let raw = extract_ssp(value)?.ok_or(PermissionError::NoSSP(aid))?;
+                let ssp = ScrSsp::parse(&raw.0).map_err(PermissionError::SSP)?;
+
+                Permission::SCR(PermissionSspContainer { ssp, mask: None })
+            }
+            _ => {
+                let raw = extract_ssp(value)?;
+
+                Permission::Unknown {
+                    aid: aid.into(),
+                    ssp: raw.map(|v| v.0.to_vec()),
+                    mask: None,
+                }
+            }
+        };
+
+        Ok(res)
+    }
+}
+
+impl Into<Etsi102941PsidSsp> for Permission {
+    fn into(self) -> Etsi102941PsidSsp {
+        let psid = Psid(self.aid().into());
+        let maybe_permission = match self {
+            Permission::CAM(c) => Some(OctetString::copy_from_slice(&c.ssp.emit())),
+            Permission::DENM(c) => Some(OctetString::from(c.ssp.emit())),
+            Permission::CRL(c) => Some(OctetString::copy_from_slice(&c.ssp.emit())),
+            Permission::CTL(c) => Some(OctetString::copy_from_slice(&c.ssp.emit())),
+            Permission::SCR(c) => Some(OctetString::copy_from_slice(&c.ssp.emit())),
+            Permission::Unknown { ssp: Some(ssp), .. } => Some(OctetString::from(ssp)),
+            _ => None, // Permission::GnMgmt and Permission::Unknown with ssp: None
+        };
+
+        let ssp = maybe_permission
+            .map(|ssp| Etsi102941ServiceSpecificPermissions::bitmapSsp(Etsi102941BitmapSsp(ssp)));
+
+        Etsi102941PsidSsp::new(psid, ssp)
     }
 }
 

@@ -16,7 +16,7 @@ use crate::{
 };
 
 use super::{
-    backend::BackendTrait,
+    backend::{BackendError, BackendTrait},
     permission::{Permission, PermissionError},
     signature::{EcdsaSignature, EcdsaSignatureError, EcdsaSignatureInner},
     EccPoint, EcdsaKey, EcdsaKeyError, EciesKeyError, HashAlgorithm, HashedId8, Issuer,
@@ -78,7 +78,7 @@ impl<C: ExplicitCertificate> CertificateWithHashContainer<C> {
 pub type CertificateResult<T> = core::result::Result<T, CertificateError>;
 
 /// Certificate errors.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum CertificateError {
     /// Asn.1 COER encoding error.
@@ -114,7 +114,7 @@ pub enum CertificateError {
     /// Encryption key error.
     EncryptionKey(EciesKeyError),
     /// Backend error.
-    Backend,
+    Backend(BackendError),
     /// A custom error that does not fall under any other Certificate error kind.
     Other,
 }
@@ -139,7 +139,7 @@ impl fmt::Display for CertificateError {
             CertificateError::Signature(e) => write!(f, "Signature error: {}", e),
             CertificateError::VerificationKey(e) => write!(f, "Verification key error: {}", e),
             CertificateError::EncryptionKey(e) => write!(f, "Encryption key error: {}", e),
-            CertificateError::Backend => write!(f, "Backend error"),
+            CertificateError::Backend(e) => write!(f, "Backend error: {}", e),
             CertificateError::Other => write!(f, "Other error"),
         }
     }
@@ -154,48 +154,15 @@ pub enum Certificate {
     EnrollmentAuthority(EnrollmentAuthorityCertificate),
     /// AA certificate type.
     AuthorizationAuthority(AuthorizationAuthorityCertificate),
-    /* /// AT certificate type.
-    AuthorizationTicket(CertWrapper<>),
-    /// EC certificate type.
+    /// AT certificate type.
+    AuthorizationTicket(AuthorizationTicketCertificate),
+    /* /// EC certificate type.
     EnrollmentCredential(CertWrapper<>),
     /// TLM certificate type.s
     TrustedListManager(CertWrapper<>), */
 }
 
 impl Certificate {
-    /// Get a reference on the inner [RootCertificate].
-    ///
-    /// # Panics
-    /// This method panics of the inner certificate is not of Root type.
-    pub fn root_or_panic(&self) -> &RootCertificate {
-        match &self {
-            Certificate::Root(c) => c,
-            _ => panic!("Certificate is not of Root type."),
-        }
-    }
-
-    /// Get a reference on the inner [EnrollmentAuthorityCertificate].
-    ///
-    /// # Panics
-    /// This method panics of the inner certificate is not of EA type.
-    pub fn ea_or_panic(&self) -> &EnrollmentAuthorityCertificate {
-        match &self {
-            Certificate::EnrollmentAuthority(c) => c,
-            _ => panic!("Certificate is not of EA type."),
-        }
-    }
-
-    /// Get a reference on the inner [AuthorizationAuthorityCertificate].
-    ///
-    /// # Panics
-    /// This method panics of the inner certificate is not of AA type.
-    pub fn aa_or_panic(&self) -> &AuthorizationAuthorityCertificate {
-        match &self {
-            Certificate::AuthorizationAuthority(c) => c,
-            _ => panic!("Certificate is not of AA type."),
-        }
-    }
-
     /// Verifies the Asn.1 constraints on an EtsiTs103097Certificate.
     #[inline]
     pub fn verify_etsi_constraints(cert: &EtsiCertificate) -> CertificateResult<()> {
@@ -367,7 +334,7 @@ pub trait CertificateTrait {
                 EciesKey::try_from(&enc_key.public_key).map_err(CertificateError::EncryptionKey)?;
             enc_key.public_key = backend
                 .compress_ecies_key(key)
-                .map_err(|_| CertificateError::Backend)?
+                .map_err(CertificateError::Backend)?
                 .try_into()
                 .map_err(CertificateError::EncryptionKey)?;
         }
@@ -378,7 +345,7 @@ pub trait CertificateTrait {
                 tbs.verify_key_indicator = VerificationKeyIndicator::verificationKey(
                     backend
                         .compress_ecdsa_key(key)
-                        .map_err(|_| CertificateError::Backend)?
+                        .map_err(CertificateError::Backend)?
                         .try_into()
                         .map_err(CertificateError::VerificationKey)?,
                 );
@@ -418,6 +385,20 @@ pub trait CertificateTrait {
         }
 
         Ok(certificate)
+    }
+
+    /// Computes the hash of the certificate, using the provided `algorithm` [HashAlgorithm].
+    fn hash<B>(&self, algorithm: HashAlgorithm, backend: &B) -> Vec<u8>
+    where
+        B: BackendTrait + ?Sized,
+    {
+        let cert_bytes = self.raw_bytes();
+
+        match algorithm {
+            HashAlgorithm::SHA256 => backend.sha256(cert_bytes).into(),
+            HashAlgorithm::SHA384 => backend.sha384(cert_bytes).into(),
+            _ => unimplemented!(),
+        }
     }
 
     /// Verifies the Asn.1 constraints on the enclosed certificate.
@@ -518,11 +499,18 @@ pub trait ExplicitCertificate: CertificateTrait {
         let hash = match sig.hash_algorithm() {
             HashAlgorithm::SHA256 => [backend.sha256(&tbs), backend.sha256(signer_data)].concat(),
             HashAlgorithm::SHA384 => [backend.sha384(&tbs), backend.sha384(signer_data)].concat(),
+            HashAlgorithm::SM3 => [
+                backend.sm3(&tbs).map_err(CertificateError::Backend)?,
+                backend
+                    .sm3(signer_data)
+                    .map_err(CertificateError::Backend)?,
+            ]
+            .concat(),
         };
 
         let res = backend
             .verify_signature(sig, signer_pubkey, &hash)
-            .map_err(|_| CertificateError::Backend)?;
+            .map_err(CertificateError::Backend)?;
 
         Ok(res)
     }
@@ -544,12 +532,18 @@ pub trait ExplicitCertificate: CertificateTrait {
                 let h = backend.sha384(self.raw_bytes());
                 HashedId8::from_bytes(&h[40..])
             }
+            EcdsaKey::Sm2(_) => {
+                let h = backend
+                    .sm3(self.raw_bytes())
+                    .map_err(CertificateError::Backend)?;
+                HashedId8::from_bytes(&h[24..])
+            }
         };
 
         Ok(hash)
     }
 
-    /// Get a reference on the inner public verification key.
+    /// Get the inner public verification key.
     fn public_verification_key(&self) -> CertificateResult<EcdsaKey> {
         let k = match &self.inner().0.to_be_signed.verify_key_indicator {
             VerificationKeyIndicator::verificationKey(key) => key,
@@ -559,7 +553,19 @@ pub trait ExplicitCertificate: CertificateTrait {
         EcdsaKey::try_from(k).map_err(CertificateError::VerificationKey)
     }
 
-    /// Get a reference on the inner certificate signature.
+    /// Get the inner public encryption key, if any.
+    fn public_encryption_key(&self) -> CertificateResult<Option<EciesKey>> {
+        let Some(inner_encryption_key) = &self.inner().0.to_be_signed.encryption_key else {
+            return Ok(None);
+        };
+
+        let key = EciesKey::try_from(&inner_encryption_key.public_key)
+            .map_err(CertificateError::EncryptionKey)?;
+
+        Ok(Some(key))
+    }
+
+    /// Get the inner certificate signature.
     fn signature(&self) -> CertificateResult<EcdsaSignature> {
         let s = match &self.inner().0.signature {
             Some(signature) => signature,

@@ -19,7 +19,7 @@ impl SecurityService {
     /// Message is signed according to the given `permissions` and `timestamp`.
     pub fn encap_packet(
         &mut self,
-        packet: &[u8],
+        packet: Vec<u8>,
         permissions: Permission,
         timestamp: Instant,
         position: PotiPosition,

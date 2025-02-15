@@ -1,5 +1,6 @@
 use crate::{
     security::{
+        backend::BackendTrait,
         certificate::{
             AuthorizationTicketCertificate, CertificateError, CertificateTrait, ExplicitCertificate,
         },
@@ -12,7 +13,7 @@ use crate::{
 
 use super::{SecurityService, SecurityServiceError};
 
-/// Verify service confirmation.s
+/// Verify service confirmation.
 pub struct VerifyConfirm {
     /// Certificate Id, ie: digest of the certificate
     /// as HashId8.
@@ -171,6 +172,13 @@ impl SecurityService {
         let hash = match signature.hash_algorithm() {
             HashAlgorithm::SHA256 => [backend.sha256(&tbs), backend.sha256(signer_data)].concat(),
             HashAlgorithm::SHA384 => [backend.sha384(&tbs), backend.sha384(signer_data)].concat(),
+            HashAlgorithm::SM3 => [
+                backend.sm3(&tbs).map_err(SecurityServiceError::Backend)?,
+                backend
+                    .sm3(signer_data)
+                    .map_err(SecurityServiceError::Backend)?,
+            ]
+            .concat(),
         };
 
         // Verify AID permission.

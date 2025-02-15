@@ -60,14 +60,12 @@ fn setup_security_service() -> SecurityService {
     key_path.pop();
     key_path.push(file!());
     key_path.pop();
-    key_path.push("assets/AT.pem");
     let key_path = std::fs::canonicalize(key_path).unwrap();
 
     let config = OpensslBackendConfig {
-        canonical_key_path: "".to_string(),
-        canonical_key_passwd: "".to_string().into(),
-        signing_cert_secret_key_path: Some(key_path.into_os_string().into_string().unwrap()),
-        signing_cert_secret_key_passwd: Some("test1234".to_string().into()),
+        veloce_dir: Some(key_path.into_os_string().into_string().unwrap()),
+        keys_password: "test1234".to_string().into(),
+        ..Default::default()
     };
 
     let backend = OpensslBackend::new(config).unwrap();
@@ -111,7 +109,7 @@ fn test_sign_message() {
     };
 
     let res = service
-        .encap_packet(&GN_CAM, permissions, valid_timestamp(), position)
+        .encap_packet(GN_CAM.to_vec(), permissions, valid_timestamp(), position)
         .unwrap();
 
     assert!(res.len() > 0);
@@ -134,7 +132,7 @@ fn test_signer_digest_or_certificate_cam() {
     };
 
     let timestamp_start = valid_timestamp();
-    let mut message = SecuredMessage::new(&GN_CAM);
+    let mut message = SecuredMessage::new(GN_CAM.to_vec());
 
     service
         .sign_secured_message(&mut message, permissions.clone(), timestamp_start, position)
@@ -144,7 +142,7 @@ fn test_signer_digest_or_certificate_cam() {
     let signer = message.signer_identifier().unwrap();
     assert!(matches!(signer, SignerIdentifier::Certificate(_)));
 
-    let mut message = SecuredMessage::new(&GN_CAM);
+    let mut message = SecuredMessage::new(GN_CAM.to_vec());
 
     service
         .sign_secured_message(
@@ -159,7 +157,7 @@ fn test_signer_digest_or_certificate_cam() {
     let signer = message.signer_identifier().unwrap();
     assert!(matches!(signer, SignerIdentifier::Digest(_)));
 
-    let mut message = SecuredMessage::new(&GN_CAM);
+    let mut message = SecuredMessage::new(GN_CAM.to_vec());
 
     service
         .sign_secured_message(
@@ -175,7 +173,7 @@ fn test_signer_digest_or_certificate_cam() {
     assert!(matches!(signer, SignerIdentifier::Certificate(_)));
 
     // The previous behavior should only be valid for CAM messages.
-    let mut message = SecuredMessage::new(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    let mut message = SecuredMessage::new(vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
     let permissions = Permission::DENM(DenmSsp::new_v1().into());
 
     service
@@ -205,7 +203,7 @@ fn test_position_inclusion() {
 
     // Position should be included only for DENM messages.
     let timestamp = valid_timestamp();
-    let mut message = SecuredMessage::new(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    let mut message = SecuredMessage::new(vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
 
     service
         .sign_secured_message(&mut message, permissions, timestamp, position)
@@ -223,7 +221,7 @@ fn test_position_inclusion() {
 
     // Position should not be included for CAM messages.
     let permissions = Permission::CAM(CamSsp::new().into());
-    let mut message = SecuredMessage::new(&GN_CAM);
+    let mut message = SecuredMessage::new(GN_CAM.to_vec());
 
     service
         .sign_secured_message(

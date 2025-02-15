@@ -138,7 +138,7 @@ EeRaInterfacePdu ::= CHOICE {
  * mechanism is used. The EE using such a certificate to sign a message
  * cannot request that the response is encrypted to the certificate. Instead,
  * it can request an encrypted response using the
- * tbsData.headerInfo.encryptionKey field of the SignedData; see 6.3.9,
+ * tbsData.headerInfo.encryptionKey field of the SecuredMessage; see 6.3.9,
  * 6.3.33, 6.3.34, and 6.3.36 of IEEE Std 1609.2 for more details.
  */
 EeRaCertRequest ::= SEQUENCE {

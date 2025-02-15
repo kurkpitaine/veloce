@@ -413,8 +413,8 @@ pub fn openssl_backend() -> OpensslBackend {
     let key_path = "assets/AT.pem".to_string();
 
     let config = OpensslBackendConfig {
-        canonical_key_path: String::new(),
-        canonical_key_passwd: String::new().into(),
+        canonical_secret_key_path: None,
+        canonical_secret_key_passwd: None,
         signing_cert_secret_key_path: Some(key_path),
         signing_cert_secret_key_passwd: Some("test1234".to_string().into()),
     };

@@ -73,11 +73,16 @@ impl ExplicitCertificate for RootCertificate {
         let hash = match sig.hash_algorithm() {
             HashAlgorithm::SHA256 => [backend.sha256(&tbs), backend.sha256(&[])].concat(),
             HashAlgorithm::SHA384 => [backend.sha384(&tbs), backend.sha384(&[])].concat(),
+            HashAlgorithm::SM3 => [
+                backend.sm3(&tbs).map_err(CertificateError::Backend)?,
+                backend.sm3(&[]).map_err(CertificateError::Backend)?,
+            ]
+            .concat(),
         };
 
         let res = backend
             .verify_signature(sig, pubkey, &hash)
-            .map_err(|_| CertificateError::Backend)?;
+            .map_err(CertificateError::Backend)?;
 
         Ok(res)
     }

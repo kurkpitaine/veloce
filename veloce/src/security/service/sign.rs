@@ -1,9 +1,7 @@
 use crate::{
     common::PotiPosition,
     security::{
-        certificate::{CertificateTrait, ExplicitCertificate},
-        permission::{Permission, AID},
-        secured_message::{SecuredMessage, SignerIdentifier},
+        backend::BackendTrait, certificate::{CertificateTrait, ExplicitCertificate}, permission::{Permission, AID}, secured_message::{SecuredMessage, SignerIdentifier}
     },
     time::{Duration, Instant, TAI2004},
 };

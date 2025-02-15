@@ -109,11 +109,11 @@ Ieee1609Dot2Data ::= SEQUENCE {
  *
  * @note Canonicalization: This data structure is subject to canonicalization
  * for the relevant operations specified in 6.1.2 if it is of type signedData.
- * The canonicalization applies to the SignedData.
+ * The canonicalization applies to the SecuredMessage.
  */
 Ieee1609Dot2Content ::=  CHOICE {
   unsecuredData                Opaque,
-  signedData                   SignedData,
+  signedData                   SecuredMessage,
   encryptedData                EncryptedData,
   signedCertificateRequest     Opaque,
   ...,
@@ -152,7 +152,7 @@ Ieee1609Dot2Content ::=  CHOICE {
  * for the relevant operations specified in 6.1.2. The canonicalization
  * applies to the ToBeSignedData and the Signature.
  */
-SignedData ::= SEQUENCE {
+SecuredMessage ::= SEQUENCE {
   hashId    HashAlgorithm,
   tbsData   ToBeSignedData,
   signer    SignerIdentifier,
@@ -293,7 +293,7 @@ HashedData::= CHOICE {
  * specification is expected to specify which response SPDUs are to be
  * encrypted with this key. One possible use of this key to encrypt a
  * response is specified in 6.3.35, 6.3.37, and 6.3.34. An encryptionKey
- * field of type symmetric should only be used if the SignedData containing
+ * field of type symmetric should only be used if the SecuredMessage containing
  * this field is securely encrypted by some means.
  *
  * @param inlineP2pcdRequest: if present, is used by the SDS to request
@@ -609,7 +609,7 @@ EncryptedData ::= SEQUENCE {
  * @param signedDataRecipInfo: The data was encrypted with a data encryption
  * key, the data encryption key was encrypted using a public key encryption
  * scheme, where the public encryption key was obtained as the public response
- * encryption key from a SignedData. In this case, if ECIES is the encryption
+ * encryption key from a SecuredMessage. In this case, if ECIES is the encryption
  * algorithm, then the parameter P1 to ECIES as defined in 5.3.5 is the
  * SHA-256 hash of the Ieee1609Dot2Data of type signedData containing the
  * response encryption key, canonicalized as defined in the definition of

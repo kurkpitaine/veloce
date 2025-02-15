@@ -705,7 +705,7 @@ UnknownLongitude ::= OneEightyDegreeInt (unknown)
 
 /**
  * @brief This structure represents a signature for a supported public key
- * algorithm. It may be contained within SignedData or Certificate.
+ * algorithm. It may be contained within SecuredMessage or Certificate.
  *
  * @note Critical information fields: If present, this is a critical
  * information field as defined in 5.2.5. An implementation that does not

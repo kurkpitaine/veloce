@@ -3,40 +3,62 @@ use openssl::{
     ec::{EcGroup, EcKey},
     nid::Nid,
 };
-use std::path::{Path, PathBuf};
+use std::{
+    fs::DirBuilder,
+    os::unix::fs::DirBuilderExt,
+    path::{Path, PathBuf},
+};
 use tempfile::tempdir;
 
 use crate::security::{
     backend::{
         openssl::{OpensslBackend, OpensslBackendConfig},
-        BackendTrait,
+        BackendTrait, PkiBackendTrait,
     },
-    EccPoint, EcdsaKey, EcdsaKeyType, UncompressedEccPoint,
+    certificate::{CertificateTrait, EnrollmentAuthorityCertificate, ExplicitCertificate},
+    EcKeyType, EccPoint, EcdsaKey, UncompressedEccPoint,
 };
+
+use super::certificate;
 
 #[test]
 fn test_create_canonical_key() {
     let base_path = tempdir().unwrap();
-    let canonical_key_path = base_path
+
+    DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(base_path.path().join("veloce").join("assets"))
+        .unwrap();
+
+    let key_path = base_path
         .path()
+        .join("veloce")
+        .join("assets")
         .join("canonical.pem")
         .into_os_string()
         .into_string()
         .unwrap();
 
     let config = OpensslBackendConfig {
-        canonical_key_path: canonical_key_path.clone(),
-        canonical_key_passwd: "test1234".to_string().into(),
-        signing_cert_secret_key_path: None,
-        signing_cert_secret_key_passwd: None,
+        veloce_dir: Some(
+            base_path
+                .path()
+                .join("veloce")
+                .into_os_string()
+                .into_string()
+                .unwrap(),
+        ),
+        keys_password: "test1234".to_string().into(),
+        ..Default::default()
     };
 
     let backend = OpensslBackend::new(config).unwrap();
     let _pub_key = backend
-        .generate_canonical_keypair(EcdsaKeyType::NistP384r1)
+        .generate_canonical_keypair(EcKeyType::NistP384r1)
         .unwrap();
 
-    assert!(Path::new(&canonical_key_path).exists());
+    assert!(Path::new(&key_path).exists());
 }
 
 #[test]
@@ -52,13 +74,7 @@ fn test_compress_point() {
         .affine_coordinates(&group, &mut x, &mut y, &mut bn_ctx)
         .unwrap();
 
-    let config = OpensslBackendConfig {
-        canonical_key_path: String::new(),
-        canonical_key_passwd: String::new().into(),
-        signing_cert_secret_key_path: None,
-        signing_cert_secret_key_passwd: None,
-    };
-    let backend = OpensslBackend::new(config).unwrap();
+    let backend = OpensslBackend::new(Default::default()).unwrap();
 
     let key = EcdsaKey::NistP256r1(EccPoint::Uncompressed(UncompressedEccPoint {
         x: x.to_vec(),
@@ -74,15 +90,32 @@ fn test_load_secret_key() {
     key_path.pop();
     key_path.push(file!());
     key_path.pop();
-    key_path.push("assets/AT.pem");
     let key_path = std::fs::canonicalize(key_path).unwrap();
 
     let config = OpensslBackendConfig {
-        canonical_key_path: "".to_string(),
-        canonical_key_passwd: "".to_string().into(),
-        signing_cert_secret_key_path: Some(key_path.into_os_string().into_string().unwrap()),
-        signing_cert_secret_key_passwd: Some("test1234".to_string().into()),
+        veloce_dir: Some(key_path.into_os_string().into_string().unwrap()),
+        keys_password: "test1234".to_string().into(),
+        ..Default::default()
     };
 
     OpensslBackend::new(config).unwrap();
+}
+
+#[test]
+fn derive_key() {
+    let backend = OpensslBackend::new(Default::default()).unwrap();
+
+    let raw_ea_cert = certificate::load_ea_cert();
+    let ea_cert = EnrollmentAuthorityCertificate::from_etsi_cert(raw_ea_cert.0, &backend).unwrap();
+
+    let keypair = backend
+        .generate_ephemeral_keypair(EcKeyType::NistP256r1)
+        .unwrap();
+
+    let _cert_hash = backend.sha256(ea_cert.raw_bytes());
+
+    let peer_public_key = ea_cert.public_encryption_key().unwrap().unwrap();
+    let peer_public_pkey =
+        <OpensslBackend as PkiBackendTrait>::BackendPublicKey::try_from(peer_public_key).unwrap();
+    let _derived = backend.derive(&keypair.secret, &peer_public_pkey).unwrap();
 }

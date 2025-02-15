@@ -49,6 +49,11 @@ const SCR_SSP_LEN: usize = 2;
 pub struct ScrSsp(SspContainer<SCR_SSP_LEN>);
 
 impl ScrSsp {
+    /// Constructs an [ScrSsp].
+    pub const fn new() -> ScrSsp {
+        ScrSsp(SspContainer::new(SSP_VERSION_1))
+    }
+
     /// Get the size of [ScrSsp] in buffer.
     pub const fn buf_size() -> usize {
         SCR_SSP_LEN
@@ -73,6 +78,11 @@ impl ScrSsp {
         }
 
         Ok(ScrSsp(SspContainer::from_bytes(buf)))
+    }
+
+    /// Emit the SSP as a byte array, consuming itself.
+    pub const fn emit(self) -> [u8; SCR_SSP_LEN] {
+        self.0.into_inner()
     }
 
     /// Verifies the SSP combination for a TLM Secured Certificate Request, according to the

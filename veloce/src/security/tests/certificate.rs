@@ -2,7 +2,7 @@ use veloce_asn1::{defs::etsi_103097_v211::etsi_ts103097_module, prelude::rasn};
 
 use crate::{
     security::{
-        backend::openssl::{OpensslBackend, OpensslBackendConfig},
+        backend::openssl::OpensslBackend,
         certificate::{
             AuthorizationAuthorityCertificate, AuthorizationTicketCertificate,
             EnrollmentAuthorityCertificate, ExplicitCertificate, RootCertificate,
@@ -13,14 +13,7 @@ use crate::{
 };
 
 pub fn openssl_backend() -> OpensslBackend {
-    let config = OpensslBackendConfig {
-        canonical_key_path: String::new(),
-        canonical_key_passwd: "test1234".to_string().into(),
-        signing_cert_secret_key_path: None,
-        signing_cert_secret_key_passwd: None,
-    };
-
-    OpensslBackend::new(config).unwrap()
+    OpensslBackend::new(Default::default()).unwrap()
 }
 
 pub fn load_root_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {

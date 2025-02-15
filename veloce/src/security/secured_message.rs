@@ -109,6 +109,10 @@ pub enum SecuredMessageError {
     NoData,
     /// Message data is of wrong type. Should be [ieee1609_dot2::Ieee1609Dot2Content::unsecuredData].
     DataContent,
+    /// Hash algorithm type is not supported.
+    UnsupportedHashAlgorithm,
+    /// Hash algorithm in the signature does not match the hash algorithm of the message.
+    HashAlgorithmMismatch,
 }
 
 impl fmt::Display for SecuredMessageError {
@@ -134,6 +138,12 @@ impl fmt::Display for SecuredMessageError {
             SecuredMessageError::UnsupportedAIDFormat => write!(f, "unsupported AID format"),
             SecuredMessageError::NoData => write!(f, "message does not contain data"),
             SecuredMessageError::DataContent => write!(f, "message data is of wrong type"),
+            SecuredMessageError::UnsupportedHashAlgorithm => {
+                write!(f, "unsupported hash algorithm")
+            }
+            SecuredMessageError::HashAlgorithmMismatch => {
+                write!(f, "hash algorithm in the signature does not match the hash algorithm of the message")
+            }
         }
     }
 }
@@ -150,9 +160,8 @@ pub struct SecuredMessage {
 impl SecuredMessage {
     /// Constructs a [SecuredMessage] with the given `data`.
     /// The returned structure is not signed and does not contain a certificate.
-    pub fn new(data: &[u8]) -> Self {
-        let payload_content =
-            Ieee1609Dot2Content::unsecuredData(Opaque(OctetString::copy_from_slice(data)));
+    pub fn new(data: Vec<u8>) -> Self {
+        let payload_content = Ieee1609Dot2Content::unsecuredData(Opaque(OctetString::from(data)));
         let payload_data = Box::new(Ieee1609Dot2Data::new(Uint8(3), payload_content));
 
         let signed_payload = SignedDataPayload::new(Some(payload_data), None);
@@ -304,6 +313,15 @@ impl SecuredMessage {
         let sig =
             EcdsaSignature::try_from(&sd.signature).map_err(SecuredMessageError::Signature)?;
 
+        if sd.hash_id
+            != sig
+                .hash_algorithm()
+                .try_into()
+                .map_err(|_| SecuredMessageError::UnsupportedHashAlgorithm)?
+        {
+            return Err(SecuredMessageError::HashAlgorithmMismatch);
+        }
+
         Ok(sig)
     }
 
@@ -315,7 +333,11 @@ impl SecuredMessage {
             _ => return Err(SecuredMessageError::NotSigned),
         };
 
-        signed_data.hash_id = signature.hash_algorithm().into();
+        signed_data.hash_id = signature
+            .hash_algorithm()
+            .try_into()
+            .map_err(|_| SecuredMessageError::UnsupportedHashAlgorithm)?;
+
         signed_data.signature = signature
             .try_into()
             .map_err(SecuredMessageError::Signature)?;

@@ -512,7 +512,7 @@ impl<'a> Socket<'a> {
     ) -> cam::CAM {
         use cam::*;
         use cdd::*;
-        use rasn::types::BitString;
+        use rasn::types::FixedBitString;
         use wire::geonet::StationType as VeloceStationType;
 
         let header = ItsPduHeader::new(OrdinalNumber1B(2), MessageId(2), StationId(pseudo.0));
@@ -589,7 +589,7 @@ impl<'a> Socket<'a> {
             _ if TAI2004::from_unix_instant(self.prev_low_dynamic_at) - timestamp
                 >= CAM_LF_RETRANSMIT_DELAY =>
             {
-                let ext_lights = BitString::from_slice(&[0u8]);
+                let ext_lights = FixedBitString::default();
                 let mut path_history = history
                     .as_etsi_path(&fix)
                     .unwrap_or_else(|_| cdd::Path(SequenceOf::new()));

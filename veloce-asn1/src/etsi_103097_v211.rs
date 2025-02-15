@@ -11,7 +11,7 @@ pub mod etsi_ts103097_extension_module {
     use core::borrow::Borrow;
     use lazy_static::lazy_static;
     use rasn::prelude::*;
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct EtsiOriginatingHeaderInfoExtension {
         #[rasn(value("0..=255"))]
@@ -23,7 +23,7 @@ pub mod etsi_ts103097_extension_module {
             Self { id, content }
         }
     }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct EtsiTs102941CrlRequest {
         #[rasn(identifier = "issuerId")]
@@ -39,7 +39,7 @@ pub mod etsi_ts103097_extension_module {
             }
         }
     }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct EtsiTs102941CtlRequest {
         #[rasn(identifier = "issuerId")]
@@ -55,16 +55,16 @@ pub mod etsi_ts103097_extension_module {
             }
         }
     }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct EtsiTs102941DeltaCtlRequest(pub EtsiTs102941CtlRequest);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct EtsiTs103097HeaderInfoExtensionId(pub ExtId);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("0..=255"))]
     pub struct ExtId(pub u8);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("1"))]
     pub struct ExtensionModuleVersion(pub u8);
     pub const ETSI_TS102941_CRL_REQUEST_ID: EtsiTs103097HeaderInfoExtensionId =
@@ -87,28 +87,28 @@ pub mod etsi_ts103097_module {
     use core::borrow::Borrow;
     use lazy_static::lazy_static;
     use rasn::prelude::*;
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct EtsiTs103097Certificate(pub Certificate);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct EtsiTs103097Data(pub Ieee1609Dot2Data);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, identifier = "EtsiTs103097Data-Encrypted")]
     pub struct EtsiTs103097DataEncrypted(pub EtsiTs103097Data);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, identifier = "EtsiTs103097Data-Encrypted-Unicast")]
     pub struct EtsiTs103097DataEncryptedUnicast(pub EtsiTs103097DataEncrypted);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, identifier = "EtsiTs103097Data-Signed")]
     pub struct EtsiTs103097DataSigned(pub EtsiTs103097Data);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, identifier = "EtsiTs103097Data-SignedAndEncrypted")]
     pub struct EtsiTs103097DataSignedAndEncrypted(pub EtsiTs103097DataEncrypted);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, identifier = "EtsiTs103097Data-SignedAndEncrypted-Unicast")]
     pub struct EtsiTs103097DataSignedAndEncryptedUnicast(pub EtsiTs103097DataEncrypted);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, identifier = "EtsiTs103097Data-SignedExternalPayload")]
     pub struct EtsiTs103097DataSignedExternalPayload(pub EtsiTs103097Data);
     #[doc = " (WITH COMPONENTS {...,"]
@@ -137,7 +137,7 @@ pub mod etsi_ts103097_module {
     #[doc = "    signedCertificateRequest ABSENT"]
     #[doc = "  })"]
     #[doc = "}) "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, identifier = "EtsiTs103097Data-Unsecured")]
     pub struct EtsiTs103097DataUnsecured(pub EtsiTs103097Data);
 }
@@ -177,7 +177,7 @@ pub mod ieee1609_dot2 {
     #[doc = " *"]
     #[doc = " * @param ccmCiphertext contains the ciphertext C as specified in 5.3.7."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct AesCcmCiphertext {
         pub nonce: FixedOctetString<12>,
@@ -202,7 +202,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * specifies the valid combinations of fields to transmit implicit and"]
     #[doc = " * explicit certificates."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct Certificate(pub CertificateBase);
     #[doc = "*"]
@@ -275,7 +275,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * consideration</b>s section of this subclause.</li>"]
     #[doc = " * </ul>"]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct CertificateBase {
         #[rasn(value("3"))]
@@ -331,7 +331,7 @@ pub mod ieee1609_dot2 {
     #[doc = " *"]
     #[doc = " * @param none indicates that the certificate does not include an identifier."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum CertificateId {
@@ -352,7 +352,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * recognize the indicated CHOICE for this type when verifying a signed SPDU"]
     #[doc = " * shall indicate that the signed SPDU is invalid."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Copy, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Copy, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(enumerated)]
     #[non_exhaustive]
     pub enum CertificateType {
@@ -371,7 +371,7 @@ pub mod ieee1609_dot2 {
     #[doc = " *"]
     #[doc = " * @param extns contains a list of extensions from that contributor."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct ContributedExtensionBlock {
         #[rasn(identifier = "contributorId")]
@@ -392,7 +392,7 @@ pub mod ieee1609_dot2 {
     #[doc = " *"]
     #[doc = " * @brief This data structure defines a list of ContributedExtensionBlock"]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, size("1.."))]
     pub struct ContributedExtensionBlocks(pub SequenceOf<ContributedExtensionBlock>);
     #[doc = "*"]
@@ -404,7 +404,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * containing the hash (extDataHash) of the externally generated, pre-signed"]
     #[doc = " * SPDU over which the countersignature is performed."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct Countersignature(pub Ieee1609Dot2Data);
     #[doc = "***************************************************************************"]
@@ -437,7 +437,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * @param ciphertext contains the encrypted data. This is the encryption of"]
     #[doc = " * an encoded Ieee1609Dot2Data structure as specified in 5.3.4.2."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct EncryptedData {
         pub recipients: SequenceOfRecipientInfo,
@@ -464,7 +464,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * implementation does not recognize the indicated CHOICE, the implementation"]
     #[doc = " * shall indicate that the encrypted SPDU is not decryptable."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum EncryptedDataEncryptionKey {
@@ -481,16 +481,16 @@ pub mod ieee1609_dot2 {
     #[doc = " * indicated, the end-entity certificate may contain a certRequestPermissions"]
     #[doc = " * field."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
-    #[rasn(delegate, size("8"))]
-    pub struct EndEntityType(pub BitString);
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(delegate)]
+    pub struct EndEntityType(pub FixedBitString<8usize>);
     #[doc = "*"]
     #[doc = " * @class ExplicitCertificate"]
     #[doc = " *"]
     #[doc = " * @brief This is a profile of the CertificateBase structure providing all"]
     #[doc = " * the fields necessary for an explicit certificate, and no others."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct ExplicitCertificate(pub CertificateBase);
     #[doc = "*"]
@@ -506,7 +506,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * recognize the indicated CHOICE for this type when verifying a signed SPDU"]
     #[doc = " * shall indicate that the signed SPDU is invalid."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum HashedData {
@@ -583,7 +583,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * @param contributedExtensions, if present, is used to provide extension blocks"]
     #[doc = " * defined by identified contributing organizations."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     #[non_exhaustive]
     pub struct HeaderInfo {
@@ -646,7 +646,7 @@ pub mod ieee1609_dot2 {
     #[doc = " *"]
     #[doc = " * @param In this version of the standard, value 2 is assigned to ETSI."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("0..=255"))]
     pub struct HeaderInfoContributorId(pub u8);
     #[doc = "*"]
@@ -667,7 +667,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * certificate request. Further specification of certificate requests is not"]
     #[doc = " * provided in this version of this standard."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum Ieee1609Dot2Content {
@@ -693,7 +693,7 @@ pub mod ieee1609_dot2 {
     #[doc = " *"]
     #[doc = " * @param content contains the content in the form of an Ieee1609Dot2Content."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct Ieee1609Dot2Data {
         #[rasn(value("3"), identifier = "protocolVersion")]
@@ -714,7 +714,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * @brief This is a profile of the CertificateBase structure providing all"]
     #[doc = " * the fields necessary for an implicit certificate, and no others."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct ImplicitCertificate(pub CertificateBase);
     #[doc = "*"]
@@ -752,7 +752,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * recognize the indicated CHOICE for this type when verifying a signed SPDU"]
     #[doc = " * shall indicate that the signed SPDU is invalid."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum IssuerIdentifier {
@@ -770,7 +770,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * containing certificate has been revoked. See 5.1.3.4 and 7.3 for details"]
     #[doc = " * of use."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct LinkageData {
         #[rasn(identifier = "iCert")]
@@ -807,7 +807,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * @param crlSeries is the requested CRL Series value. See 5.1.3 for more"]
     #[doc = " * information."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     #[non_exhaustive]
     pub struct MissingCrlIdentifier {
@@ -852,7 +852,7 @@ pub mod ieee1609_dot2 {
     #[doc = " *"]
     #[doc = " * @param encKey contains the encrypted key."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct PKRecipientInfo {
         #[rasn(identifier = "recipientId")]
@@ -895,7 +895,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * Security Subsystem for an application process. See ISO 21177 [B14a] for"]
     #[doc = " * further information."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("0..=255"))]
     pub struct PduFunctionalType(pub u8);
     #[doc = "*"]
@@ -908,7 +908,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * The symmetric key may be established by any appropriate means agreed by"]
     #[doc = " * the two parties to the exchange."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct PreSharedKeyRecipientInfo(pub HashedId8);
     #[doc = "*"]
@@ -952,7 +952,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * Different instances of PsidGroupPermissions within a ToBeSignedCertificate"]
     #[doc = " * may have different values for eeType."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct PsidGroupPermissions {
         #[rasn(identifier = "subjectPermissions")]
@@ -995,7 +995,7 @@ pub mod ieee1609_dot2 {
         Integer::from(0)
     }
     fn psid_group_permissions_ee_type_default() -> EndEntityType {
-        EndEntityType(BitString::from_slice(&[1u8]))
+        EndEntityType(FixedBitString::new([0, 1, 0, 0, 0, 0, 0, 0]))
     }
     #[doc = "*"]
     #[doc = " * @class RecipientInfo"]
@@ -1031,7 +1031,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * key that was not obtained from a Signed¬Data. In this case, the parameter"]
     #[doc = " * P1 to ECIES as defined in 5.3.4 is the hash of the empty string."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     pub enum RecipientInfo {
         pskRecipInfo(PreSharedKeyRecipientInfo),
@@ -1045,7 +1045,7 @@ pub mod ieee1609_dot2 {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfCertificate(pub SequenceOf<Certificate>);
     #[doc = "*"]
@@ -1053,7 +1053,7 @@ pub mod ieee1609_dot2 {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfPsidGroupPermissions(pub SequenceOf<PsidGroupPermissions>);
     #[doc = "*"]
@@ -1061,7 +1061,7 @@ pub mod ieee1609_dot2 {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfRecipientInfo(pub SequenceOf<RecipientInfo>);
     #[doc = "*"]
@@ -1105,7 +1105,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * </ul>"]
     #[doc = " * </ul>"]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct SignedData {
         #[rasn(identifier = "hashId")]
@@ -1148,7 +1148,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * of that large message without having to resend the message itself. Whether"]
     #[doc = " * or not extDataHash is used, and how it is used, is SDEE-specific."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     #[non_exhaustive]
     pub struct SignedDataPayload {
@@ -1157,7 +1157,10 @@ pub mod ieee1609_dot2 {
         pub ext_data_hash: Option<HashedData>,
     }
     impl SignedDataPayload {
-        pub fn new(data: Option<alloc::boxed::Box<Ieee1609Dot2Data>>, ext_data_hash: Option<HashedData>) -> Self {
+        pub fn new(
+            data: Option<alloc::boxed::Box<Ieee1609Dot2Data>>,
+            ext_data_hash: Option<HashedData>,
+        ) -> Self {
             Self {
                 data,
                 ext_data_hash,
@@ -1217,7 +1220,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * fields containing at least one certificate.</li>"]
     #[doc = " * </ol>"]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum SignerIdentifier {
@@ -1253,7 +1256,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * containing at least eight entries.</li>"]
     #[doc = " * </ul>"]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum SubjectPermissions {
@@ -1275,7 +1278,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * @param encKey contains the encrypted data encryption key within an AES-CCM"]
     #[doc = " * ciphertext."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct SymmRecipientInfo {
         #[rasn(identifier = "recipientId")]
@@ -1302,7 +1305,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * recognize the indicated CHOICE value for this type in an encrypted SPDU"]
     #[doc = " * shall reject the SPDU as invalid."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum SymmetricCiphertext {
@@ -1439,7 +1442,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * @param verifyKeyIndicator contains material that may be used to recover"]
     #[doc = " * the public key that may be used to verify data signed by this certificate."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     #[non_exhaustive]
     pub struct ToBeSignedCertificate {
@@ -1518,7 +1521,7 @@ pub mod ieee1609_dot2 {
     #[doc = " *"]
     #[doc = " * @param headerInfo contains additional data that is inserted by the SDS."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct ToBeSignedData {
         pub payload: SignedDataPayload,
@@ -1554,7 +1557,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * contains the reconstruction value, which is used to recover the public key"]
     #[doc = " * as specified in SEC 4 and 5.3.2."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum VerificationKeyIndicator {
@@ -1584,7 +1587,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * particular algorithm. The only algorithm supported is ECIES over either"]
     #[doc = " * the NIST P256 or the Brainpool P256r1 curve as specified in 5.3.4."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum BasePublicEncryptionKey {
@@ -1630,7 +1633,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * set to 0 in the sspBitmask in R, the value of corresponding bit in the"]
     #[doc = " * identical position in B has no bearing on whether B and R are consistent."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, size("0..=31"))]
     pub struct BitmapSsp(pub OctetString);
     #[doc = "*"]
@@ -1672,7 +1675,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * <br>Reference ETSI TS 103 097 [B7] for more information on bitmask SSPs."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct BitmapSspRange {
         #[rasn(size("1..=32"), identifier = "sspValue")]
@@ -1699,7 +1702,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * component is considered to be within the circular region if its horizontal"]
     #[doc = " * projection onto the reference ellipsoid lies within the region."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct CircularRegion {
         pub center: TwoDLocation,
@@ -1725,7 +1728,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * countryOnly, the meaning of region is not defined in this version of this"]
     #[doc = " * standard."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct CountryAndRegions {
         #[rasn(identifier = "countryOnly")]
@@ -1766,7 +1769,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * country, the meaning of regionAndSubregions is not defined in this version"]
     #[doc = " * of this standard."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct CountryAndSubregions {
         pub country: CountryOnly,
@@ -1791,7 +1794,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * identifier as defined by the United Nations Statistics Division in October"]
     #[doc = " * 2013 (see normative references in Clause 2)."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct CountryOnly(pub Uint16);
     #[doc = "*"]
@@ -1800,7 +1803,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This integer identifies a series of CRLs issued under the authority"]
     #[doc = " * of a particular CRACA."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct CrlSeries(pub Uint16);
     #[doc = "*"]
@@ -1828,7 +1831,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @param years contains the duration in years."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     pub enum Duration {
         microseconds(Uint16),
@@ -1840,7 +1843,7 @@ pub mod ieee1609_dot2_base_types {
         years(Uint16),
     }
     #[doc = " Inner type "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct EccP256CurvePointUncompressedP256 {
         pub x: FixedOctetString<32>,
@@ -1869,7 +1872,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * takes the value compressed-y-1. If the point is uncompressed, y is encoded"]
     #[doc = " * explicitly as an unsigned integer of length 32 octets in network byte order."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     pub enum EccP256CurvePoint {
         #[rasn(identifier = "x-only")]
@@ -1882,7 +1885,7 @@ pub mod ieee1609_dot2_base_types {
         uncompressedP256(EccP256CurvePointUncompressedP256),
     }
     #[doc = " Inner type "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct EccP384CurvePointUncompressedP384 {
         pub x: FixedOctetString<48>,
@@ -1911,7 +1914,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * value compressed-y-1. If the point is uncompressed, y is encoded"]
     #[doc = " * explicitly as an unsigned integer of length 48 octets in network byte order."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     pub enum EccP384CurvePoint {
         #[rasn(identifier = "x-only")]
@@ -1969,7 +1972,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * </li>"]
     #[doc = " * </ul>"]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct EcdsaP256Signature {
         #[rasn(identifier = "rSig")]
@@ -2019,7 +2022,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * CF3AB6AF6B7FC3103B883202E9046565</li>"]
     #[doc = " * </ul>"]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct EcdsaP384Signature {
         #[rasn(identifier = "rSig")]
@@ -2052,7 +2055,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @param t is the authentication tag, which is the output tag from"]
     #[doc = " * encryption as specified in 5.3.4."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct EciesP256EncryptedKey {
         pub v: EccP256CurvePoint,
@@ -2072,7 +2075,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * integer number of decimeters representing the height above a minimum"]
     #[doc = " * height of -409.5 m, with the maximum height being 6143.9 m."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct Elevation(pub Uint16);
     #[doc = "*"]
@@ -2081,7 +2084,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This structure contains an encryption key, which may be a public or"]
     #[doc = " * a symmetric key."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     pub enum EncryptionKey {
         public(PublicEncryptionKey),
@@ -2133,7 +2136,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * containing at least one entry. The permitted region is any point within"]
     #[doc = " * any of the identified regions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum GeographicRegion {
@@ -2148,7 +2151,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This is the group linkage value. See 5.1.3 and 7.3 for details of"]
     #[doc = " * use."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct GroupLinkageValue {
         #[rasn(identifier = "jValue")]
@@ -2172,7 +2175,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * enumerated value of this type in a signed SPDU when verifying a signed"]
     #[doc = " * SPDU shall indicate that the signed SPDU is invalid."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Copy, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Copy, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(enumerated)]
     #[non_exhaustive]
     pub enum HashAlgorithm {
@@ -2204,9 +2207,9 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * <br>HashedId10 = 934ca495991b7852b855."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
-    pub struct HashedId10(pub FixedOctetString<10>);
+    pub struct HashedId10(pub FixedOctetString<10usize>);
     #[doc = "*"]
     #[doc = " * @class HashedId3"]
     #[doc = " *"]
@@ -2227,9 +2230,9 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * <br>HashedId3 = 52b855."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
-    pub struct HashedId3(pub FixedOctetString<3>);
+    pub struct HashedId3(pub FixedOctetString<3usize>);
     #[doc = "*"]
     #[doc = " * @class HashedId32"]
     #[doc = " *"]
@@ -2256,9 +2259,9 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * <br>HashedId32 ="]
     #[doc = " * e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
-    pub struct HashedId32(pub FixedOctetString<32>);
+    pub struct HashedId32(pub FixedOctetString<32usize>);
     #[doc = "*"]
     #[doc = " * @class HashedId8"]
     #[doc = " *"]
@@ -2284,16 +2287,16 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * <br>HashedId8 = a495991b7852b855."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
-    pub struct HashedId8(pub FixedOctetString<8>);
+    pub struct HashedId8(pub FixedOctetString<8usize>);
     #[doc = "*"]
     #[doc = " * @class Hostname"]
     #[doc = " *"]
     #[doc = " * @brief This is a UTF-8 string as defined in IETF RFC 3629. The contents"]
     #[doc = " * are determined by policy."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, size("0..=255"))]
     pub struct Hostname(pub Utf8String);
     #[doc = "***************************************************************************"]
@@ -2304,7 +2307,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @brief This atomic type is used in the definition of other data structures."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct IValue(pub Uint16);
     #[doc = "*"]
@@ -2320,7 +2323,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * verifying a signed SPDU shall indicate that the signed SPDU is invalid.</li>"]
     #[doc = " * </ul>"]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum IdentifiedRegion {
@@ -2334,7 +2337,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief The known latitudes are from -900,000,000 to +900,000,000 in 0.1"]
     #[doc = " * microdegree intervals."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("-900000000..=900000000"))]
     pub struct KnownLatitude(pub NinetyDegreeInt);
     #[doc = "*"]
@@ -2343,7 +2346,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief The known longitudes are from -1,799,999,999 to +1,800,000,000 in"]
     #[doc = " * 0.1 microdegree intervals."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("-1799999999..=1800000000"))]
     pub struct KnownLongitude(pub OneEightyDegreeInt);
     #[doc = "*"]
@@ -2352,9 +2355,9 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This structure contains a LA Identifier for use in the algorithms"]
     #[doc = " * specified in 5.1.3.4."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
-    pub struct LaId(pub FixedOctetString<2>);
+    pub struct LaId(pub FixedOctetString<2usize>);
     #[doc = "*"]
     #[doc = " * @class Latitude"]
     #[doc = " *"]
@@ -2362,7 +2365,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * with precision 1/10th microdegree relative to the World Geodetic System"]
     #[doc = " * (WGS)-84 datum as defined in NIMA Technical Report TR8350.2."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct Latitude(pub NinetyDegreeInt);
     #[doc = "*"]
@@ -2371,18 +2374,18 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This structure contains a linkage seed value for use in the"]
     #[doc = " * algorithms specified in 5.1.3.4."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
-    pub struct LinkageSeed(pub FixedOctetString<16>);
+    pub struct LinkageSeed(pub FixedOctetString<16usize>);
     #[doc = "*"]
     #[doc = " * @class LinkageValue"]
     #[doc = " *"]
     #[doc = " * @brief This is the individual linkage value. See 5.1.3 and 7.3 for details"]
     #[doc = " * of use."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
-    pub struct LinkageValue(pub FixedOctetString<9>);
+    pub struct LinkageValue(pub FixedOctetString<9usize>);
     #[doc = "*"]
     #[doc = " * @class Longitude"]
     #[doc = " *"]
@@ -2390,7 +2393,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * with precision 1/10th microdegree relative to the World Geodetic System"]
     #[doc = " * (WGS)-84 datum as defined in NIMA Technical Report TR8350.2."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct Longitude(pub OneEightyDegreeInt);
     #[doc = "*"]
@@ -2400,7 +2403,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * no less than -900,000,000, except that the value 900,000,001 is used to"]
     #[doc = " * indicate the latitude was not available to the sender."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("-900000000..=900000001"))]
     pub struct NinetyDegreeInt(pub i32);
     #[doc = "*"]
@@ -2410,7 +2413,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * and no less than -1,799,999,999, except that the value 1,800,000,001 is"]
     #[doc = " * used to indicate that the longitude was not available to the sender."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("-1799999999..=1800000001"))]
     pub struct OneEightyDegreeInt(pub i32);
     #[doc = "***************************************************************************"]
@@ -2422,7 +2425,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This is a synonym for ASN.1 OCTET STRING, and is used in the"]
     #[doc = " * definition of other data structures."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct Opaque(pub OctetString);
     #[doc = "*"]
@@ -2453,7 +2456,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * containing at least eight TwoDLocation entries.</li>"]
     #[doc = " * </ul>"]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, size("3.."))]
     pub struct PolygonalRegion(pub SequenceOf<TwoDLocation>);
     #[doc = "*"]
@@ -2461,7 +2464,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @brief This type represents the PSID defined in IEEE Std 1609.12."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("0.."))]
     pub struct Psid(pub Integer);
     #[doc = "***************************************************************************"]
@@ -2499,7 +2502,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * For consistency rules for other forms of the ssp field, see the"]
     #[doc = " * following subclauses."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct PsidSsp {
         pub psid: Psid,
@@ -2523,7 +2526,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * the holder may issue or request certificates. If sspRange is omitted, the"]
     #[doc = " * holder may issue or request certificates for any SSP for that PSID."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct PsidSspRange {
         pub psid: Psid,
@@ -2542,7 +2545,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * symmetric algorithm which is used for bulk data encryption when encrypting"]
     #[doc = " * for that public key."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct PublicEncryptionKey {
         #[rasn(identifier = "supportedSymmAlg")]
@@ -2574,7 +2577,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * recognize the indicated CHOICE when verifying a signed SPDU shall indicate"]
     #[doc = " * that the signed SPDU is invalid."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum PublicVerificationKey {
@@ -2599,7 +2602,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * and west of the southEast value, i.e., the two points cannot have equal"]
     #[doc = " * latitude or equal longitude."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct RectangularRegion {
         #[rasn(identifier = "northWest")]
@@ -2635,7 +2638,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @param subregions identifies one or more subregions as specified under"]
     #[doc = " * CountryAndSubregions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct RegionAndSubregions {
         pub region: Uint8,
@@ -2651,7 +2654,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfHashedId3(pub SequenceOf<HashedId3>);
     #[doc = "*"]
@@ -2659,11 +2662,11 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfIdentifiedRegion(pub SequenceOf<IdentifiedRegion>);
     #[doc = " Anonymous SEQUENCE OF member "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, identifier = "OCTET_STRING")]
     pub struct AnonymousSequenceOfOctetString(pub OctetString);
     #[doc = "*"]
@@ -2671,7 +2674,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfOctetString(pub SequenceOf<AnonymousSequenceOfOctetString>);
     #[doc = "*"]
@@ -2679,7 +2682,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfPsid(pub SequenceOf<Psid>);
     #[doc = "*"]
@@ -2687,7 +2690,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfPsidSsp(pub SequenceOf<PsidSsp>);
     #[doc = "*"]
@@ -2695,7 +2698,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfPsidSspRange(pub SequenceOf<PsidSspRange>);
     #[doc = "*"]
@@ -2703,7 +2706,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfRectangularRegion(pub SequenceOf<RectangularRegion>);
     #[doc = "*"]
@@ -2711,7 +2714,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfRegionAndSubregions(pub SequenceOf<RegionAndSubregions>);
     #[doc = "*"]
@@ -2719,7 +2722,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfUint16(pub SequenceOf<Uint16>);
     #[doc = "*"]
@@ -2727,7 +2730,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfUint8(pub SequenceOf<Uint8>);
     #[doc = "*"]
@@ -2765,7 +2768,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * For consistency rules for other types of ServiceSpecificPermissions,"]
     #[doc = " * see the following subclauses."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum ServiceSpecificPermissions {
@@ -2787,7 +2790,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * recognize the indicated CHOICE for this type when verifying a signed SPDU"]
     #[doc = " * shall indicate that the signed SPDU is invalid."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum Signature {
@@ -2845,7 +2848,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * SspRange in the enclosing PsidSspRange structure. Omitting the SspRange is"]
     #[doc = " * preferred to explicitly indicating \"all\"."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum SspRange {
@@ -2895,9 +2898,9 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * and future uses of this field are anticipated to be consistent with future"]
     #[doc = " * versions of that document."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
-    pub struct SubjectAssurance(pub FixedOctetString<1>);
+    pub struct SubjectAssurance(pub FixedOctetString<1usize>);
     #[doc = "*"]
     #[doc = " * @class SymmAlgorithm"]
     #[doc = " *"]
@@ -2905,7 +2908,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * only symmetric algorithm supported in this version of this standard is"]
     #[doc = " * AES-CCM as specified in 5.3.7."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Copy, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Copy, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(enumerated)]
     #[non_exhaustive]
     pub enum SymmAlgorithm {
@@ -2918,7 +2921,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * symmetric algorithm. The only supported symmetric algorithm is AES-128 in"]
     #[doc = " * CCM mode as specified in 5.3.7."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     #[non_exhaustive]
     pub enum SymmetricEncryptionKey {
@@ -2934,7 +2937,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * location data structures used in SAE J2735, though the encoding is"]
     #[doc = " * incompatible."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct ThreeDLocation {
         pub latitude: Latitude,
@@ -2959,7 +2962,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This type gives the number of (TAI) seconds since 00:00:00 UTC, 1"]
     #[doc = " * January, 2004."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct Time32(pub Uint32);
     #[doc = "*"]
@@ -2968,7 +2971,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This type gives the number of (TAI) microseconds since 00:00:00"]
     #[doc = " * UTC, 1 January, 2004."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct Time64(pub Uint64);
     #[doc = "*"]
@@ -2984,7 +2987,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * longitude (used to indicate that the longitude was not available) are not"]
     #[doc = " * valid."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct TwoDLocation {
         pub latitude: Latitude,
@@ -3004,7 +3007,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This atomic type is used in the definition of other data structures."]
     #[doc = " * It is for non-negative integers up to 65,535, i.e., (hex)ff ff."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("0..=65535"))]
     pub struct Uint16(pub u16);
     #[doc = "***************************************************************************"]
@@ -3016,7 +3019,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This atomic type is used in the definition of other data structures."]
     #[doc = " * It is for non-negative integers up to 7, i.e., (hex)07."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("0..=7"))]
     pub struct Uint3(pub u8);
     #[doc = "*"]
@@ -3026,7 +3029,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * It is for non-negative integers up to 4,294,967,295, i.e.,"]
     #[doc = " * (hex)ff ff ff ff."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("0..=4294967295"))]
     pub struct Uint32(pub u32);
     #[doc = "*"]
@@ -3036,7 +3039,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * It is for non-negative integers up to 18,446,744,073,709,551,615, i.e.,"]
     #[doc = " * (hex)ff ff ff ff ff ff ff ff."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("0..=18446744073709551615"))]
     pub struct Uint64(pub u64);
     #[doc = "*"]
@@ -3045,7 +3048,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This atomic type is used in the definition of other data structures."]
     #[doc = " * It is for non-negative integers up to 255, i.e., (hex)ff."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord, Hash)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("0..=255"))]
     pub struct Uint8(pub u8);
     #[doc = "*"]
@@ -3054,7 +3057,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief The value 900,000,001 indicates that the latitude was not"]
     #[doc = " * available to the sender."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("900000001"))]
     pub struct UnknownLatitude(pub NinetyDegreeInt);
     #[doc = "*"]
@@ -3063,7 +3066,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief The value 1,800,000,001 indicates that the longitude was not"]
     #[doc = " * available to the sender."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, value("1800000001"))]
     pub struct UnknownLongitude(pub OneEightyDegreeInt);
     #[doc = "*"]
@@ -3077,7 +3080,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @param duration contains the duration of the validity period."]
     #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, PartialOrd, Eq, Ord)]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct ValidityPeriod {
         pub start: Time32,

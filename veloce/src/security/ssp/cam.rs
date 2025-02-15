@@ -117,6 +117,11 @@ impl CamSsp {
 
         Ok(CamSsp(SspContainer::from_bytes(buf)))
     }
+
+    /// Emit the SSP as a byte array, consuming itself.
+    pub const fn emit(self) -> [u8; CAM_SSP_LEN] {
+        self.0.into_inner()
+    }
 }
 
 impl SspTrait for CamSsp {

@@ -1285,7 +1285,7 @@ impl InterfaceInner {
                 packet.emit_payload(payload_buf);
 
                 // Sign the emitted content.
-                match sec_srv.encap_packet(&buffer, permission.clone(), core.now, position) {
+                match sec_srv.encap_packet(buffer, permission.clone(), core.now, position) {
                     Ok(encapsulated) => {
                         let len = repr.basic_header_len() + encapsulated.len();
                         let pkt = GeonetPacket::new(

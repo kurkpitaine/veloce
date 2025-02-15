@@ -69,6 +69,11 @@ impl CtlSsp {
         Ok(CtlSsp(SspContainer::from_bytes(buf)))
     }
 
+    /// Emit the SSP as a byte array, consuming itself.
+    pub const fn emit(self) -> [u8; CTL_SSP_LEN] {
+        self.0.into_inner()
+    }
+
     /// Verifies the SSP combination for a TLM CTL certificate, according to the
     /// ETSI TS 102 941 V2.2.1 table B.6.
     pub fn verify_tlm_issuing_permissions(&self) -> SspResult<()> {
