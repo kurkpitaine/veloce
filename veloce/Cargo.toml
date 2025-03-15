@@ -36,6 +36,8 @@ asn1 = ["dep:veloce-asn1"]
 ipc = ["dep:veloce-ipc"]
 conformance = []
 
+pki = []
+
 "medium-ethernet" = []
 "medium-ieee80211p" = []
 "medium-pc5" = []
@@ -73,6 +75,7 @@ default = [
    "log",
    "asn1",
    "ipc",
+   "pki",
    "medium-ethernet",
    "medium-ieee80211p",
    "medium-pc5",

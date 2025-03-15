@@ -1,24 +1,31 @@
 use core::fmt;
 
 use veloce_asn1::{
-    defs::etsi_102941_v221::{
-        etsi_ts102941_base_types::{
-            CertificateFormat, CertificateSubjectAttributes, PublicKeys, Version,
+    defs::{
+        etsi_102941_v221::{
+            etsi_ts102941_base_types::{
+                CertificateFormat, CertificateSubjectAttributes, PublicKeys, Version,
+            },
+            etsi_ts102941_messages_ca::{EtsiTs102941Data, EtsiTs102941DataContent},
+            etsi_ts102941_types_enrolment::{
+                EnrolmentResponseCode as EtsiEnrollmentResponseCode,
+                InnerEcRequest as EtsiInnerEcRequest,
+                InnerEcRequestSignedForPop as EtsiInnerEcRequestSignedForPop,
+                InnerEcResponse as EtsiInnerEcResponse,
+            },
+            ieee1609_dot2_base_types::{
+                EccP256CurvePoint, PublicVerificationKey, SequenceOfPsidSsp,
+            },
         },
-        etsi_ts102941_messages_ca::{EtsiTs102941Data, EtsiTs102941DataContent},
-        etsi_ts102941_types_enrolment::{
-            InnerEcRequest as EtsiInnerEcRequest,
-            InnerEcRequestSignedForPop as EtsiInnerEcRequestSignedForPop,
-        },
-        ieee1609_dot2_base_types::{EccP256CurvePoint, PublicVerificationKey, SequenceOfPsidSsp},
+        etsi_103097_v211::etsi_ts103097_module::EtsiTs103097Certificate,
     },
-    prelude::rasn::types::{Integer, OctetString},
+    prelude::rasn::types::{FixedOctetString, Integer, OctetString},
 };
 
 use crate::{
     security::{
         backend::BackendError,
-        certificate::CertificateError,
+        certificate::{CertificateError, CertificateTrait, EnrollmentCredential},
         permission::{Permission, PermissionError, AID},
         pki::{
             asn1_wrapper::{Asn1Wrapper, Asn1WrapperError},
@@ -26,12 +33,12 @@ use crate::{
             signed_data::{SignedData, SignedDataError},
             SignerIdentifier,
         },
-        EcdsaKey, EcdsaKeyError,
+        EcdsaKey, EcdsaKeyError, HashedId8,
     },
     time::{Instant, TAI2004},
 };
 
-use super::{SignerError, VerifierError};
+use super::{DecryptionError, EncryptionError, SignerError, VerifierError};
 
 pub type EnrollmentRequestResult<T> = core::result::Result<T, EnrollmentRequestError>;
 
@@ -71,22 +78,18 @@ pub enum EnrollmentRequestError {
     SignedForPop(SignedDataError),
     /// Outer wrapper.
     Outer(SignedDataError),
-    /// Encrypted wrapper
-    Encrypted(EncryptedDataError),
     /// Something went wrong while signing the Inner Signed for Pop wrapper.
     SignedForPopSigner(SignerError),
     /// Something went wrong while verifying the Inner Signed for Pop wrapper.
     SignedForPopVerifier(VerifierError),
     /// Something went wrong while signing the Outer wrapper.
     OuterSigner(SignerError),
-    /// Something went wrong while verifying the Outer wrapper.
-    OuterVerifier(VerifierError),
+    /// Something went wrong while encrypting the Outer wrapper.
+    Encryption(EncryptionError),
+    /// Encrypted wrapper.
+    Encrypted(EncryptedDataError),
     /// No canonical key available.
     NoCanonicalKey,
-    /// Certificate error.
-    Certificate(CertificateError),
-    /// No public encryption key available in the enrollment certificate.
-    NoPublicEncryptionKey,
 }
 
 impl fmt::Display for EnrollmentRequestError {
@@ -109,7 +112,6 @@ impl fmt::Display for EnrollmentRequestError {
             EnrollmentRequestError::Backend(e) => write!(f, "backend: {}", e),
             EnrollmentRequestError::SignedForPop(e) => write!(f, "signed for POP: {}", e),
             EnrollmentRequestError::Outer(e) => write!(f, "outer: {}", e),
-            EnrollmentRequestError::Encrypted(e) => write!(f, "encrypted: {}", e),
             EnrollmentRequestError::SignedForPopSigner(e) => {
                 write!(f, "signed for POP signer: {}", e)
             }
@@ -117,10 +119,9 @@ impl fmt::Display for EnrollmentRequestError {
                 write!(f, "signed for POP verifier: {}", e)
             }
             EnrollmentRequestError::OuterSigner(e) => write!(f, "outer signer: {}", e),
-            EnrollmentRequestError::OuterVerifier(e) => write!(f, "outer verifier: {}", e),
-            EnrollmentRequestError::NoCanonicalKey => write!(f, "no canonical key"),
-            EnrollmentRequestError::Certificate(e) => write!(f, "certificate: {}", e),
-            EnrollmentRequestError::NoPublicEncryptionKey => write!(f, "no public encryption key"),
+            EnrollmentRequestError::Encryption(e) => write!(f, "encryption : {}", e),
+            EnrollmentRequestError::Encrypted(e) => write!(f, "encrypted: {}", e),
+            EnrollmentRequestError::NoCanonicalKey => write!(f, "no canonical key available"),
         }
     }
 }
@@ -295,6 +296,345 @@ impl TryFrom<EtsiInnerEcRequest> for EnrollmentRequest {
     }
 }
 
+/// Marker struct for Outer EC Response type.
+#[derive(Debug, Clone, Copy)]
+pub struct OuterResp;
+
+/// Outer EC Response type.
+pub type OuterEcResponse = SignedData<OuterResp>;
+
+/// [EnrollmentResponse] methods result type.
+pub type EnrollmentResponseResult<T> = core::result::Result<T, EnrollmentResponseError>;
+
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// Enrollment Request errors.
+pub enum EnrollmentResponseError {
+    /// Asn.1 wrapper error.
+    Asn1Wrapper(Asn1WrapperError),
+    /// Verification key.
+    VerificationKey(EcdsaKeyError),
+    /// Certificate error.
+    Certificate(CertificateError),
+    /// Enrollment credential error.
+    EnrollmentCredential(CertificateError),
+    /// Encrypted data error.
+    Encrypted(EncryptedDataError),
+    /// Malformed, ie: a mandatory field
+    /// is absent or a present field should be absent.
+    Malformed,
+    /// Unexpected Etsi TS 102941 data content.
+    UnexpectedDataContent,
+    /// Request hash is unsupported.
+    UnsupportedRequestHash,
+    /// No recipient found.
+    NoRecipient,
+    /// Recipient is not unique.
+    RecipientNotUnique,
+    /// Unexpected recipient information.
+    UnexpectedRecipientInformation,
+    /// Recipient id is unknown, the message is not addressed to us.
+    UnknownRecipientId {
+        expected: HashedId8,
+        actual: HashedId8,
+    },
+    /// Something went wrong while decrypting the Outer wrapper.
+    Decryption(DecryptionError),
+    /// Outer wrapper.
+    Outer(SignedDataError),
+    /// Something went wrong while verifying the Outer wrapper.
+    OuterVerifier(VerifierError),
+    /// False Outer wrapper signature.
+    FalseOuterSignature,
+    /// Response code is not supported.
+    UnsupportedResponseCode(u64),
+    /// Request failed, ie: the response code is not ok.
+    Failure(EnrollmentResponseCode),
+}
+
+impl fmt::Display for EnrollmentResponseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EnrollmentResponseError::Asn1Wrapper(e) => write!(f, "asn1 wrapper error: {}", e),
+            EnrollmentResponseError::VerificationKey(e) => {
+                write!(f, "verification key: {}", e)
+            }
+            EnrollmentResponseError::Certificate(e) => {
+                write!(f, "certificate: {}", e)
+            }
+            EnrollmentResponseError::EnrollmentCredential(e) => {
+                write!(f, "enrollment credential: {}", e)
+            }
+            EnrollmentResponseError::Encrypted(e) => {
+                write!(f, "encrypted data: {}", e)
+            }
+            EnrollmentResponseError::UnsupportedRequestHash => {
+                write!(f, "unsupported request hash")
+            }
+            EnrollmentResponseError::NoRecipient => write!(f, "no recipient found"),
+            EnrollmentResponseError::RecipientNotUnique => write!(f, "recipient not unique"),
+            EnrollmentResponseError::UnexpectedRecipientInformation => {
+                write!(f, "unexpected recipient information")
+            }
+            EnrollmentResponseError::UnknownRecipientId { expected, actual } => {
+                write!(
+                    f,
+                    "unknown recipient id. Expected: {}, actual: {}",
+                    expected, actual
+                )
+            }
+            EnrollmentResponseError::Decryption(e) => write!(f, "decryption: {}", e),
+            EnrollmentResponseError::Malformed => write!(f, "malformed response"),
+            EnrollmentResponseError::UnexpectedDataContent => {
+                write!(f, "unexpected Etsi TS 102941 data content")
+            }
+            EnrollmentResponseError::Outer(e) => write!(f, "outer: {}", e),
+            EnrollmentResponseError::OuterVerifier(e) => write!(f, "outer verifier: {}", e),
+            EnrollmentResponseError::FalseOuterSignature => write!(f, "false outer signature"),
+            EnrollmentResponseError::UnsupportedResponseCode(u) => {
+                write!(f, "unsupported response code: {}", u)
+            }
+            EnrollmentResponseError::Failure(e) => write!(f, "failure: {}", e),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// Enrollment Response.
+pub struct EnrollmentResponse {
+    /// Inner enrollment response structure.
+    inner: EtsiInnerEcResponse,
+}
+
+impl EnrollmentResponse {
+    /// Constructs an [EnrollmentResponse] from bytes. The EtsiTs102941Data wrapper is expected.
+    pub fn from_bytes(bytes: &[u8]) -> EnrollmentResponseResult<Self> {
+        let etsi_data = Asn1Wrapper::<EtsiTs102941Data>::decode_coer(bytes)
+            .map_err(EnrollmentResponseError::Asn1Wrapper)?;
+
+        let inner = match etsi_data.content {
+            EtsiTs102941DataContent::enrolmentResponse(r) => r,
+            _ => return Err(EnrollmentResponseError::UnexpectedDataContent),
+        };
+
+        Ok(Self { inner })
+    }
+
+    /// Get the [EnrollmentResponse] as bytes, encoded as Asn.1 COER.
+    pub fn as_bytes(&self) -> EnrollmentResponseResult<Vec<u8>> {
+        Asn1Wrapper::encode_coer(&self.inner).map_err(EnrollmentResponseError::Asn1Wrapper)
+    }
+
+    /// Get the request hash of the [EnrollmentResponse].
+    pub fn request_hash(&self) -> Vec<u8> {
+        self.inner.request_hash.to_vec()
+    }
+
+    /// Set the request hash of the [EnrollmentResponse].
+    pub fn set_request_hash(&mut self, hash: Vec<u8>) -> EnrollmentResponseResult<()> {
+        self.inner.request_hash = FixedOctetString::<16>::new(
+            hash.try_into()
+                .map_err(|_| EnrollmentResponseError::UnsupportedRequestHash)?,
+        );
+
+        Ok(())
+    }
+
+    /// Get the response code of the [EnrollmentResponse].
+    pub fn response_code(&self) -> EnrollmentResponseResult<EnrollmentResponseCode> {
+        self.inner.response_code.try_into()
+    }
+
+    /// Set the response code of the [EnrollmentResponse].
+    pub fn set_response_code(&mut self, code: EnrollmentResponseCode) {
+        self.inner.response_code = code.into();
+    }
+
+    /// Get the certificate of the [EnrollmentResponse], as an [EnrollmentCredential].
+    pub fn enrollment_credential(&self) -> EnrollmentResponseResult<Option<EnrollmentCredential>> {
+        let Some(cert) = &self.inner.certificate else {
+            return Ok(None);
+        };
+
+        Ok(Some(
+            EnrollmentCredential::from_etsi_cert(cert.0.clone())
+                .map_err(EnrollmentResponseError::Certificate)?,
+        ))
+    }
+
+    /// Set the Enrollment Credential of the [EnrollmentResponse].
+    pub fn set_enrollment_credential(&mut self, cred: EnrollmentCredential) {
+        self.inner.certificate = Some(EtsiTs103097Certificate(cred.inner().to_owned()));
+    }
+
+    /// Check `data` is valid according to InnerEcResponse Asn.1 definition.
+    /// This method is necessary as the rasn Asn.1 compiler does not generate
+    /// the validation code for custom parameterized types.
+    #[inline]
+    fn verify_constraints(data: &EtsiInnerEcResponse) -> EnrollmentResponseResult<()> {
+        match (data.response_code, &data.certificate) {
+            (EtsiEnrollmentResponseCode::ok, Some(_)) => {}
+            (EtsiEnrollmentResponseCode::ok, None) => {
+                return Err(EnrollmentResponseError::Malformed)
+            }
+            (_, None) => {}
+            _ => return Err(EnrollmentResponseError::Malformed),
+        };
+
+        Ok(())
+    }
+
+    /// Parse the outer EC response.
+    pub fn parse_outer_ec_response(bytes: &[u8]) -> EnrollmentResponseResult<OuterEcResponse> {
+        OuterEcResponse::from_bytes(bytes).map_err(EnrollmentResponseError::Outer)
+    }
+}
+
+impl TryFrom<EtsiInnerEcResponse> for EnrollmentResponse {
+    type Error = EnrollmentResponseError;
+
+    fn try_from(value: EtsiInnerEcResponse) -> Result<Self, Self::Error> {
+        Self::verify_constraints(&value)?;
+
+        Ok(EnrollmentResponse { inner: value })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EnrollmentResponseCode {
+    /// Success.
+    Ok,
+    /// Can't parse. Valid for any enclosed structure.
+    CantParse,
+    /// Not encrypted, not signed, not EnrollmentRequest
+    BadContentType,
+    /// The "recipients" doesn't include me.
+    ImNotTheRecipient,
+    /// Either Kexalg or Contentencryptionalgorithm.
+    UnknownEncryptionAlgorithm,
+    /// Works for ECIES-HMAC and AES-CCM.
+    DecryptionFailed,
+    /// Can't retrieve the ITS from the itsId.
+    UnknownIts,
+    /// Signature verification of the request failed.
+    InvalidSignature,
+    /// Signature is good, but the responseEncryptionKey is bad.
+    InvalidEncryptionKey,
+    /// Revoked, not yet active.
+    BadItsStatus,
+    /// Some elements are missing.
+    IncompleteRequest,
+    /// Requested permissions are not granted.
+    DeniedPermissions,
+    /// Either the verification_key of the encryption_key is bad.
+    InvalidKeys,
+    /// Any other reason ?
+    DeniedRequest,
+}
+
+impl fmt::Display for EnrollmentResponseCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EnrollmentResponseCode::Ok => write!(f, "ok"),
+            EnrollmentResponseCode::CantParse => write!(f, "cant parse"),
+            EnrollmentResponseCode::BadContentType => write!(f, "bad content type"),
+            EnrollmentResponseCode::ImNotTheRecipient => write!(f, "i'm not the recipient"),
+            EnrollmentResponseCode::UnknownEncryptionAlgorithm => {
+                write!(f, "unknown encryption algorithm")
+            }
+            EnrollmentResponseCode::DecryptionFailed => write!(f, "decryption failed"),
+            EnrollmentResponseCode::UnknownIts => write!(f, "unknown its"),
+            EnrollmentResponseCode::InvalidSignature => write!(f, "invalid signature"),
+            EnrollmentResponseCode::InvalidEncryptionKey => write!(f, "invalid encryption key"),
+            EnrollmentResponseCode::BadItsStatus => write!(f, "bad its status"),
+            EnrollmentResponseCode::IncompleteRequest => write!(f, "incomplete request"),
+            EnrollmentResponseCode::DeniedPermissions => write!(f, "denied permissions"),
+            EnrollmentResponseCode::InvalidKeys => write!(f, "invalid keys"),
+            EnrollmentResponseCode::DeniedRequest => write!(f, "denied request"),
+        }
+    }
+}
+
+impl TryFrom<EtsiEnrollmentResponseCode> for EnrollmentResponseCode {
+    type Error = EnrollmentResponseError;
+
+    fn try_from(value: EtsiEnrollmentResponseCode) -> Result<Self, Self::Error> {
+        let res = match value {
+            EtsiEnrollmentResponseCode::ok => EnrollmentResponseCode::Ok,
+            EtsiEnrollmentResponseCode::cantparse => EnrollmentResponseCode::CantParse,
+            EtsiEnrollmentResponseCode::badcontenttype => EnrollmentResponseCode::BadContentType,
+            EtsiEnrollmentResponseCode::imnottherecipient => {
+                EnrollmentResponseCode::ImNotTheRecipient
+            }
+            EtsiEnrollmentResponseCode::unknownencryptionalgorithm => {
+                EnrollmentResponseCode::UnknownEncryptionAlgorithm
+            }
+            EtsiEnrollmentResponseCode::decryptionfailed => {
+                EnrollmentResponseCode::DecryptionFailed
+            }
+            EtsiEnrollmentResponseCode::unknownits => EnrollmentResponseCode::UnknownIts,
+            EtsiEnrollmentResponseCode::invalidsignature => {
+                EnrollmentResponseCode::InvalidSignature
+            }
+            EtsiEnrollmentResponseCode::invalidencryptionkey => {
+                EnrollmentResponseCode::InvalidEncryptionKey
+            }
+            EtsiEnrollmentResponseCode::baditsstatus => EnrollmentResponseCode::BadItsStatus,
+            EtsiEnrollmentResponseCode::incompleterequest => {
+                EnrollmentResponseCode::IncompleteRequest
+            }
+            EtsiEnrollmentResponseCode::deniedpermissions => {
+                EnrollmentResponseCode::DeniedPermissions
+            }
+            EtsiEnrollmentResponseCode::invalidkeys => EnrollmentResponseCode::InvalidKeys,
+            EtsiEnrollmentResponseCode::deniedrequest => EnrollmentResponseCode::DeniedRequest,
+            other => {
+                return Err(EnrollmentResponseError::UnsupportedResponseCode(
+                    other as u64,
+                ))
+            }
+        };
+
+        Ok(res)
+    }
+}
+
+impl From<EnrollmentResponseCode> for EtsiEnrollmentResponseCode {
+    fn from(value: EnrollmentResponseCode) -> Self {
+        match value {
+            EnrollmentResponseCode::Ok => EtsiEnrollmentResponseCode::ok,
+            EnrollmentResponseCode::CantParse => EtsiEnrollmentResponseCode::cantparse,
+            EnrollmentResponseCode::BadContentType => EtsiEnrollmentResponseCode::badcontenttype,
+            EnrollmentResponseCode::ImNotTheRecipient => {
+                EtsiEnrollmentResponseCode::imnottherecipient
+            }
+            EnrollmentResponseCode::UnknownEncryptionAlgorithm => {
+                EtsiEnrollmentResponseCode::unknownencryptionalgorithm
+            }
+            EnrollmentResponseCode::DecryptionFailed => {
+                EtsiEnrollmentResponseCode::decryptionfailed
+            }
+            EnrollmentResponseCode::UnknownIts => EtsiEnrollmentResponseCode::unknownits,
+            EnrollmentResponseCode::InvalidSignature => {
+                EtsiEnrollmentResponseCode::invalidsignature
+            }
+            EnrollmentResponseCode::InvalidEncryptionKey => {
+                EtsiEnrollmentResponseCode::invalidencryptionkey
+            }
+            EnrollmentResponseCode::BadItsStatus => EtsiEnrollmentResponseCode::baditsstatus,
+            EnrollmentResponseCode::IncompleteRequest => {
+                EtsiEnrollmentResponseCode::incompleterequest
+            }
+            EnrollmentResponseCode::DeniedPermissions => {
+                EtsiEnrollmentResponseCode::deniedpermissions
+            }
+            EnrollmentResponseCode::InvalidKeys => EtsiEnrollmentResponseCode::invalidkeys,
+            EnrollmentResponseCode::DeniedRequest => EtsiEnrollmentResponseCode::deniedrequest,
+        }
+    }
+}
+
 /* #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// A container around an enrollment message request/response.
@@ -354,9 +694,9 @@ impl Enrollment {
         // Check that all requested permissions are in the certificate.
         req_subject_attributes.0.iter().all(|p| {
             match p.subject_permissions {
-                veloce_asn1::defs::etsi_102941_v221::ieee1609_dot2::SubjectPermissions::explicit(sequence_of_psid_ssp_range) => todo!(),
-                veloce_asn1::defs::etsi_102941_v221::ieee1609_dot2::SubjectPermissions::all(_) => todo!(),
-                _ => todo!(),
+                veloce_asn1::defs::etsi_102941_v221::ieee1609_dot2::SubjectPermissions::explicit(sequence_of_psid_ssp_range) => EnrollmentResponseCode::,
+                veloce_asn1::defs::etsi_102941_v221::ieee1609_dot2::SubjectPermissions::all(_) => EnrollmentResponseCode::,
+                _ => EnrollmentResponseCode::,
             }
         });
 

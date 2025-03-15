@@ -1,0 +1,15 @@
+[package]
+name = "veloce-pki-client"
+version = "0.1.0"
+authors = ["Thibaud Rouillé <veloce@ferroxyde.com>"]
+edition = "2021"
+description = "Veloce PKI client"
+
+[dependencies]
+veloce = { path = "../../veloce" }
+veloce-asn1 = { path = "../../veloce-asn1" }
+clap = { version = "4.5", features = ["derive"] }
+ureq = { version = "3.0", default-features = false }
+log = "0.4"
+
+[workspace]

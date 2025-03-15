@@ -3,24 +3,33 @@ use openssl::{
     ec::{EcGroup, EcKey},
     nid::Nid,
 };
-use std::{
-    fs::DirBuilder,
-    os::unix::fs::DirBuilderExt,
-    path::{Path, PathBuf},
-};
-use tempfile::tempdir;
+use std::path::PathBuf;
 
 use crate::security::{
     backend::{
         openssl::{OpensslBackend, OpensslBackendConfig},
-        BackendTrait, PkiBackendTrait,
+        BackendTrait,
     },
-    certificate::{CertificateTrait, EnrollmentAuthorityCertificate, ExplicitCertificate},
-    EcKeyType, EccPoint, EcdsaKey, UncompressedEccPoint,
+    EccPoint, EcdsaKey, UncompressedEccPoint,
 };
 
+#[cfg(feature = "pki")]
+use crate::security::{
+    backend::PkiBackendTrait,
+    certificate::{CertificateTrait, EnrollmentAuthorityCertificate, ExplicitCertificate},
+    EcKeyType,
+};
+
+#[cfg(feature = "pki")]
+use std::{fs::DirBuilder, os::unix::fs::DirBuilderExt, path::Path};
+
+#[cfg(feature = "pki")]
+use tempfile::tempdir;
+
+#[cfg(feature = "pki")]
 use super::certificate;
 
+#[cfg(feature = "pki")]
 #[test]
 fn test_create_canonical_key() {
     let base_path = tempdir().unwrap();
@@ -53,7 +62,7 @@ fn test_create_canonical_key() {
         ..Default::default()
     };
 
-    let backend = OpensslBackend::new(config).unwrap();
+    let mut backend = OpensslBackend::new(config).unwrap();
     let _pub_key = backend
         .generate_canonical_keypair(EcKeyType::NistP384r1)
         .unwrap();
@@ -101,6 +110,7 @@ fn test_load_secret_key() {
     OpensslBackend::new(config).unwrap();
 }
 
+#[cfg(feature = "pki")]
 #[test]
 fn derive_key() {
     let backend = OpensslBackend::new(Default::default()).unwrap();

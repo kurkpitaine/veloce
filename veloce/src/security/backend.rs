@@ -1,6 +1,9 @@
 use core::fmt;
 
-use super::{signature::EcdsaSignature, EcKeyType, EcdsaKey, EciesKey, HashAlgorithm, KeyPair};
+use super::{signature::EcdsaSignature, EcdsaKey, EciesKey};
+
+#[cfg(feature = "pki")]
+use super::{EcKeyType, HashAlgorithm, KeyPair};
 
 #[cfg(feature = "security-openssl")]
 pub mod openssl;
@@ -92,6 +95,7 @@ impl Backend {
         }
     }
 
+    #[cfg(feature = "pki")]
     #[inline]
     pub(super) fn inner_pki(&self) -> &impl PkiBackendTrait {
         match self {
@@ -139,6 +143,7 @@ pub trait BackendTrait {
     fn compress_ecdsa_key(&self, key: EcdsaKey) -> BackendResult<EcdsaKey>;
 }
 
+#[cfg(feature = "pki")]
 pub trait PkiBackendTrait: BackendTrait {
     /// Secret Key type used by the backend.
     type BackendSecretKey;
@@ -169,7 +174,7 @@ pub trait PkiBackendTrait: BackendTrait {
     /// Underlying secret key storage is left to the backend, special care should be taken to ensure
     /// secret key stays secret.
     fn generate_canonical_keypair(
-        &self,
+        &mut self,
         key_type: EcKeyType,
     ) -> BackendResult<Self::BackendPublicKey>;
 
@@ -181,7 +186,7 @@ pub trait PkiBackendTrait: BackendTrait {
     /// Underlying secret key storage is left to the backend, special care should be taken to ensure
     /// secret key stays secret.
     fn generate_enrollment_keypair(
-        &self,
+        &mut self,
         key_type: EcKeyType,
     ) -> BackendResult<Self::BackendPublicKey>;
 

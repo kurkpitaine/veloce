@@ -40,7 +40,10 @@ pub enum Ciphertext {
 impl Ciphertext {
     /// Create an AES-128 CCM ciphertext from `nonce` and `data`.
     pub fn new_aes_128_ccm(nonce: Vec<u8>, data: Vec<u8>) -> Self {
-        Self::Aes128Ccm(CiphertextInner { nonce, data })
+        Self::Aes128Ccm(CiphertextInner {
+            nonce,
+            data: OctetString::from(data),
+        })
     }
 }
 
@@ -51,7 +54,7 @@ pub struct CiphertextInner {
     /// Nonce used to encrypt the data.
     pub nonce: Vec<u8>,
     /// Encrypted data + tag at the tail.
-    pub data: Vec<u8>,
+    pub data: OctetString,
 }
 
 impl TryFrom<&EtsiCiphertext> for Ciphertext {
@@ -62,7 +65,7 @@ impl TryFrom<&EtsiCiphertext> for Ciphertext {
             EtsiCiphertext::aes128ccm(aes_ccm_ciphertext) => {
                 Ciphertext::Aes128Ccm(CiphertextInner {
                     nonce: aes_ccm_ciphertext.nonce.to_vec(),
-                    data: aes_ccm_ciphertext.ccm_ciphertext.0.to_vec(),
+                    data: aes_ccm_ciphertext.ccm_ciphertext.0.clone(),
                 })
             }
             _ => return Err(CiphertextError::UnsupportedType),
@@ -84,7 +87,7 @@ impl TryInto<EtsiCiphertext> for Ciphertext {
                         .try_into()
                         .map_err(|_| CiphertextError::UnsupportedNonce)?,
                 ),
-                ccm_ciphertext: EtsiOpaque(OctetString::from(inner.data)),
+                ccm_ciphertext: EtsiOpaque(inner.data),
             }),
         };
 

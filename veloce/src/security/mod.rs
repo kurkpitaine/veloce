@@ -30,6 +30,7 @@ pub mod certificate;
 mod certificate_cache;
 pub mod ciphertext;
 pub mod permission;
+#[cfg(feature = "pki")]
 pub mod pki;
 pub mod secured_message;
 pub mod service;

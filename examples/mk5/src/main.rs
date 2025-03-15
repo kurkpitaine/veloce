@@ -282,10 +282,10 @@ impl Source for RawSocket {
 
 pub fn openssl_backend() -> OpensslBackend {
     #[cfg(debug_assertions)]
-    let key_path = {
-        let mut key_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        key_path.push("src/assets/AT.pem");
-        std::fs::canonicalize(key_path)
+    let veloce_dir = {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("src/.veloce/");
+        std::fs::canonicalize(path)
             .unwrap()
             .into_os_string()
             .into_string()
@@ -293,13 +293,12 @@ pub fn openssl_backend() -> OpensslBackend {
     };
 
     #[cfg(not(debug_assertions))]
-    let key_path = "assets/AT.pem".to_string();
+    let veloce_dir = ".veloce".to_string();
 
     let config = OpensslBackendConfig {
-        canonical_key_path: String::new(),
-        canonical_key_passwd: String::new().into(),
-        signing_cert_secret_key_path: Some(key_path),
-        signing_cert_secret_key_passwd: Some("test1234".to_string().into()),
+        veloce_dir: Some(veloce_dir),
+        keys_password: "test1234".to_string().into(),
+        ..Default::default()
     };
 
     OpensslBackend::new(config).unwrap()
@@ -307,43 +306,43 @@ pub fn openssl_backend() -> OpensslBackend {
 
 pub fn load_root_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     #[cfg(debug_assertions)]
-    let input_root = include_bytes!("assets/RCA.cert");
+    let input_root = include_bytes!(".veloce/assets/RCA.cert");
     #[cfg(not(debug_assertions))]
-    let input_root = &fs::read("assets/RCA.cert").unwrap();
+    let input_root = &fs::read(".veloce/assets/RCA.cert").unwrap();
 
     rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_root).unwrap()
 }
 
 pub fn load_ea_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     #[cfg(debug_assertions)]
-    let input_ea = include_bytes!("assets/EA.cert");
+    let input_ea = include_bytes!(".veloce/assets/EA.cert");
     #[cfg(not(debug_assertions))]
-    let input_ea = &fs::read("assets/EA.cert").unwrap();
+    let input_ea = &fs::read(".veloce/assets/EA.cert").unwrap();
 
     rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_ea).unwrap()
 }
 
 pub fn load_aa_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     #[cfg(debug_assertions)]
-    let input_aa = include_bytes!("assets/AA.cert");
+    let input_aa = include_bytes!(".veloce/assets/AA.cert");
     #[cfg(not(debug_assertions))]
-    let input_aa = &fs::read("assets/AA.cert").unwrap();
+    let input_aa = &fs::read(".veloce/assets/AA.cert").unwrap();
 
     rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_aa).unwrap()
 }
 
 pub fn load_at_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     #[cfg(debug_assertions)]
-    let input_at = include_bytes!("assets/AT.cert");
+    let input_at = include_bytes!(".veloce/assets/AT.cert");
     #[cfg(not(debug_assertions))]
-    let input_at = &fs::read("assets/AT.cert").unwrap();
+    let input_at = &fs::read(".veloce/assets/AT.cert").unwrap();
     rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_at).unwrap()
 }
 
 pub fn load_tlm_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
     #[cfg(debug_assertions)]
-    let input_tlm = include_bytes!("assets/TLM.cert");
+    let input_tlm = include_bytes!(".veloce/assets/TLM.cert");
     #[cfg(not(debug_assertions))]
-    let input_tlm = &fs::read("assets/TLM.cert").unwrap();
+    let input_tlm = &fs::read(".veloce/assets/TLM.cert").unwrap();
     rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_tlm).unwrap()
 }

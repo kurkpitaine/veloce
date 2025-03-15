@@ -1,15 +1,12 @@
 use core::fmt;
 
-use veloce_asn1::{
-    defs::etsi_103097_v211::{
-        etsi_ts103097_module::{EtsiTs103097Data, EtsiTs103097DataEncrypted},
-        ieee1609_dot2::{
-            EncryptedData as EtsiEncryptedData, Ieee1609Dot2Content, Ieee1609Dot2Data,
-            SequenceOfRecipientInfo, SymmetricCiphertext,
-        },
-        ieee1609_dot2_base_types::Uint8,
+use veloce_asn1::defs::etsi_103097_v211::{
+    etsi_ts103097_module::{EtsiTs103097Data, EtsiTs103097DataEncrypted},
+    ieee1609_dot2::{
+        EncryptedData as EtsiEncryptedData, Ieee1609Dot2Content, Ieee1609Dot2Data,
+        SequenceOfRecipientInfo,
     },
-    prelude::rasn::types::OctetString,
+    ieee1609_dot2_base_types::Uint8,
 };
 
 use crate::security::{
@@ -172,7 +169,7 @@ impl EncryptedData {
     }
 
     /// Get a reference on the encrypted payload.
-    pub fn ciphertext(&self) -> EncryptedDataResult<&OctetString> {
+    pub fn ciphertext(&self) -> EncryptedDataResult<Ciphertext> {
         let inner = self.inner.inner();
 
         let ciphertext = match &inner.0 .0.content {
@@ -180,15 +177,6 @@ impl EncryptedData {
             _ => return Err(EncryptedDataError::DataContent),
         };
 
-        let aes_ccm_ciphertext = match ciphertext {
-            SymmetricCiphertext::aes128ccm(c) => c,
-            _ => {
-                return Err(EncryptedDataError::Ciphertext(
-                    CiphertextError::UnsupportedType,
-                ))
-            }
-        };
-
-        Ok(&aes_ccm_ciphertext.ccm_ciphertext.0)
+        Ok(Ciphertext::try_from(ciphertext).map_err(EncryptedDataError::Ciphertext)?)
     }
 }

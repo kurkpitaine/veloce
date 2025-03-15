@@ -2,41 +2,51 @@ use crate::{
     security::{
         backend::PkiBackendTrait,
         certificate::{
-            CertificateTrait, CertificateWithHashContainer, EnrollmentAuthorityCertificate,
+            CertificateWithHashContainer, EnrollmentAuthorityCertificate, EnrollmentCredential,
             ExplicitCertificate,
         },
-        ciphertext::Ciphertext,
-        permission::Permission,
+        permission::{Permission, AID},
         pki::{
             encrypted_data::EncryptedData,
-            kdf2,
             message::{
                 self,
-                enrollment::{EnrollmentRequest, EnrollmentRequestError, EnrollmentRequestResult},
-                RecipientInfo,
+                enrollment::{
+                    EnrollmentRequest, EnrollmentRequestError, EnrollmentRequestResult,
+                    EnrollmentResponse, EnrollmentResponseCode, EnrollmentResponseError,
+                    EnrollmentResponseResult,
+                },
+                RecipientInfo, VerifierError,
             },
-            service::{PkiServiceError, PkiServiceResult},
-            Aes128Key,
+            service::{client::PkiClientService, PkiServiceError, PkiServiceResult},
+            Aes128Key, SignerIdentifier,
         },
         ssp::{
             scr::{ScrPermission, ScrSsp},
             SspTrait,
         },
-        EcKeyType, EcdsaKey, EncryptedEciesKey, HashAlgorithm, KeyPair,
+        EcKeyType, EcdsaKey, KeyPair,
     },
     time::Instant,
 };
 
-use super::PkiClientService;
+/// Enrollment request context.
+#[derive(Debug)]
+pub struct EnrollmentRequestContext<B: PkiBackendTrait> {
+    /// Public signature verification key of the Enrollment Credential.
+    ec_pubkey: EcdsaKey,
+    /// Symmetric encryption key, used to encrypt the communications with the PKI.
+    symm_encryption_key: Aes128Key,
+    /// Ephemeral keypair, used to encrypt [Self::symm_encryption_key] with the DH algorithm.
+    ephemeral_keypair: KeyPair<B::BackendSecretKey, B::BackendPublicKey>,
+}
 
 impl PkiClientService {
-    pub fn enrollment_request(
+    pub fn emit_enrollment_request<B: PkiBackendTrait>(
         &self,
         ea_certificate: &CertificateWithHashContainer<EnrollmentAuthorityCertificate>,
         timestamp: Instant,
-    ) -> PkiServiceResult<Vec<u8>> {
-        let backend = self.backend.inner_pki();
-
+        backend: &mut B,
+    ) -> PkiServiceResult<(Vec<u8>, EnrollmentRequestContext<B>)> {
         // Generate the Enrollment Credential key pair.
         let ec_pubkey = backend
             .generate_enrollment_keypair(EcKeyType::NistP256r1)
@@ -51,17 +61,24 @@ impl PkiClientService {
                 .map_err(PkiServiceError::Backend)?,
         );
 
-        let (res, _ephemeral_keypair) = self
-            .enrollment_request_inner(
-                &ec_pubkey,
-                &symm_encryption_key,
-                ea_certificate,
-                timestamp,
-                backend,
+        self.enrollment_request_inner(
+            &ec_pubkey,
+            &symm_encryption_key,
+            ea_certificate,
+            timestamp,
+            backend,
+        )
+        .map_err(PkiServiceError::EnrollmentRequest)
+        .map(|(request, ephemeral_keypair)| {
+            (
+                request,
+                EnrollmentRequestContext {
+                    ec_pubkey,
+                    symm_encryption_key,
+                    ephemeral_keypair,
+                },
             )
-            .map_err(PkiServiceError::EnrollmentRequest)?;
-
-        Ok(res)
+        })
     }
 
     fn enrollment_request_inner<B>(
@@ -114,86 +131,149 @@ impl PkiClientService {
             .as_bytes()
             .map_err(EnrollmentRequestError::Outer)?;
 
-        // Generate the nonce associated with the encryption key.
-        let nonce = backend
-            .generate_random::<12>()
-            .map_err(EnrollmentRequestError::Backend)?;
-
-        // Encrypt the outer EC Request.
-        let encrypted_req = backend
-            .encrypt_aes128_ccm(&to_encrypt, &symm_encryption_key.0, &nonce)
-            .map_err(EnrollmentRequestError::Backend)?;
-
-        // Encrypt the encryption key.
-        let cert_hashed_id8 = ea_certificate.hashed_id8();
-        let public_encryption_key = ea_certificate
-            .certificate()
-            .public_encryption_key()
-            .map_err(EnrollmentRequestError::Certificate)?
-            .ok_or(EnrollmentRequestError::NoPublicEncryptionKey)?;
-
-        let key_type = public_encryption_key.key_type();
-        let hash_algorithm = public_encryption_key.hash_algorithm();
-
-        let ephemeral_ec_encryption_keypair = backend
-            .generate_ephemeral_keypair(key_type)
-            .map_err(EnrollmentRequestError::Backend)?;
-
-        let peer_public_key = B::BackendPublicKey::try_from(public_encryption_key)
-            .map_err(EnrollmentRequestError::Backend)?;
-
-        // Build the shared secret.
-        let shared_secret = backend
-            .derive(&ephemeral_ec_encryption_keypair.secret, &peer_public_key)
-            .map_err(EnrollmentRequestError::Backend)?;
-
-        let cert_hash = ea_certificate.certificate().hash(hash_algorithm, backend);
-
-        let (ke_size, km_size) = match hash_algorithm {
-            HashAlgorithm::SHA256 | HashAlgorithm::SM3 => (16, 32),
-            HashAlgorithm::SHA384 => (24, 48),
-        };
-
-        let ke_km = kdf2(
-            &shared_secret,
-            &cert_hash,
-            ke_size + km_size,
-            hash_algorithm,
-            backend,
-        );
-
-        // Encrypt the encryption key.
-        let encrypted_key: Vec<u8> = symm_encryption_key
-            .0
-            .iter()
-            .zip(ke_km[..ke_size].iter())
-            .map(|(a, b)| a ^ b)
-            .collect();
-
-        // Generate the associated tag.
-        let tag = backend
-            .hmac(hash_algorithm, &ke_km[ke_size..], &encrypted_key)
-            .map_err(EnrollmentRequestError::Backend)?;
-
-        let ciphertext = Ciphertext::new_aes_128_ccm(nonce.into(), encrypted_req);
-
-        // Get the ephemeral public key into the correct format.
-        let ephemeral_public_key = ephemeral_ec_encryption_keypair
-            .public
-            .clone()
-            .try_into()
-            .map_err(EnrollmentRequestError::Backend)?;
-
-        let enc_key = EncryptedEciesKey::new(ephemeral_public_key, encrypted_key, tag);
-        let recipient = RecipientInfo::new_cert(cert_hashed_id8, enc_key);
-        let encrypted_wrapper = EncryptedData::new(ciphertext, vec![recipient])
-            .map_err(EnrollmentRequestError::Encrypted)?;
+        let res = message::encrypt_data(to_encrypt, symm_encryption_key, ea_certificate, backend)
+            .map_err(EnrollmentRequestError::Encryption)?;
 
         Ok((
-            encrypted_wrapper
+            res.0
                 .as_bytes()
                 .map_err(EnrollmentRequestError::Encrypted)?,
-            ephemeral_ec_encryption_keypair,
+            res.1,
         ))
+    }
+
+    /// Parse the enrollment response and return the enclosed enrollment credential if the response is valid.
+    pub fn parse_enrollment_response<B: PkiBackendTrait>(
+        &self,
+        response: &[u8],
+        ctx: EnrollmentRequestContext<B>,
+        ea_certificate: &CertificateWithHashContainer<EnrollmentAuthorityCertificate>,
+        timestamp: Instant,
+        backend: &B,
+    ) -> PkiServiceResult<EnrollmentCredential> {
+        let response = self
+            .enrollment_response_inner(response, ctx, ea_certificate, timestamp, backend)
+            .map_err(PkiServiceError::EnrollmentResponse)?;
+
+        let response_code = response
+            .response_code()
+            .map_err(PkiServiceError::EnrollmentResponse)?;
+
+        let EnrollmentResponseCode::Ok = response_code else {
+            return Err(PkiServiceError::EnrollmentResponse(
+                EnrollmentResponseError::Failure(response_code),
+            ));
+        };
+
+        let enrollment_credential = response
+            .enrollment_credential()
+            .map_err(PkiServiceError::EnrollmentResponse)?
+            .ok_or(PkiServiceError::EnrollmentResponse(
+                // We should never fall here since [EnrollmentResponse] is checked before.
+                EnrollmentResponseError::Malformed,
+            ))?;
+
+        enrollment_credential
+            .check(timestamp, backend, |h| {
+                if h == ea_certificate.hashed_id8() {
+                    Some(ea_certificate.certificate().clone())
+                } else {
+                    None
+                }
+            })
+            .map_err(|e| {
+                PkiServiceError::EnrollmentResponse(EnrollmentResponseError::EnrollmentCredential(
+                    e,
+                ))
+            })?;
+
+        // TODO: Verify the content of the Enrollment Credential.
+
+        Ok(enrollment_credential)
+    }
+
+    fn enrollment_response_inner<B: PkiBackendTrait>(
+        &self,
+        response: &[u8],
+        ctx: EnrollmentRequestContext<B>,
+        ea_certificate: &CertificateWithHashContainer<EnrollmentAuthorityCertificate>,
+        _timestamp: Instant, // TODO: verify the timestamp from the request.
+        backend: &B,
+    ) -> EnrollmentResponseResult<EnrollmentResponse> {
+        let encrypted_wrapper =
+            EncryptedData::from_bytes(response).map_err(EnrollmentResponseError::Encrypted)?;
+
+        let recipients = encrypted_wrapper
+            .recipients()
+            .map_err(EnrollmentResponseError::Encrypted)?;
+
+        if recipients.is_empty() {
+            return Err(EnrollmentResponseError::NoRecipient);
+        }
+
+        if recipients.len() > 1 {
+            return Err(EnrollmentResponseError::RecipientNotUnique);
+        }
+
+        let hashed_id8 = match recipients[0] {
+            RecipientInfo::PSK(h) => h,
+            _ => return Err(EnrollmentResponseError::UnexpectedRecipientInformation),
+        };
+
+        let expected_hashed_id8 =
+            message::symm_encryption_key_hashed_id8(&ctx.symm_encryption_key, backend)
+                .map_err(EnrollmentResponseError::Asn1Wrapper)?;
+
+        if hashed_id8 != expected_hashed_id8 {
+            return Err(EnrollmentResponseError::UnknownRecipientId {
+                expected: expected_hashed_id8,
+                actual: hashed_id8,
+            });
+        }
+
+        let decrypted =
+            message::decrypt_data_with_key(&encrypted_wrapper, &ctx.symm_encryption_key, backend)
+                .map_err(EnrollmentResponseError::Decryption)?;
+
+        let outer_response = EnrollmentResponse::parse_outer_ec_response(&decrypted)?;
+
+        let valid_signature = message::verify_signed_data(
+            &outer_response,
+            ea_certificate.certificate(),
+            backend,
+            |signer_id| match signer_id {
+                SignerIdentifier::Digest(h) => {
+                    if ea_certificate.hashed_id8() == h {
+                        Ok(Some(
+                            ea_certificate
+                                .certificate()
+                                .public_verification_key()
+                                .map_err(VerifierError::InvalidCertificate)?,
+                        ))
+                    } else {
+                        Ok(None)
+                    }
+                }
+                _ => return Err(VerifierError::UnexpectedSigner),
+            },
+            |aid| {
+                if AID::SCR == aid {
+                    Ok(())
+                } else {
+                    Err(AID::SCR)
+                }
+            },
+        )
+        .map_err(EnrollmentResponseError::OuterVerifier)?;
+
+        if !valid_signature {
+            return Err(EnrollmentResponseError::FalseOuterSignature);
+        }
+
+        let payload = outer_response
+            .payload()
+            .map_err(EnrollmentResponseError::Outer)?;
+
+        EnrollmentResponse::from_bytes(payload)
     }
 }

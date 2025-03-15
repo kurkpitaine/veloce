@@ -23,11 +23,13 @@ use super::{
 };
 
 mod at;
+mod ec;
 mod root;
 mod subordinate;
 mod tlm;
 
 pub use at::AuthorizationTicketCertificate;
+pub use ec::EnrollmentCredential;
 pub use root::RootCertificate;
 pub use subordinate::AuthorizationAuthorityCertificate;
 pub use subordinate::EnrollmentAuthorityCertificate;
@@ -156,9 +158,9 @@ pub enum Certificate {
     AuthorizationAuthority(AuthorizationAuthorityCertificate),
     /// AT certificate type.
     AuthorizationTicket(AuthorizationTicketCertificate),
-    /* /// EC certificate type.
-    EnrollmentCredential(CertWrapper<>),
-    /// TLM certificate type.s
+    /// EC certificate type.
+    EnrollmentCredential(EnrollmentCredential),
+    /* /// TLM certificate type.
     TrustedListManager(CertWrapper<>), */
 }
 

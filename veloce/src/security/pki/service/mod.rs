@@ -2,10 +2,12 @@ use core::fmt::{self, Formatter};
 
 use crate::security::{backend::BackendError, pki::asn1_wrapper::Asn1WrapperError};
 
-use super::message::enrollment::EnrollmentRequestError;
+use super::message::enrollment::{EnrollmentRequestError, EnrollmentResponseError};
 
 pub mod client;
 pub mod server;
+
+pub use client::PkiClientService;
 
 pub type PkiServiceResult<T> = core::result::Result<T, PkiServiceError>;
 
@@ -17,6 +19,8 @@ pub enum PkiServiceError {
     Backend(BackendError),
     /// Enrollment request error.
     EnrollmentRequest(EnrollmentRequestError),
+    /// Enrollment request error.
+    EnrollmentResponse(EnrollmentResponseError),
 }
 
 impl fmt::Display for PkiServiceError {
@@ -30,6 +34,9 @@ impl fmt::Display for PkiServiceError {
             }
             PkiServiceError::EnrollmentRequest(e) => {
                 write!(f, "enrollment request: {}", e)
+            }
+            PkiServiceError::EnrollmentResponse(e) => {
+                write!(f, "enrollment response: {}", e)
             }
         }
     }

@@ -9,8 +9,8 @@ use std::{
 use chrono::{NaiveTime, TimeDelta, Utc};
 use nmea::{
     sentences::{
-        AamData, BwcData, BwwData, DbkData, GgaData, GllData, GnsData, GstData, GsvData, HdtData,
-        MdaData, MtwData, MwvData, WncData, ZfoData, ZtgData,
+        AamData, BwcData, BwwData, DbkData, DbsData, GgaData, GllData, GnsData, GstData, GsvData,
+        HdtData, MdaData, MtwData, MwvData, TtmData, WncData, ZfoData, ZtgData,
     },
     Nmea, ParseResult, SentenceType,
 };
@@ -35,7 +35,7 @@ impl NmeaSentenceWrapper {
             ParseResult::BWC(a) => a.fix_time.as_ref(),
             ParseResult::GBS(a) => a.time.as_ref(),
             ParseResult::GGA(a) => a.fix_time.as_ref(),
-            ParseResult::GLL(a) => Some(&a.fix_time),
+            ParseResult::GLL(a) => a.fix_time.as_ref(),
             ParseResult::GNS(a) => a.fix_time.as_ref(),
             ParseResult::RMC(a) => a.fix_time.as_ref(),
             ParseResult::ZDA(a) => a.utc_time.as_ref(),
@@ -56,6 +56,8 @@ impl Clone for NmeaSentenceWrapper {
             ParseResult::BWC(a) => ParseResult::BWC(BwcData { ..*a }),
             ParseResult::BWW(a) => ParseResult::BWW(BwwData { ..*a }),
             ParseResult::DBK(a) => ParseResult::DBK(DbkData { ..*a }),
+            ParseResult::DBS(a) => ParseResult::DBS(DbsData { ..*a }),
+            ParseResult::DPT(a) => ParseResult::DPT(*a),
             ParseResult::GBS(a) => ParseResult::GBS(*a),
             ParseResult::GGA(a) => ParseResult::GGA(GgaData { ..*a }),
             ParseResult::GLL(a) => ParseResult::GLL(GllData { ..*a }),
@@ -73,6 +75,10 @@ impl Clone for NmeaSentenceWrapper {
             ParseResult::MTW(a) => ParseResult::MTW(MtwData { ..*a }),
             ParseResult::MWV(a) => ParseResult::MWV(MwvData { ..*a }),
             ParseResult::RMC(a) => ParseResult::RMC(*a),
+            ParseResult::TTM(a) => ParseResult::TTM(TtmData {
+                target_name: a.target_name.clone(),
+                ..*a
+            }),
             ParseResult::TXT(a) => ParseResult::TXT(*a),
             ParseResult::VHW(a) => ParseResult::VHW(a.clone()),
             ParseResult::VTG(a) => ParseResult::VTG(*a),
