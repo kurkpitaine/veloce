@@ -32,6 +32,9 @@ pub mod ipc;
 #[cfg(feature = "proto-security")]
 pub mod security;
 
+#[cfg(feature = "pki")]
+pub mod pki;
+
 #[cfg(all(
     test,
     any(

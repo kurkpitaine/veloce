@@ -134,8 +134,8 @@ impl CertificateTrait for RootCertificate {
             .0
             .iter()
             .filter(|e| {
-                e.psid == Psid(Integer::from(u64::from(AID::CRL)))
-                    || e.psid == Psid(Integer::from(u64::from(AID::CTL))) && e.ssp.is_some()
+                e.psid == Psid(Integer::from(i64::from(AID::CRL)))
+                    || e.psid == Psid(Integer::from(i64::from(AID::CTL))) && e.ssp.is_some()
             })
             .count()
             >= 2;

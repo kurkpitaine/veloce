@@ -21,7 +21,7 @@ use super::ssp::{
 
 enum_with_unknown! {
     /// ITS Application Object Identifier Registration numbers, as ETSI TS 102 965 V2.1.1.
-   pub enum AID(u64) {
+   pub enum AID(i64) {
         /// Cooperative Awareness Basic service, ie: CAM message.
         CA = 36,
         /// Decentralized Event Notification Basic service, ie: DENM message.
@@ -71,7 +71,7 @@ impl TryFrom<&Integer> for AID {
     fn try_from(value: &Integer) -> Result<Self, Self::Error> {
         use veloce_asn1::prelude::num_traits::ToPrimitive;
         value
-            .to_u64()
+            .to_i64()
             .ok_or(AIDUnsupportedFormatError)
             .map(AID::from)
     }
@@ -79,7 +79,7 @@ impl TryFrom<&Integer> for AID {
 
 impl From<AID> for Integer {
     fn from(value: AID) -> Self {
-        u64::from(value).into()
+        i64::from(value).into()
     }
 }
 
@@ -145,7 +145,7 @@ pub enum Permission {
     SCR(PermissionSspContainer<ScrSsp>),
     /// Fallback variant for an unknown permission type.
     Unknown {
-        aid: u64,
+        aid: i64,
         ssp: Option<Vec<u8>>,
         mask: Option<Vec<u8>>,
     },

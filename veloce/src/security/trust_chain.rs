@@ -3,7 +3,9 @@
 
 use super::{
     certificate::{
-        AuthorizationAuthorityCertificate, AuthorizationTicketCertificate, CertificateWithHashContainer, EnrollmentAuthorityCertificate, RootCertificate
+        AuthorizationAuthorityCertificate, AuthorizationTicketCertificate,
+        CertificateWithHashContainer, EnrollmentAuthorityCertificate,
+        EnrollmentCredentialCertificate, RootCertificate,
     },
     HashedId8,
 };
@@ -18,6 +20,8 @@ pub struct TrustChain {
     root_cert: Container<RootCertificate>,
     /// Enrollment Authority certificate of the trust chain.
     ea_cert: Option<Container<EnrollmentAuthorityCertificate>>,
+    /// Enrollment Credential certificate of the trust chain.
+    ec_cert: Option<Container<EnrollmentCredentialCertificate>>,
     /// Authorization Authority certificate of the trust chain.
     aa_cert: Option<Container<AuthorizationAuthorityCertificate>>,
     /// Authorization Ticket certificate of the trust chain.
@@ -32,6 +36,7 @@ impl TrustChain {
         Self {
             root_cert,
             ea_cert: None,
+            ec_cert: None,
             aa_cert: None,
             at_cert: None,
             revoked_certs: Vec::new(),
@@ -48,6 +53,11 @@ impl TrustChain {
         &self.ea_cert
     }
 
+    /// Get a reference on the Enrollment Credential certificate, if any.
+    pub fn ec_cert(&self) -> &Option<Container<EnrollmentCredentialCertificate>> {
+        &self.ec_cert
+    }
+
     /// Get a reference on the Authorization Authority certificate, if any.
     pub fn aa_cert(&self) -> &Option<Container<AuthorizationAuthorityCertificate>> {
         &self.aa_cert
@@ -61,6 +71,11 @@ impl TrustChain {
     /// Set the Enrollment Authority Certificate.
     pub fn set_ea_cert(&mut self, ea_cert: Container<EnrollmentAuthorityCertificate>) {
         self.ea_cert = Some(ea_cert);
+    }
+
+    /// Set the Enrollment Credential Certificate.
+    pub fn set_ec_cert(&mut self, ec_cert: Container<EnrollmentCredentialCertificate>) {
+        self.ec_cert = Some(ec_cert);
     }
 
     /// Set the Authorization Authority Certificate.

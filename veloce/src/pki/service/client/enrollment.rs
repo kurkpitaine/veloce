@@ -1,25 +1,24 @@
 use crate::{
+    pki::{
+        message::{
+            self,
+            enrollment::{
+                EnrollmentRequest, EnrollmentRequestError, EnrollmentRequestResult,
+                EnrollmentResponse, EnrollmentResponseCode, EnrollmentResponseError,
+                EnrollmentResponseResult,
+            },
+            VerifierError,
+        },
+        service::{client::PkiClientService, PkiServiceError, PkiServiceResult},
+        Aes128Key, SignerIdentifier,
+    },
     security::{
         backend::PkiBackendTrait,
         certificate::{
-            CertificateWithHashContainer, EnrollmentAuthorityCertificate, EnrollmentCredential,
+            CertificateWithHashContainer, EnrollmentAuthorityCertificate, EnrollmentCredentialCertificate,
             ExplicitCertificate,
         },
         permission::{Permission, AID},
-        pki::{
-            encrypted_data::EncryptedData,
-            message::{
-                self,
-                enrollment::{
-                    EnrollmentRequest, EnrollmentRequestError, EnrollmentRequestResult,
-                    EnrollmentResponse, EnrollmentResponseCode, EnrollmentResponseError,
-                    EnrollmentResponseResult,
-                },
-                RecipientInfo, VerifierError,
-            },
-            service::{client::PkiClientService, PkiServiceError, PkiServiceResult},
-            Aes128Key, SignerIdentifier,
-        },
         ssp::{
             scr::{ScrPermission, ScrSsp},
             SspTrait,
@@ -41,6 +40,8 @@ pub struct EnrollmentRequestContext<B: PkiBackendTrait> {
 }
 
 impl PkiClientService {
+    // TODO: Manage re-enrollment.
+    /// Emits an enrollment request.
     pub fn emit_enrollment_request<B: PkiBackendTrait>(
         &self,
         ea_certificate: &CertificateWithHashContainer<EnrollmentAuthorityCertificate>,
@@ -114,7 +115,7 @@ impl PkiClientService {
         let mut signed_for_pop =
             EnrollmentRequest::emit_inner_ec_request_for_pop(request, timestamp)?;
 
-        message::sign_data_with_enrollment_key(&mut signed_for_pop, hash_algorithm, backend)
+        message::sign_with_enrollment_key(&mut signed_for_pop, hash_algorithm, &[], backend)
             .map_err(EnrollmentRequestError::SignedForPopSigner)?;
 
         // Create Outer EC Request and sign it with the canonical key.
@@ -123,7 +124,7 @@ impl PkiClientService {
 
         let hash_algorithm = canonical_pubkey.hash_algorithm();
 
-        message::sign_data_with_canonical_key(&mut outer_ec_request, hash_algorithm, backend)
+        message::sign_with_canonical_key(&mut outer_ec_request, hash_algorithm, backend)
             .map_err(EnrollmentRequestError::OuterSigner)?;
 
         // Serialize the outer EC Request to COER bytes.
@@ -131,7 +132,7 @@ impl PkiClientService {
             .as_bytes()
             .map_err(EnrollmentRequestError::Outer)?;
 
-        let res = message::encrypt_data(to_encrypt, symm_encryption_key, ea_certificate, backend)
+        let res = message::encrypt(to_encrypt, symm_encryption_key, ea_certificate, backend)
             .map_err(EnrollmentRequestError::Encryption)?;
 
         Ok((
@@ -150,7 +151,7 @@ impl PkiClientService {
         ea_certificate: &CertificateWithHashContainer<EnrollmentAuthorityCertificate>,
         timestamp: Instant,
         backend: &B,
-    ) -> PkiServiceResult<EnrollmentCredential> {
+    ) -> PkiServiceResult<EnrollmentCredentialCertificate> {
         let response = self
             .enrollment_response_inner(response, ctx, ea_certificate, timestamp, backend)
             .map_err(PkiServiceError::EnrollmentResponse)?;
@@ -182,7 +183,7 @@ impl PkiClientService {
                 }
             })
             .map_err(|e| {
-                PkiServiceError::EnrollmentResponse(EnrollmentResponseError::EnrollmentCredential(
+                PkiServiceError::EnrollmentResponse(EnrollmentResponseError::EnrollmentCredentialCertificate(
                     e,
                 ))
             })?;
@@ -200,40 +201,9 @@ impl PkiClientService {
         _timestamp: Instant, // TODO: verify the timestamp from the request.
         backend: &B,
     ) -> EnrollmentResponseResult<EnrollmentResponse> {
-        let encrypted_wrapper =
-            EncryptedData::from_bytes(response).map_err(EnrollmentResponseError::Encrypted)?;
-
-        let recipients = encrypted_wrapper
-            .recipients()
-            .map_err(EnrollmentResponseError::Encrypted)?;
-
-        if recipients.is_empty() {
-            return Err(EnrollmentResponseError::NoRecipient);
-        }
-
-        if recipients.len() > 1 {
-            return Err(EnrollmentResponseError::RecipientNotUnique);
-        }
-
-        let hashed_id8 = match recipients[0] {
-            RecipientInfo::PSK(h) => h,
-            _ => return Err(EnrollmentResponseError::UnexpectedRecipientInformation),
-        };
-
-        let expected_hashed_id8 =
-            message::symm_encryption_key_hashed_id8(&ctx.symm_encryption_key, backend)
-                .map_err(EnrollmentResponseError::Asn1Wrapper)?;
-
-        if hashed_id8 != expected_hashed_id8 {
-            return Err(EnrollmentResponseError::UnknownRecipientId {
-                expected: expected_hashed_id8,
-                actual: hashed_id8,
-            });
-        }
-
         let decrypted =
-            message::decrypt_data_with_key(&encrypted_wrapper, &ctx.symm_encryption_key, backend)
-                .map_err(EnrollmentResponseError::Decryption)?;
+            message::handle_encrypted_response(response, &ctx.symm_encryption_key, backend)
+                .map_err(EnrollmentResponseError::DecryptionHandler)?;
 
         let outer_response = EnrollmentResponse::parse_outer_ec_response(&decrypted)?;
 
@@ -271,7 +241,7 @@ impl PkiClientService {
         }
 
         let payload = outer_response
-            .payload()
+            .payload_data()
             .map_err(EnrollmentResponseError::Outer)?;
 
         EnrollmentResponse::from_bytes(payload)

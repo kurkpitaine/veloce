@@ -190,6 +190,17 @@ pub trait PkiBackendTrait: BackendTrait {
         key_type: EcKeyType,
     ) -> BackendResult<Self::BackendPublicKey>;
 
+    /// Generate a new authorization ticket key pair for a given `key_type`, tag it wih the given `id`,
+    /// and return the public key part of it.
+    ///
+    /// Underlying secret key storage is left to the backend, special care should be taken to ensure
+    /// secret key stays secret.
+    fn generate_authorization_ticket_keypair(
+        &mut self,
+        key_type: EcKeyType,
+        id: u64,
+    ) -> BackendResult<Self::BackendPublicKey>;
+
     /// Generate an EC key pair for a given `key_type`, and return a [KeyPair] containing the
     /// secret and the public key.
     ///
@@ -212,6 +223,13 @@ pub trait PkiBackendTrait: BackendTrait {
 
     /// Sign the given `data` slice with the current enrollment credential private key.
     fn generate_enrollment_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature>;
+
+    /// Sign the given `data` slice with the authorization private key at the provided `key_index`.
+    fn generate_authorization_signature(
+        &self,
+        key_index: u64,
+        data: &[u8],
+    ) -> BackendResult<EcdsaSignature>;
 
     /// Sign the given `data` slice with the canonical private key.
     fn generate_canonical_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature>;

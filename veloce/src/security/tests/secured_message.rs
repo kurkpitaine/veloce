@@ -62,11 +62,10 @@ fn setup_security_service() -> SecurityService {
     key_path.pop();
     let key_path = std::fs::canonicalize(key_path).unwrap();
 
-    let config = OpensslBackendConfig {
-        veloce_dir: Some(key_path.into_os_string().into_string().unwrap()),
-        keys_password: "test1234".to_string().into(),
-        ..Default::default()
-    };
+    let config = OpensslBackendConfig::new(
+        "test1234".to_string().into(),
+        Some(key_path.into_os_string().into_string().unwrap()),
+    );
 
     let backend = OpensslBackend::new(config).unwrap();
     let raw_root_cert = certificate::load_root_cert();

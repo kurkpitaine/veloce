@@ -1,9 +1,15 @@
+pub mod authorization;
 pub mod enrollment;
 
 use core::fmt;
 
 use veloce_asn1::{
-    defs::etsi_103097_v211::{ieee1609_dot2, ieee1609_dot2_base_types::SymmetricEncryptionKey},
+    defs::{
+        etsi_102941_v221::ieee1609_dot2_base_types::{
+            BasePublicEncryptionKey, PublicEncryptionKey, PublicVerificationKey, SymmAlgorithm,
+        },
+        etsi_103097_v211::{ieee1609_dot2, ieee1609_dot2_base_types::SymmetricEncryptionKey},
+    },
     prelude::rasn::types::FixedOctetString,
 };
 
@@ -13,15 +19,16 @@ use crate::security::{
     ciphertext::{Ciphertext, CiphertextError},
     permission::AID,
     signature::EcdsaSignature,
-    EcdsaKey, EncryptedEciesKey, EncryptedEciesKeyError, HashAlgorithm, HashedId8, KeyPair,
+    EcdsaKey, EcdsaKeyError, EciesKeyError, EncryptedEciesKey, EncryptedEciesKeyError,
+    HashAlgorithm, HashedId8, KeyPair,
 };
 
 use super::{
-    asn1_wrapper::{Asn1Wrapper, Asn1WrapperResult},
+    asn1_wrapper::{Asn1Wrapper, Asn1WrapperError, Asn1WrapperResult},
     encrypted_data::{EncryptedData, EncryptedDataError},
     kdf2,
     signed_data::{SignedData, SignedDataError},
-    Aes128Key, SignerIdentifier,
+    Aes128Key, IncludedPublicKeys, SignerIdentifier,
 };
 
 pub type MessageResult<T> = core::result::Result<T, MessageError>;
@@ -326,12 +333,14 @@ where
         .to_be_signed_bytes()
         .map_err(VerifierError::SignedData)?;
 
+    let signer_data = certificate.raw_bytes();
+
     let hash = match signature.hash_algorithm() {
-        HashAlgorithm::SHA256 => [backend.sha256(&tbs), backend.sha256(&[])].concat(),
-        HashAlgorithm::SHA384 => [backend.sha384(&tbs), backend.sha384(&[])].concat(),
+        HashAlgorithm::SHA256 => [backend.sha256(&tbs), backend.sha256(signer_data)].concat(),
+        HashAlgorithm::SHA384 => [backend.sha384(&tbs), backend.sha384(signer_data)].concat(),
         HashAlgorithm::SM3 => [
             backend.sm3(&tbs).map_err(VerifierError::Backend)?,
-            backend.sm3(&[]).map_err(VerifierError::Backend)?,
+            backend.sm3(signer_data).map_err(VerifierError::Backend)?,
         ]
         .concat(),
     };
@@ -340,14 +349,6 @@ where
         expected: expected,
         actual: aid,
     })?;
-
-    /* // Verify AID permission.
-    if aid != AID::SCR {
-        return Err(MessageError::InvalidAid {
-            expected: AID::SCR,
-            actual: aid,
-        });
-    } */
 
     let signer_permissions = certificate
         .application_permissions()
@@ -374,8 +375,8 @@ where
 pub type SignerResult<T> = core::result::Result<T, SignerError>;
 
 #[derive(Debug)]
-/// Error returned by [`sign_data_with_enrollment_key`],
-/// [`sign_data_with_canonical_key`] and [`sign_data_with`].
+/// Error returned by [`sign_with_enrollment_key`],
+/// [`sign_with_canonical_key`] and [`sign_with`].
 pub enum SignerError {
     /// Signed data error.
     SignedData(SignedDataError),
@@ -392,24 +393,26 @@ impl fmt::Display for SignerError {
     }
 }
 
-/// Sign `data` which contain the data to be signed, with the enrollment key.
+/// Sign `message` which contain the data to be hashed and signed, with the enrollment key.
+/// Additional hash data can be provided with `signer_data`, which usually contains the certificate bytes.
 /// Signature is inserted into the provided `data`.
-pub fn sign_data_with_enrollment_key<B, T>(
+pub fn sign_with_enrollment_key<B, T>(
     message: &mut SignedData<T>,
     algorithm: HashAlgorithm,
+    signer_data: &[u8],
     backend: &B,
 ) -> SignerResult<()>
 where
     B: PkiBackendTrait,
 {
-    sign_data_with(message, algorithm, backend, |hash, backend| {
+    sign_with(message, algorithm, signer_data, backend, |hash, backend| {
         backend.generate_enrollment_signature(&hash)
     })
 }
 
 /// Sign `data` which contain the data to be signed, with the canonical key.
 /// Signature is inserted into the provided `data`.
-pub fn sign_data_with_canonical_key<B, T>(
+pub fn sign_with_canonical_key<B, T>(
     message: &mut SignedData<T>,
     algorithm: HashAlgorithm,
     backend: &B,
@@ -417,15 +420,34 @@ pub fn sign_data_with_canonical_key<B, T>(
 where
     B: PkiBackendTrait,
 {
-    sign_data_with(message, algorithm, backend, |hash, backend| {
+    sign_with(message, algorithm, &[], backend, |hash, backend| {
         backend.generate_canonical_signature(&hash)
     })
 }
 
-/// Sign `data` which contain the data to be signed, with the provided signature `s` function.
-pub fn sign_data_with<B, S, T>(
+/// Sign `data` which contain the data to be signed, with the authorization key.
+/// Signature is inserted into the provided `data`.
+pub fn sign_with_authorization_key<B, T>(
     message: &mut SignedData<T>,
     algorithm: HashAlgorithm,
+    key_index: u64,
+    backend: &B,
+) -> SignerResult<()>
+where
+    B: PkiBackendTrait,
+{
+    sign_with(message, algorithm, &[], backend, |hash, backend| {
+        backend.generate_authorization_signature(key_index, &hash)
+    })
+}
+
+/// Sign `message` which contain the data to be hashed and signed, using hash 'algorithm'.
+/// Additional hash data can be provided with `signer_data`, which usually contains the certificate bytes.
+/// with the provided signature `s` function.
+pub fn sign_with<B, S, T>(
+    message: &mut SignedData<T>,
+    algorithm: HashAlgorithm,
+    signer_data: &[u8],
     backend: &B,
     s: S,
 ) -> SignerResult<()>
@@ -438,8 +460,8 @@ where
         .map_err(SignerError::SignedData)?;
 
     let hash = match algorithm {
-        HashAlgorithm::SHA256 => [backend.sha256(&tbs), backend.sha256(&[])].concat(),
-        HashAlgorithm::SHA384 => [backend.sha384(&tbs), backend.sha384(&[])].concat(),
+        HashAlgorithm::SHA256 => [backend.sha256(&tbs), backend.sha256(signer_data)].concat(),
+        HashAlgorithm::SHA384 => [backend.sha384(&tbs), backend.sha384(signer_data)].concat(),
         HashAlgorithm::SM3 => [
             backend.sm3(&tbs).map_err(SignerError::Backend)?,
             backend.sm3(&[]).map_err(SignerError::Backend)?,
@@ -486,7 +508,7 @@ impl fmt::Display for EncryptionError {
 /// Encrypt `data` bytes using the provided symmetric `symm_encryption_key`, `certificate`,  and cryptography `backend`.
 /// Returns the encrypted data and the ephemeral encryption key pair.
 /// The returned [EncryptedData] structure is filled and ready to be serialized.
-pub fn encrypt_data<B>(
+pub fn encrypt<B>(
     data: Vec<u8>,
     symm_encryption_key: &Aes128Key,
     certificate: &CertificateWithHashContainer<impl ExplicitCertificate>,
@@ -583,7 +605,7 @@ where
 /// Decryption result type.
 pub type DecryptionResult<T> = core::result::Result<T, DecryptionError>;
 
-/// Error returned by [`decrypt_data`].
+/// Error returned by [`decrypt`].
 #[derive(Debug)]
 pub enum DecryptionError {
     /// Certificate error.
@@ -618,15 +640,16 @@ impl fmt::Display for DecryptionError {
     }
 }
 
-pub fn decrypt_data_with_key<B>(
-    enc_wrapper: &EncryptedData,
+/// Decrypt the `encrypted_data` using the provided `key` and `backend`.
+pub fn decrypt<B>(
+    encrypted_data: &EncryptedData,
     key: &Aes128Key,
     backend: &B,
 ) -> DecryptionResult<Vec<u8>>
 where
     B: PkiBackendTrait,
 {
-    let ciphertext = enc_wrapper
+    let ciphertext = encrypted_data
         .ciphertext()
         .map_err(DecryptionError::Encrypted)?;
 
@@ -638,95 +661,168 @@ where
     .map_err(DecryptionError::Backend)
 }
 
-/* fn decrypt_data<B>(
-    enc_wrapper: &EncryptedData,
-    symm_encryption_key: &Aes128Key,
-    certificate: &CertificateWithHashContainer<impl ExplicitCertificate>,
-    ephemeral_ec_encryption_keypair: KeyPair<B::BackendSecretKey, B::BackendPublicKey>,
+#[derive(Debug)]
+pub enum EncryptedResponseHandlerError {
+    /// Asn.1 wrapper error.
+    Asn1Wrapper(Asn1WrapperError),
+    /// Encrypted data error.
+    Encrypted(EncryptedDataError),
+    /// No recipient found.
+    NoRecipient,
+    /// Recipient is not unique.
+    RecipientNotUnique,
+    /// Unexpected recipient information.
+    UnexpectedRecipientInformation,
+    /// Recipient id is unknown, the message is not addressed to us.
+    UnknownRecipientId {
+        expected: HashedId8,
+        actual: HashedId8,
+    },
+    /// Something went wrong while decrypting.
+    Decryption(DecryptionError),
+}
+
+impl fmt::Display for EncryptedResponseHandlerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EncryptedResponseHandlerError::Asn1Wrapper(e) => write!(f, "asn1 wrapper error: {}", e),
+            EncryptedResponseHandlerError::Encrypted(e) => {
+                write!(f, "encrypted data: {}", e)
+            }
+            EncryptedResponseHandlerError::NoRecipient => write!(f, "no recipient found"),
+            EncryptedResponseHandlerError::RecipientNotUnique => write!(f, "recipient not unique"),
+            EncryptedResponseHandlerError::UnexpectedRecipientInformation => {
+                write!(f, "unexpected recipient information")
+            }
+            EncryptedResponseHandlerError::UnknownRecipientId { expected, actual } => {
+                write!(
+                    f,
+                    "unknown recipient id. Expected: {}, actual: {}",
+                    expected, actual
+                )
+            }
+            EncryptedResponseHandlerError::Decryption(e) => write!(f, "decryption: {}", e),
+        }
+    }
+}
+
+pub type EncryptedResponseHandlerResult<T> = core::result::Result<T, EncryptedResponseHandlerError>;
+
+/// Handle an encrypted `response` from a PKI server, with the provided `encryption_key` and `backend`.
+pub fn handle_encrypted_response<B: PkiBackendTrait>(
+    response: &[u8],
+    encryption_key: &Aes128Key,
     backend: &B,
-) -> DecryptionResult<Vec<u8>>
+) -> EncryptedResponseHandlerResult<Vec<u8>> {
+    let encrypted_wrapper =
+        EncryptedData::from_bytes(response).map_err(EncryptedResponseHandlerError::Encrypted)?;
+
+    let recipients = encrypted_wrapper
+        .recipients()
+        .map_err(EncryptedResponseHandlerError::Encrypted)?;
+
+    if recipients.is_empty() {
+        return Err(EncryptedResponseHandlerError::NoRecipient);
+    }
+
+    if recipients.len() > 1 {
+        return Err(EncryptedResponseHandlerError::RecipientNotUnique);
+    }
+
+    let hashed_id8 = match recipients[0] {
+        RecipientInfo::PSK(h) => h,
+        _ => return Err(EncryptedResponseHandlerError::UnexpectedRecipientInformation),
+    };
+
+    let expected_hashed_id8 = symm_encryption_key_hashed_id8(encryption_key, backend)
+        .map_err(EncryptedResponseHandlerError::Asn1Wrapper)?;
+
+    if hashed_id8 != expected_hashed_id8 {
+        return Err(EncryptedResponseHandlerError::UnknownRecipientId {
+            expected: expected_hashed_id8,
+            actual: hashed_id8,
+        });
+    }
+
+    let res = decrypt(&encrypted_wrapper, encryption_key, backend)
+        .map_err(EncryptedResponseHandlerError::Decryption)?;
+
+    Ok(res)
+}
+
+#[derive(Debug)]
+pub enum HmacAndTagError {
+    /// Asn.1 wrapper error.
+    Asn1Wrapper(Asn1WrapperError),
+    /// Backend error.
+    Backend(BackendError),
+    /// Verification key.
+    VerificationKey(EcdsaKeyError),
+    /// Encryption key error.
+    EncryptionKey(EciesKeyError),
+}
+
+impl fmt::Display for HmacAndTagError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            HmacAndTagError::Asn1Wrapper(e) => write!(f, "asn1 wrapper error: {}", e),
+            HmacAndTagError::Backend(e) => write!(f, "backend error: {}", e),
+            HmacAndTagError::VerificationKey(e) => write!(f, "verification key: {}", e),
+            HmacAndTagError::EncryptionKey(e) => write!(f, "encryption key: {}", e),
+        }
+    }
+}
+
+pub type HmacAndTagResult<T> = core::result::Result<T, HmacAndTagError>;
+
+/// Compute the HMAC and tag for the public `keys` to be included in a certificate request.
+/// Returns a tuple containing the HMAC key and the tag.
+pub fn generate_hmac_and_tag<B>(
+    keys: &IncludedPublicKeys,
+    backend: &B,
+) -> HmacAndTagResult<([u8; 32], Vec<u8>)>
 where
     B: PkiBackendTrait,
 {
-    /* // TODO: improve this, ie: check that the number of recipients is one earlier.
-    let recipients = enc_wrapper
-        .recipients()
-        .map_err(DecryptionError::Encrypted)?;
+    let pvk: PublicVerificationKey = keys
+        .verification_key
+        .clone()
+        .try_into()
+        .map_err(HmacAndTagError::VerificationKey)?;
 
-    let recipient = recipients
-        .get(0)
-        .ok_or(DecryptionError::UnexpectedRecipientInformation)?;
+    // Optional encryption key.
+    let pek_opt = if let Some(eck) = &keys.encryption_key {
+        let bpk: BasePublicEncryptionKey = eck
+            .clone()
+            .try_into()
+            .map_err(HmacAndTagError::EncryptionKey)?;
 
-    let pk_recipient = match recipient {
-        RecipientInfo::Cert(pkr) => pkr,
-        _ => return Err(DecryptionError::UnexpectedRecipientInformation),
-    }; */
-
-    // Should be the HashedId8 of the local certificate.
-    if pk_recipient.recipient_id != certificate.hashed_id8() {
-        return Err(DecryptionError::UnknownRecipientId(
-            pk_recipient.recipient_id,
-        ));
-    }
-
-    // Ephemeral public key.
-    let (pk_params, hash_algorithm) = match &pk_recipient.enc_key {
-        EncryptedEciesKey::NistP256r1(p) => (p, HashAlgorithm::SHA256),
-        EncryptedEciesKey::BrainpoolP256r1(p) => (p, HashAlgorithm::SHA384),
+        let sa = SymmAlgorithm::aes128Ccm; // Only AES-128-CCM is supported for now.
+        Some(PublicEncryptionKey::new(sa, bpk))
+    } else {
+        None
     };
 
-    let public_key = pk_recipient.enc_key.public_key();
-    let peer_public_key =
-        B::BackendPublicKey::try_from(public_key).map_err(DecryptionError::Backend)?;
+    // Generate HMAC data.
+    let mut hmac_data = Asn1Wrapper::encode_coer(&pvk).map_err(HmacAndTagError::Asn1Wrapper)?;
 
-    // Reconstruct the shared secret.
-    let shared_secret = backend
-        .derive_canonical(&peer_public_key)
-        .map_err(DecryptionError::Backend)?;
-
-    let cert_hash = certificate.certificate().hash(hash_algorithm, backend);
-
-    let (ke_size, km_size) = match hash_algorithm {
-        HashAlgorithm::SHA256 | HashAlgorithm::SM3 => (16, 32),
-        HashAlgorithm::SHA384 => (24, 48),
+    if let Some(pek) = pek_opt {
+        let bytes = Asn1Wrapper::encode_coer(&pek).map_err(HmacAndTagError::Asn1Wrapper)?;
+        hmac_data.extend_from_slice(&bytes);
     };
 
-    // Verify received tag.
-    let ke_km = kdf2(
-        &shared_secret,
-        &cert_hash,
-        ke_size + km_size,
-        hash_algorithm,
-        backend,
-    );
+    // Generate random HMAC key.
+    let hmac_key: [u8; 32] = backend
+        .generate_random::<32>()
+        .map_err(HmacAndTagError::Backend)?;
 
-    let computed_tag = backend
-        .hmac(hash_algorithm, &ke_km[ke_size..], &pk_params.encrypted_key)
-        .map_err(DecryptionError::Backend)?;
+    let mut key_tag = backend
+        .hmac(HashAlgorithm::SHA256, &hmac_key, &hmac_data)
+        .map_err(HmacAndTagError::Backend)?;
+    key_tag.truncate(16);
 
-    if computed_tag != pk_params.tag {
-        return Err(DecryptionError::InvalidTag);
-    }
-
-    // Decrypt encryption key.
-    let encryption_key: Vec<u8> = pk_params
-        .encrypted_key
-        .iter()
-        .zip(ke_km[..ke_size].iter())
-        .map(|(a, b)| a ^ b)
-        .collect();
-
-    let ciphertext = enc_wrapper
-        .ciphertext()
-        .map_err(DecryptionError::Encrypted)?;
-
-    match ciphertext {
-        Ciphertext::Aes128Ccm(aes128_inner) => {
-            backend.decrypt_aes128_ccm(&aes128_inner.data, &encryption_key, &aes128_inner.nonce)
-        }
-    }
-    .map_err(DecryptionError::Backend)
-} */
+    Ok((hmac_key, key_tag))
+}
 
 /// Computes the HashedId8 of the symmetric encryption key.
 pub fn symm_encryption_key_hashed_id8<B>(

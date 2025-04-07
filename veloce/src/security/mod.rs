@@ -3,35 +3,49 @@ use core::fmt;
 use byteorder::{ByteOrder, NetworkEndian};
 use veloce_asn1::{
     defs::{
-        etsi_102941_v221::ieee1609_dot2_base_types::{
-            EccP256CurvePoint as Etsi102941EccP256CurvePoint,
-            EccP256CurvePointUncompressedP256 as Etsi102941EccP256CurvePointUncompressedP256,
-            EccP384CurvePoint as Etsi102941EccP384CurvePoint,
-            EccP384CurvePointUncompressedP384 as Etsi102941EccP384CurvePointUncompressedP384,
-            PublicVerificationKey as Etsi102941PublicVerificationKey,
+        etsi_102941_v221::{
+            ieee1609_dot2::EncryptedDataEncryptionKey as Etsi102941EncryptedDataEncryptionKey,
+            ieee1609_dot2_base_types::{
+                BasePublicEncryptionKey as Etsi102941BasePublicEncryptionKey,
+                Duration as Etsi102941Duration, EccP256CurvePoint as Etsi102941EccP256CurvePoint,
+                EccP256CurvePointUncompressedP256 as Etsi102941EccP256CurvePointUncompressedP256,
+                EccP384CurvePoint as Etsi102941EccP384CurvePoint,
+                EccP384CurvePointUncompressedP384 as Etsi102941EccP384CurvePointUncompressedP384,
+                EcencP256EncryptedKey as Etsi102941EcencP256EncryptedKey,
+                EciesP256EncryptedKey as Etsi102941EciesP256EncryptedKey,
+                HashedId8 as Etsi102941HashedId8,
+                PublicVerificationKey as Etsi102941PublicVerificationKey,
+                ValidityPeriod as Etsi102941ValidityPeriod,
+            },
         },
         etsi_103097_v211::{
-            ieee1609_dot2::{EncryptedDataEncryptionKey, IssuerIdentifier},
+            ieee1609_dot2::{
+                EncryptedDataEncryptionKey as Etsi103097EncryptedDataEncryptionKey,
+                IssuerIdentifier,
+            },
             ieee1609_dot2_base_types::{
-                self, BasePublicEncryptionKey, EccP256CurvePoint as Etsi103097EccP256CurvePoint,
+                self, BasePublicEncryptionKey as Etsi103097BasePublicEncryptionKey,
+                Duration as Etsi103097Duration, EccP256CurvePoint as Etsi103097EccP256CurvePoint,
                 EccP256CurvePointUncompressedP256 as Etsi103097EccP256CurvePointUncompressedP256,
                 EccP384CurvePoint as Etsi103097EccP384CurvePoint,
                 EccP384CurvePointUncompressedP384 as Etsi103097EccP384CurvePointUncompressedP384,
-                EciesP256EncryptedKey, HashAlgorithm as EtsiHashAlgorithm,
+                EciesP256EncryptedKey as Etsi103097EciesP256EncryptedKey,
+                HashAlgorithm as EtsiHashAlgorithm, HashedId8 as Etsi103097HashedId8,
                 PublicVerificationKey as Etsi103097PublicVerificationKey,
+                ValidityPeriod as Etsi103097ValidityPeriod,
             },
         },
     },
     prelude::rasn::types::FixedOctetString,
 };
 
+use crate::time::{Duration, TAI2004};
+
 pub mod backend;
 pub mod certificate;
 mod certificate_cache;
 pub mod ciphertext;
 pub mod permission;
-#[cfg(feature = "pki")]
-pub mod pki;
 pub mod secured_message;
 pub mod service;
 pub mod signature;
@@ -170,13 +184,26 @@ impl fmt::Display for HashedId8 {
     }
 }
 
-impl From<&ieee1609_dot2_base_types::HashedId8> for HashedId8 {
-    fn from(value: &ieee1609_dot2_base_types::HashedId8) -> Self {
+impl From<&Etsi103097HashedId8> for HashedId8 {
+    fn from(value: &Etsi103097HashedId8) -> Self {
         Self::from_bytes(value.0.as_slice())
     }
 }
 
-impl From<HashedId8> for ieee1609_dot2_base_types::HashedId8 {
+impl From<HashedId8> for Etsi103097HashedId8 {
+    fn from(value: HashedId8) -> Self {
+        let hash = value.as_bytes();
+        Self(FixedOctetString::<8>::new(hash))
+    }
+}
+
+impl From<&Etsi102941HashedId8> for HashedId8 {
+    fn from(value: &Etsi102941HashedId8) -> Self {
+        Self::from_bytes(value.0.as_slice())
+    }
+}
+
+impl From<HashedId8> for Etsi102941HashedId8 {
     fn from(value: HashedId8) -> Self {
         let hash = value.as_bytes();
         Self(FixedOctetString::<8>::new(hash))
@@ -187,6 +214,179 @@ impl From<HashedId8> for ieee1609_dot2_base_types::HashedId3 {
     fn from(value: HashedId8) -> Self {
         let hash = value.as_bytes();
         Self(FixedOctetString::<3>::new([hash[5], hash[6], hash[7]]))
+    }
+}
+
+/// Named duration of a period.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PeriodDuration {
+    /// Duration in microseconds.
+    Microseconds(u16),
+    /// Duration in milliseconds.
+    Milliseconds(u16),
+    /// Duration in seconds.
+    Seconds(u16),
+    /// Duration in minutes.
+    Minutes(u16),
+    /// Duration in hours.
+    Hours(u16),
+    /// Duration in sixty hours.
+    SixtyHours(u16),
+    /// Duration in years.
+    Years(u16),
+}
+
+impl PeriodDuration {
+    /// Get the period duration as a [Duration].
+    pub fn as_duration(&self) -> Duration {
+        match self {
+            PeriodDuration::Microseconds(us) => Duration::from_micros((*us).into()),
+            PeriodDuration::Milliseconds(ms) => Duration::from_millis((*ms).into()),
+            PeriodDuration::Seconds(s) => Duration::from_secs((*s).into()),
+            PeriodDuration::Minutes(m) => Duration::from_secs(u64::from(*m) * 60),
+            PeriodDuration::Hours(h) => Duration::from_secs(u64::from(*h) * 3600),
+            PeriodDuration::SixtyHours(sh) => Duration::from_secs(u64::from(*sh) * 21_600),
+            PeriodDuration::Years(y) => Duration::from_secs(u64::from(*y) * 31_556_952), // One gregorian year is 31556952 seconds.
+        }
+    }
+}
+
+impl From<&Etsi103097Duration> for PeriodDuration {
+    fn from(value: &Etsi103097Duration) -> Self {
+        match value {
+            Etsi103097Duration::microseconds(us) => PeriodDuration::Microseconds(us.0),
+            Etsi103097Duration::milliseconds(ms) => PeriodDuration::Milliseconds(ms.0),
+            Etsi103097Duration::seconds(s) => PeriodDuration::Seconds(s.0),
+            Etsi103097Duration::minutes(m) => PeriodDuration::Minutes(m.0),
+            Etsi103097Duration::hours(h) => PeriodDuration::Hours(h.0),
+            Etsi103097Duration::sixtyHours(sh) => PeriodDuration::SixtyHours(sh.0),
+            Etsi103097Duration::years(y) => PeriodDuration::Years(y.0),
+        }
+    }
+}
+
+impl Into<Etsi103097Duration> for PeriodDuration {
+    fn into(self) -> Etsi103097Duration {
+        use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2_base_types::Uint16;
+        match self {
+            PeriodDuration::Microseconds(us) => Etsi103097Duration::microseconds(Uint16(us)),
+            PeriodDuration::Milliseconds(ms) => Etsi103097Duration::milliseconds(Uint16(ms)),
+            PeriodDuration::Seconds(s) => Etsi103097Duration::seconds(Uint16(s)),
+            PeriodDuration::Minutes(m) => Etsi103097Duration::minutes(Uint16(m)),
+            PeriodDuration::Hours(h) => Etsi103097Duration::hours(Uint16(h)),
+            PeriodDuration::SixtyHours(sh) => Etsi103097Duration::sixtyHours(Uint16(sh)),
+            PeriodDuration::Years(y) => Etsi103097Duration::years(Uint16(y)),
+        }
+    }
+}
+
+impl From<&Etsi102941Duration> for PeriodDuration {
+    fn from(value: &Etsi102941Duration) -> Self {
+        match value {
+            Etsi102941Duration::microseconds(us) => PeriodDuration::Microseconds(us.0),
+            Etsi102941Duration::milliseconds(ms) => PeriodDuration::Milliseconds(ms.0),
+            Etsi102941Duration::seconds(s) => PeriodDuration::Seconds(s.0),
+            Etsi102941Duration::minutes(m) => PeriodDuration::Minutes(m.0),
+            Etsi102941Duration::hours(h) => PeriodDuration::Hours(h.0),
+            Etsi102941Duration::sixtyHours(sh) => PeriodDuration::SixtyHours(sh.0),
+            Etsi102941Duration::years(y) => PeriodDuration::Years(y.0),
+        }
+    }
+}
+
+impl Into<Etsi102941Duration> for PeriodDuration {
+    fn into(self) -> Etsi102941Duration {
+        use veloce_asn1::defs::etsi_102941_v221::ieee1609_dot2_base_types::Uint16;
+        match self {
+            PeriodDuration::Microseconds(us) => Etsi102941Duration::microseconds(Uint16(us)),
+            PeriodDuration::Milliseconds(ms) => Etsi102941Duration::milliseconds(Uint16(ms)),
+            PeriodDuration::Seconds(s) => Etsi102941Duration::seconds(Uint16(s)),
+            PeriodDuration::Minutes(m) => Etsi102941Duration::minutes(Uint16(m)),
+            PeriodDuration::Hours(h) => Etsi102941Duration::hours(Uint16(h)),
+            PeriodDuration::SixtyHours(sh) => Etsi102941Duration::sixtyHours(Uint16(sh)),
+            PeriodDuration::Years(y) => Etsi102941Duration::years(Uint16(y)),
+        }
+    }
+}
+
+/// Validity period.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ValidityPeriod {
+    /// Start of the validity period.
+    start: TAI2004,
+    /// End of the validity period.
+    end: TAI2004,
+    /// Validity Period, ie: end - start.
+    period: PeriodDuration,
+}
+
+impl ValidityPeriod {
+    pub fn new(start: TAI2004, period: PeriodDuration) -> Self {
+        Self {
+            start,
+            end: start + period.as_duration(),
+            period,
+        }
+    }
+
+    /// Check if `self` contains [TAI2004] `instant`.
+    pub fn contains_instant(&self, instant: TAI2004) -> bool {
+        instant >= self.start && instant <= self.end
+    }
+
+    /// Check if `self` contains `other` [ValidityPeriod].
+    pub fn contains(&self, other: &ValidityPeriod) -> bool {
+        self.start <= other.start && self.end >= other.end
+    }
+}
+
+impl From<&Etsi103097ValidityPeriod> for ValidityPeriod {
+    fn from(value: &Etsi103097ValidityPeriod) -> Self {
+        let start = TAI2004::from_secs(value.start.0 .0);
+        let period = PeriodDuration::from(&value.duration);
+
+        ValidityPeriod {
+            start,
+            end: start + period.as_duration(),
+            period: PeriodDuration::from(&value.duration),
+        }
+    }
+}
+
+impl Into<Etsi103097ValidityPeriod> for ValidityPeriod {
+    fn into(self) -> Etsi103097ValidityPeriod {
+        use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2_base_types::{Time32, Uint32};
+        Etsi103097ValidityPeriod::new(Time32(Uint32(self.start.secs() as u32)), self.period.into())
+    }
+}
+
+impl From<&Etsi102941ValidityPeriod> for ValidityPeriod {
+    fn from(value: &Etsi102941ValidityPeriod) -> Self {
+        let start = TAI2004::from_secs(value.start.0 .0);
+        let delta = match &value.duration {
+            Etsi102941Duration::microseconds(us) => Duration::from_micros(us.0.into()),
+            Etsi102941Duration::milliseconds(ms) => Duration::from_millis(ms.0.into()),
+            Etsi102941Duration::seconds(s) => Duration::from_secs(s.0.into()),
+            Etsi102941Duration::minutes(m) => Duration::from_secs(u64::from(m.0) * 60),
+            Etsi102941Duration::hours(h) => Duration::from_secs(u64::from(h.0) * 3600),
+            Etsi102941Duration::sixtyHours(sh) => Duration::from_secs(u64::from(sh.0) * 216_000),
+            Etsi102941Duration::years(y) => Duration::from_secs(u64::from(y.0) * 31_556_952), // One gregorian year is 31556952 seconds.
+        };
+
+        ValidityPeriod {
+            start,
+            end: start + delta,
+            period: PeriodDuration::from(&value.duration),
+        }
+    }
+}
+
+impl Into<Etsi102941ValidityPeriod> for ValidityPeriod {
+    fn into(self) -> Etsi102941ValidityPeriod {
+        use veloce_asn1::defs::etsi_102941_v221::ieee1609_dot2_base_types::{Time32, Uint32};
+        Etsi102941ValidityPeriod::new(Time32(Uint32(self.start.secs() as u32)), self.period.into())
     }
 }
 
@@ -201,6 +401,8 @@ pub enum EcKeyType {
     BrainpoolP256r1,
     /// Brainpool 384 R1 key type.
     BrainpoolP384r1,
+    /// SM2 key type.
+    Sm2,
 }
 
 /// Representation of an ECC point.
@@ -625,7 +827,6 @@ impl TryInto<Etsi102941PublicVerificationKey> for EcdsaKey {
                 p.try_into()
                     .map_err(EcdsaKeyError::UnsupportedCoordinates)?,
             ),
-            //_ => return Err(EcdsaKeyError::UnsupportedType),
         };
 
         Ok(res)
@@ -640,6 +841,8 @@ pub enum EciesKey {
     NistP256r1(EccPoint),
     /// Brainpool 256 R1 key type.
     BrainpoolP256r1(EccPoint),
+    /// SM2 key type.
+    Sm2(EccPoint),
 }
 
 impl EciesKey {
@@ -647,6 +850,7 @@ impl EciesKey {
     pub fn hash_algorithm(&self) -> HashAlgorithm {
         match self {
             EciesKey::NistP256r1(_) | EciesKey::BrainpoolP256r1(_) => HashAlgorithm::SHA256,
+            EciesKey::Sm2(_) => HashAlgorithm::SM3,
         }
     }
 
@@ -655,6 +859,7 @@ impl EciesKey {
         match self {
             EciesKey::NistP256r1(_) => EcKeyType::NistP256r1,
             EciesKey::BrainpoolP256r1(_) => EcKeyType::BrainpoolP256r1,
+            EciesKey::Sm2(_) => EcKeyType::Sm2,
         }
     }
 }
@@ -678,17 +883,19 @@ impl fmt::Display for EciesKeyError {
     }
 }
 
-impl TryFrom<&BasePublicEncryptionKey> for EciesKey {
+impl TryFrom<&Etsi103097BasePublicEncryptionKey> for EciesKey {
     type Error = EciesKeyError;
 
-    fn try_from(value: &BasePublicEncryptionKey) -> Result<Self, Self::Error> {
+    fn try_from(value: &Etsi103097BasePublicEncryptionKey) -> Result<Self, Self::Error> {
         let res = match value {
-            BasePublicEncryptionKey::eciesNistP256(k) => EciesKey::NistP256r1(
+            Etsi103097BasePublicEncryptionKey::eciesNistP256(k) => EciesKey::NistP256r1(
                 EccPoint::try_from(k).map_err(EciesKeyError::UnsupportedCoordinates)?,
             ),
-            BasePublicEncryptionKey::eciesBrainpoolP256r1(k) => EciesKey::BrainpoolP256r1(
-                EccPoint::try_from(k).map_err(EciesKeyError::UnsupportedCoordinates)?,
-            ),
+            Etsi103097BasePublicEncryptionKey::eciesBrainpoolP256r1(k) => {
+                EciesKey::BrainpoolP256r1(
+                    EccPoint::try_from(k).map_err(EciesKeyError::UnsupportedCoordinates)?,
+                )
+            }
             _ => return Err(EciesKeyError::UnsupportedType),
         };
 
@@ -696,16 +903,67 @@ impl TryFrom<&BasePublicEncryptionKey> for EciesKey {
     }
 }
 
-impl TryInto<BasePublicEncryptionKey> for EciesKey {
+impl TryInto<Etsi103097BasePublicEncryptionKey> for EciesKey {
     type Error = EciesKeyError;
 
-    fn try_into(self) -> Result<BasePublicEncryptionKey, Self::Error> {
+    fn try_into(self) -> Result<Etsi103097BasePublicEncryptionKey, Self::Error> {
         let res = match self {
-            EciesKey::NistP256r1(p) => BasePublicEncryptionKey::eciesNistP256(
+            EciesKey::NistP256r1(p) => Etsi103097BasePublicEncryptionKey::eciesNistP256(
                 p.try_into()
                     .map_err(EciesKeyError::UnsupportedCoordinates)?,
             ),
-            EciesKey::BrainpoolP256r1(p) => BasePublicEncryptionKey::eciesBrainpoolP256r1(
+            EciesKey::BrainpoolP256r1(p) => {
+                Etsi103097BasePublicEncryptionKey::eciesBrainpoolP256r1(
+                    p.try_into()
+                        .map_err(EciesKeyError::UnsupportedCoordinates)?,
+                )
+            }
+            _ => return Err(EciesKeyError::UnsupportedType),
+        };
+
+        Ok(res)
+    }
+}
+
+impl TryFrom<&Etsi102941BasePublicEncryptionKey> for EciesKey {
+    type Error = EciesKeyError;
+
+    fn try_from(value: &Etsi102941BasePublicEncryptionKey) -> Result<Self, Self::Error> {
+        let res = match value {
+            Etsi102941BasePublicEncryptionKey::eciesNistP256(k) => EciesKey::NistP256r1(
+                EccPoint::try_from(k).map_err(EciesKeyError::UnsupportedCoordinates)?,
+            ),
+            Etsi102941BasePublicEncryptionKey::eciesBrainpoolP256r1(k) => {
+                EciesKey::BrainpoolP256r1(
+                    EccPoint::try_from(k).map_err(EciesKeyError::UnsupportedCoordinates)?,
+                )
+            }
+            Etsi102941BasePublicEncryptionKey::ecencSm2(k) => {
+                EciesKey::Sm2(EccPoint::try_from(k).map_err(EciesKeyError::UnsupportedCoordinates)?)
+            }
+            _ => return Err(EciesKeyError::UnsupportedType),
+        };
+
+        Ok(res)
+    }
+}
+
+impl TryInto<Etsi102941BasePublicEncryptionKey> for EciesKey {
+    type Error = EciesKeyError;
+
+    fn try_into(self) -> Result<Etsi102941BasePublicEncryptionKey, Self::Error> {
+        let res = match self {
+            EciesKey::NistP256r1(p) => Etsi102941BasePublicEncryptionKey::eciesNistP256(
+                p.try_into()
+                    .map_err(EciesKeyError::UnsupportedCoordinates)?,
+            ),
+            EciesKey::BrainpoolP256r1(p) => {
+                Etsi102941BasePublicEncryptionKey::eciesBrainpoolP256r1(
+                    p.try_into()
+                        .map_err(EciesKeyError::UnsupportedCoordinates)?,
+                )
+            }
+            EciesKey::Sm2(p) => Etsi102941BasePublicEncryptionKey::ecencSm2(
                 p.try_into()
                     .map_err(EciesKeyError::UnsupportedCoordinates)?,
             ),
@@ -723,6 +981,8 @@ pub enum EncryptedEciesKey {
     NistP256r1(EncryptedEciesKeyParams),
     /// Encrypted Brainpool 256 R1 key type.
     BrainpoolP256r1(EncryptedEciesKeyParams),
+    /// Encrypted SM2 key type.
+    Sm2(EncryptedEciesKeyParams),
 }
 
 impl EncryptedEciesKey {
@@ -743,6 +1003,13 @@ impl EncryptedEciesKey {
                     tag,
                 })
             }
+            EciesKey::Sm2(ephemeral_public_key) => {
+                EncryptedEciesKey::Sm2(EncryptedEciesKeyParams {
+                    ephemeral_public_key,
+                    encrypted_key,
+                    tag,
+                })
+            }
         }
     }
 
@@ -755,6 +1022,7 @@ impl EncryptedEciesKey {
             EncryptedEciesKey::BrainpoolP256r1(p) => {
                 EciesKey::BrainpoolP256r1(p.ephemeral_public_key.clone())
             }
+            EncryptedEciesKey::Sm2(p) => EciesKey::Sm2(p.ephemeral_public_key.clone()),
         }
     }
 
@@ -764,6 +1032,7 @@ impl EncryptedEciesKey {
             EncryptedEciesKey::NistP256r1(_) | EncryptedEciesKey::BrainpoolP256r1(_) => {
                 HashAlgorithm::SHA256
             }
+            EncryptedEciesKey::Sm2(_) => HashAlgorithm::SM3,
         }
     }
 }
@@ -795,12 +1064,12 @@ impl fmt::Display for EncryptedEciesKeyError {
     }
 }
 
-impl TryFrom<&EncryptedDataEncryptionKey> for EncryptedEciesKey {
+impl TryFrom<&Etsi103097EncryptedDataEncryptionKey> for EncryptedEciesKey {
     type Error = EncryptedEciesKeyError;
 
-    fn try_from(value: &EncryptedDataEncryptionKey) -> Result<Self, Self::Error> {
+    fn try_from(value: &Etsi103097EncryptedDataEncryptionKey) -> Result<Self, Self::Error> {
         let res = match value {
-            EncryptedDataEncryptionKey::eciesNistP256(k) => {
+            Etsi103097EncryptedDataEncryptionKey::eciesNistP256(k) => {
                 EncryptedEciesKey::NistP256r1(EncryptedEciesKeyParams {
                     ephemeral_public_key: EccPoint::try_from(&k.v)
                         .map_err(EncryptedEciesKeyError::UnsupportedCoordinates)?,
@@ -808,7 +1077,7 @@ impl TryFrom<&EncryptedDataEncryptionKey> for EncryptedEciesKey {
                     tag: k.t.to_vec(),
                 })
             }
-            EncryptedDataEncryptionKey::eciesBrainpoolP256r1(k) => {
+            Etsi103097EncryptedDataEncryptionKey::eciesBrainpoolP256r1(k) => {
                 EncryptedEciesKey::BrainpoolP256r1(EncryptedEciesKeyParams {
                     ephemeral_public_key: EccPoint::try_from(&k.v)
                         .map_err(EncryptedEciesKeyError::UnsupportedCoordinates)?,
@@ -823,26 +1092,121 @@ impl TryFrom<&EncryptedDataEncryptionKey> for EncryptedEciesKey {
     }
 }
 
-impl TryInto<EncryptedDataEncryptionKey> for EncryptedEciesKey {
+impl TryInto<Etsi103097EncryptedDataEncryptionKey> for EncryptedEciesKey {
     type Error = EncryptedEciesKeyError;
 
-    fn try_into(self) -> Result<EncryptedDataEncryptionKey, Self::Error> {
+    fn try_into(self) -> Result<Etsi103097EncryptedDataEncryptionKey, Self::Error> {
         let res = match self {
             EncryptedEciesKey::NistP256r1(p) => {
-                EncryptedDataEncryptionKey::eciesNistP256(EciesP256EncryptedKey {
-                    v: p.ephemeral_public_key
-                        .try_into()
-                        .map_err(EncryptedEciesKeyError::UnsupportedCoordinates)?,
-                    c: p.encrypted_key
-                        .try_into()
-                        .map_err(|_| EncryptedEciesKeyError::EncryptedKeySize)?,
-                    t: p.tag
-                        .try_into()
-                        .map_err(|_| EncryptedEciesKeyError::AuthenticationTagSize)?,
-                })
+                Etsi103097EncryptedDataEncryptionKey::eciesNistP256(
+                    Etsi103097EciesP256EncryptedKey {
+                        v: p.ephemeral_public_key
+                            .try_into()
+                            .map_err(EncryptedEciesKeyError::UnsupportedCoordinates)?,
+                        c: p.encrypted_key
+                            .try_into()
+                            .map_err(|_| EncryptedEciesKeyError::EncryptedKeySize)?,
+                        t: p.tag
+                            .try_into()
+                            .map_err(|_| EncryptedEciesKeyError::AuthenticationTagSize)?,
+                    },
+                )
             }
             EncryptedEciesKey::BrainpoolP256r1(p) => {
-                EncryptedDataEncryptionKey::eciesBrainpoolP256r1(EciesP256EncryptedKey {
+                Etsi103097EncryptedDataEncryptionKey::eciesBrainpoolP256r1(
+                    Etsi103097EciesP256EncryptedKey {
+                        v: p.ephemeral_public_key
+                            .try_into()
+                            .map_err(EncryptedEciesKeyError::UnsupportedCoordinates)?,
+                        c: p.encrypted_key
+                            .try_into()
+                            .map_err(|_| EncryptedEciesKeyError::EncryptedKeySize)?,
+                        t: p.tag
+                            .try_into()
+                            .map_err(|_| EncryptedEciesKeyError::AuthenticationTagSize)?,
+                    },
+                )
+            }
+            _ => return Err(EncryptedEciesKeyError::UnsupportedType),
+        };
+
+        Ok(res)
+    }
+}
+
+impl TryFrom<&Etsi102941EncryptedDataEncryptionKey> for EncryptedEciesKey {
+    type Error = EncryptedEciesKeyError;
+
+    fn try_from(value: &Etsi102941EncryptedDataEncryptionKey) -> Result<Self, Self::Error> {
+        let res = match value {
+            Etsi102941EncryptedDataEncryptionKey::eciesNistP256(k) => {
+                EncryptedEciesKey::NistP256r1(EncryptedEciesKeyParams {
+                    ephemeral_public_key: EccPoint::try_from(&k.v)
+                        .map_err(EncryptedEciesKeyError::UnsupportedCoordinates)?,
+                    encrypted_key: k.c.to_vec(),
+                    tag: k.t.to_vec(),
+                })
+            }
+            Etsi102941EncryptedDataEncryptionKey::eciesBrainpoolP256r1(k) => {
+                EncryptedEciesKey::BrainpoolP256r1(EncryptedEciesKeyParams {
+                    ephemeral_public_key: EccPoint::try_from(&k.v)
+                        .map_err(EncryptedEciesKeyError::UnsupportedCoordinates)?,
+                    encrypted_key: k.c.to_vec(),
+                    tag: k.t.to_vec(),
+                })
+            }
+            Etsi102941EncryptedDataEncryptionKey::ecencSm2256(k) => {
+                EncryptedEciesKey::Sm2(EncryptedEciesKeyParams {
+                    ephemeral_public_key: EccPoint::try_from(&k.v)
+                        .map_err(EncryptedEciesKeyError::UnsupportedCoordinates)?,
+                    encrypted_key: k.c.to_vec(),
+                    tag: k.t.to_vec(),
+                })
+            }
+            _ => return Err(EncryptedEciesKeyError::UnsupportedType),
+        };
+
+        Ok(res)
+    }
+}
+
+impl TryInto<Etsi102941EncryptedDataEncryptionKey> for EncryptedEciesKey {
+    type Error = EncryptedEciesKeyError;
+
+    fn try_into(self) -> Result<Etsi102941EncryptedDataEncryptionKey, Self::Error> {
+        let res = match self {
+            EncryptedEciesKey::NistP256r1(p) => {
+                Etsi102941EncryptedDataEncryptionKey::eciesNistP256(
+                    Etsi102941EciesP256EncryptedKey {
+                        v: p.ephemeral_public_key
+                            .try_into()
+                            .map_err(EncryptedEciesKeyError::UnsupportedCoordinates)?,
+                        c: p.encrypted_key
+                            .try_into()
+                            .map_err(|_| EncryptedEciesKeyError::EncryptedKeySize)?,
+                        t: p.tag
+                            .try_into()
+                            .map_err(|_| EncryptedEciesKeyError::AuthenticationTagSize)?,
+                    },
+                )
+            }
+            EncryptedEciesKey::BrainpoolP256r1(p) => {
+                Etsi102941EncryptedDataEncryptionKey::eciesBrainpoolP256r1(
+                    Etsi102941EciesP256EncryptedKey {
+                        v: p.ephemeral_public_key
+                            .try_into()
+                            .map_err(EncryptedEciesKeyError::UnsupportedCoordinates)?,
+                        c: p.encrypted_key
+                            .try_into()
+                            .map_err(|_| EncryptedEciesKeyError::EncryptedKeySize)?,
+                        t: p.tag
+                            .try_into()
+                            .map_err(|_| EncryptedEciesKeyError::AuthenticationTagSize)?,
+                    },
+                )
+            }
+            EncryptedEciesKey::Sm2(p) => {
+                Etsi102941EncryptedDataEncryptionKey::ecencSm2256(Etsi102941EcencP256EncryptedKey {
                     v: p.ephemeral_public_key
                         .try_into()
                         .map_err(EncryptedEciesKeyError::UnsupportedCoordinates)?,

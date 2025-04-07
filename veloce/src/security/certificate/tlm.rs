@@ -81,7 +81,7 @@ impl CertificateTrait for TrustListManagerCertificate {
 
         // Safety: we checked the vector is not empty.
         let permission = &app_permissions.0[0];
-        if permission.psid != Psid(Integer::from(u64::from(AID::CTL))) {
+        if permission.psid != Psid(Integer::from(i64::from(AID::CTL))) {
             return Err(CertificateError::IllegalPermissions);
         }
 

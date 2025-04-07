@@ -1,3 +1,4 @@
+pub mod authorization;
 pub mod enrollment;
 
 pub struct PkiClientService {

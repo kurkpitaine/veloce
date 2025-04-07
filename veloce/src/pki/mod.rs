@@ -1,8 +1,11 @@
 use core::fmt;
 
-use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2::{self};
+use veloce_asn1::{
+    defs::etsi_103097_v211::ieee1609_dot2::{self, HashedData as EtsiHashedData},
+    prelude::rasn::types::FixedOctetString,
+};
 
-use super::{backend::BackendTrait, HashAlgorithm, HashedId8};
+use crate::security::{backend::BackendTrait, EcdsaKey, EciesKey, HashAlgorithm, HashedId8};
 
 pub mod asn1_wrapper;
 pub mod encrypted_data;
@@ -34,14 +37,11 @@ impl fmt::Display for SignerIdentifierError {
 
 /// Signer identifier.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SignerIdentifier {
     /// Signer identifier is self-signed.
     SelfSigned,
     /// Signer identifier is a certificate digest.
     Digest(HashedId8),
-    /* /// Signer identifier is a full certificate.
-    Certificate(EtsiCertificate), */
 }
 
 impl fmt::Display for SignerIdentifier {
@@ -61,9 +61,6 @@ impl TryFrom<&ieee1609_dot2::SignerIdentifier> for SignerIdentifier {
             ieee1609_dot2::SignerIdentifier::digest(digest) => {
                 SignerIdentifier::Digest(digest.into())
             }
-            /* ieee1609_dot2::SignerIdentifier::certificate(cert_seq) => {
-                SignerIdentifier::Certificate(cert_seq.0[0].clone())
-            } */
             ieee1609_dot2::SignerIdentifier::R_self(_) => SignerIdentifier::SelfSigned,
             _ => return Err(SignerIdentifierError::UnsupportedSignerIdentifier),
         };
@@ -78,13 +75,67 @@ impl From<SignerIdentifier> for ieee1609_dot2::SignerIdentifier {
             SignerIdentifier::Digest(digest) => {
                 ieee1609_dot2::SignerIdentifier::digest(digest.into())
             }
-            /* SignerIdentifier::Certificate(cert) => {
-                let seq = ieee1609_dot2::SequenceOfCertificate(vec![cert]);
-                ieee1609_dot2::SignerIdentifier::certificate(seq)
-            } */
             SignerIdentifier::SelfSigned => ieee1609_dot2::SignerIdentifier::R_self(()),
         }
     }
+}
+
+/// Hashed data.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HashedData {
+    /// SHA-256 hashed data.
+    SHA256(Vec<u8>),
+    /// SHA-384 hashed data.
+    SHA384(Vec<u8>),
+    /// Reserved hashed data.
+    Reserved(Vec<u8>),
+}
+
+/// Hashed data error.
+pub struct UnsupportedHashedData;
+
+impl TryFrom<&EtsiHashedData> for HashedData {
+    type Error = UnsupportedHashedData;
+
+    fn try_from(value: &EtsiHashedData) -> Result<Self, Self::Error> {
+        let res = match value {
+            EtsiHashedData::sha256HashedData(data) => HashedData::SHA256(data.to_vec()),
+            EtsiHashedData::sha384HashedData(data) => HashedData::SHA384(data.to_vec()),
+            EtsiHashedData::reserved(data) => HashedData::Reserved(data.to_vec()),
+            _ => return Err(UnsupportedHashedData),
+        };
+
+        Ok(res)
+    }
+}
+
+impl TryInto<EtsiHashedData> for HashedData {
+    type Error = UnsupportedHashedData;
+
+    fn try_into(self) -> Result<EtsiHashedData, Self::Error> {
+        let res = match self {
+            HashedData::SHA256(data) => EtsiHashedData::sha256HashedData(
+                FixedOctetString::try_from(data).map_err(|_| UnsupportedHashedData)?,
+            ),
+            HashedData::SHA384(data) => EtsiHashedData::sha384HashedData(
+                FixedOctetString::try_from(data).map_err(|_| UnsupportedHashedData)?,
+            ),
+            HashedData::Reserved(data) => EtsiHashedData::reserved(
+                FixedOctetString::try_from(data).map_err(|_| UnsupportedHashedData)?,
+            ),
+        };
+
+        Ok(res)
+    }
+}
+
+/// Public keys to be included in a certificate request.
+#[derive(Debug)]
+pub struct IncludedPublicKeys {
+    /// Public verification key.
+    pub verification_key: EcdsaKey,
+    /// Public encryption key.
+    pub encryption_key: Option<EciesKey>,
 }
 
 /// Compute the key derivation function (KDF) as defined in ETSI TS 102 941 V2.2.1 annex F.

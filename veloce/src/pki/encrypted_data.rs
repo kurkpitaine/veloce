@@ -113,6 +113,14 @@ impl EncryptedData {
         })
     }
 
+    /// Constructs a [EncryptedData] from the raw type.
+    pub fn from_raw(data_encrypted: EtsiTs103097DataEncrypted) -> EncryptedDataResult<Self> {
+        Ok(Self {
+            inner: Asn1Wrapper::from_raw(data_encrypted)
+                .map_err(EncryptedDataError::Asn1Wrapper)?,
+        })
+    }
+
     /// Constructs a [EncryptedData] from bytes.
     pub fn from_bytes(bytes: &[u8]) -> EncryptedDataResult<Self> {
         Ok(Self {
@@ -125,6 +133,11 @@ impl EncryptedData {
         self.inner
             .as_bytes()
             .map_err(EncryptedDataError::Asn1Wrapper)
+    }
+
+    /// Get the [EncryptedData] as the raw underlying type.
+    pub fn as_raw(&self) -> EncryptedDataResult<EtsiTs103097DataEncrypted> {
+        self.inner.as_raw().map_err(EncryptedDataError::Asn1Wrapper)
     }
 
     /// Get the list of recipient information.

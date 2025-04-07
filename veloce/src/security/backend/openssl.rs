@@ -15,12 +15,14 @@ use openssl::{
 };
 
 #[cfg(feature = "pki")]
-use openssl::{derive::Deriver, rand, symm::decrypt_aead};
+use openssl::{derive::Deriver, rand};
 
+use regex::bytes::Regex;
 use secrecy::{ExposeSecret, SecretString};
 use std::{
+    collections::HashMap,
     fmt,
-    fs::{DirBuilder, File, OpenOptions},
+    fs::{self, DirBuilder, File, OpenOptions},
     io::{self, Read, Result as IoResult, Write},
     os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
     path::PathBuf,
@@ -47,11 +49,22 @@ pub struct OpensslBackendConfig {
     /// Secret keys password.
     pub keys_password: SecretString,
     /// Canonical key filename.
-    pub canonical_key_filename: String,
-    /// AT key filename.
-    pub at_key_filename: String,
+    canonical_key_filename: String,
     /// Enrollment credential key filename.
-    pub ec_key_filename: String,
+    ec_key_filename: String,
+    /// AT keys filename prefix.
+    at_key_filename_prefix: String,
+}
+
+impl OpensslBackendConfig {
+    /// Constructs a new [OpensslBackendConfig] with the provided `keys_password` and `veloce_dir`.
+    pub fn new(keys_password: SecretString, veloce_dir: Option<String>) -> Self {
+        Self {
+            veloce_dir,
+            keys_password,
+            ..Default::default()
+        }
+    }
 }
 
 impl Default for OpensslBackendConfig {
@@ -60,8 +73,8 @@ impl Default for OpensslBackendConfig {
             veloce_dir: None,
             keys_password: SecretString::new("".into()),
             canonical_key_filename: "canonical.pem".into(),
-            at_key_filename: "AT.pem".into(),
             ec_key_filename: "EC.pem".into(),
+            at_key_filename_prefix: "AT_".into(),
         }
     }
 }
@@ -75,6 +88,8 @@ pub enum OpensslBackendError {
     Io(io::Error),
     /// OpenSSL error.
     OpenSSL(openssl::error::ErrorStack),
+    /// Regex error.
+    Regex(regex::Error),
     /// Home directory not found.
     HomeDirNotFound,
     /// Bad permissions. Should be 0o600.
@@ -86,6 +101,7 @@ impl fmt::Display for OpensslBackendError {
         match self {
             OpensslBackendError::Io(e) => write!(f, "io: {}", e),
             OpensslBackendError::OpenSSL(e) => write!(f, "openssl: {}", e),
+            OpensslBackendError::Regex(e) => write!(f, "regex: {}", e),
             OpensslBackendError::HomeDirNotFound => write!(f, "home directory not found"),
             OpensslBackendError::BadPermissions(p) => {
                 write!(f, "bad permissions, should be 0o600 on: {}", p.display())
@@ -103,10 +119,12 @@ pub struct OpensslBackend {
     assets_path: PathBuf,
     /// Canonical secret key. Used to encrypt PKI related communications.
     canonical_secret_key: Option<EcKey<Private>>,
-    /// AT certificate secret key. Used to sign the messages over the air.
-    at_cert_secret_key: Option<EcKey<Private>>,
     /// EC certificate secret key.
     ec_cert_secret_key: Option<EcKey<Private>>,
+    /// AT certificates secret keys. Used to sign the messages over the air.
+    at_certs_secret_keys: HashMap<u64, EcKey<Private>>,
+    /// Index of the current AT certificate secret key used for signing.
+    current_at_id: Option<u64>,
 }
 
 impl OpensslBackend {
@@ -123,7 +141,6 @@ impl OpensslBackend {
 
         let assets_path = veloce_path.join("assets");
         let canonical_key_path = assets_path.join(config.canonical_key_filename.clone());
-        let at_key_path = assets_path.join(config.at_key_filename.clone());
         let ec_key_path = assets_path.join(config.ec_key_filename.clone());
 
         // Check directory exists and if permissions are ok. Or create them.
@@ -144,18 +161,54 @@ impl OpensslBackend {
                 },
             )?;
 
-        // Check AT secret key permissions and load it if exist.
-        let at_cert_secret_key = Self::check_permissions(&at_key_path, 0o600).map_or_else(
-            |e| match e {
-                OpensslBackendError::Io(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-                e => Err(e),
-            },
-            |_| {
-                Self::load_secret_key(at_key_path.clone(), &config.keys_password)
-                    .map(|k| Some(k))
-                    .map_err(OpensslBackendError::Io)
-            },
-        )?;
+        let exp = config.at_key_filename_prefix.clone() + "[0-9]{1,2}.pem";
+        let regex = Regex::new(exp.as_str()).map_err(OpensslBackendError::Regex)?;
+
+        let at_key_files: Vec<(String, u64)> = Self::list_files(&assets_path)?
+            .into_iter()
+            .filter_map(|path| {
+                let Some(filename) = path.file_name() else {
+                    return None;
+                };
+
+                let Some(name_str) = filename.to_str() else {
+                    return None;
+                };
+
+                let Some(caps) = regex.captures(name_str.as_bytes()) else {
+                    return None;
+                };
+
+                let Some(id_m) = caps.get(1) else {
+                    return None;
+                };
+
+                let Some(id_str) = std::str::from_utf8(id_m.as_bytes()).ok() else {
+                    return None;
+                };
+
+                let Some(id) = id_str.parse().ok() else {
+                    return None;
+                };
+
+                Some((name_str.to_owned(), id))
+            })
+            .collect();
+
+        // Check AT secret keys permissions and load them if exist.
+        let mut at_certs_secret_keys = HashMap::new();
+        for (name, id) in at_key_files {
+            let at_key_path = assets_path.join(name);
+            let at_cert_secret_key = Self::check_permissions(&at_key_path, 0o600).map_or_else(
+                |e| Err(e),
+                |_| {
+                    Self::load_secret_key(at_key_path.clone(), &config.keys_password)
+                        .map_err(OpensslBackendError::Io)
+                },
+            )?;
+
+            at_certs_secret_keys.insert(id, at_cert_secret_key);
+        }
 
         // Check EC secret key permissions and load it if exist.
         let ec_cert_secret_key = Self::check_permissions(&ec_key_path, 0o600).map_or_else(
@@ -174,8 +227,9 @@ impl OpensslBackend {
             config,
             assets_path,
             canonical_secret_key,
-            at_cert_secret_key,
             ec_cert_secret_key,
+            at_certs_secret_keys,
+            current_at_id: None,
         })
     }
 
@@ -211,6 +265,21 @@ impl OpensslBackend {
             .map_err(OpensslBackendError::Io)
     }
 
+    /// List files in `path`.
+    fn list_files(path: &PathBuf) -> Result<Vec<PathBuf>, OpensslBackendError> {
+        let mut res = Vec::new();
+
+        for entry in fs::read_dir(path).map_err(OpensslBackendError::Io)? {
+            let entry = entry.map_err(OpensslBackendError::Io)?;
+            let path = entry.path();
+            if path.is_file() {
+                res.push(path);
+            }
+        }
+
+        Ok(res)
+    }
+
     /// Generate a secret key for a given `key_type`.
     #[allow(unused)]
     fn generate_secret_key(key_type: EcKeyType) -> Result<EcKey<Private>, ErrorStack> {
@@ -219,6 +288,7 @@ impl OpensslBackend {
             EcKeyType::NistP384r1 => Nid::SECP384R1,
             EcKeyType::BrainpoolP256r1 => Nid::BRAINPOOL_P256R1,
             EcKeyType::BrainpoolP384r1 => Nid::BRAINPOOL_P384R1,
+            EcKeyType::Sm2 => Nid::SM2,
         };
 
         let group = EcGroup::from_curve_name(nid)?;
@@ -448,7 +518,11 @@ impl BackendTrait for OpensslBackend {
     }
 
     fn generate_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature> {
-        let Some(ec_key) = &self.at_cert_secret_key else {
+        let Some(id) = &self.current_at_id else {
+            return Err(BackendError::NoSigningCertSecretKey);
+        };
+
+        let Some(ec_key) = self.at_certs_secret_keys.get(id) else {
             return Err(BackendError::NoSigningCertSecretKey);
         };
 
@@ -478,6 +552,7 @@ impl BackendTrait for OpensslBackend {
             EciesKey::BrainpoolP256r1(p) => {
                 EciesKey::BrainpoolP256r1(self.compress_ecc_point(p, Nid::BRAINPOOL_P256R1)?)
             }
+            EciesKey::Sm2(p) => EciesKey::Sm2(self.compress_ecc_point(p, Nid::SM2)?),
         };
 
         Ok(res)
@@ -585,6 +660,26 @@ impl PkiBackendTrait for OpensslBackend {
         Ok(PKey::from_ec_key(public_key).map_err(BackendError::OpenSSL)?)
     }
 
+    fn generate_authorization_ticket_keypair(
+        &mut self,
+        key_type: EcKeyType,
+        id: u64,
+    ) -> BackendResult<Self::BackendPublicKey> {
+        let key_path = self
+            .assets_path
+            .join(self.config.at_key_filename_prefix.clone() + id.to_string().as_str() + ".pem");
+
+        let secret_key =
+            OpensslBackend::generate_secret_key(key_type).map_err(BackendError::OpenSSL)?;
+        let public_key = EcKey::from_public_key(secret_key.group(), secret_key.public_key())
+            .map_err(BackendError::OpenSSL)?;
+
+        Self::store_secret_key(&secret_key, key_path, &self.config.keys_password)?;
+        self.at_certs_secret_keys.insert(id, secret_key);
+
+        Ok(PKey::from_ec_key(public_key).map_err(BackendError::OpenSSL)?)
+    }
+
     fn generate_ephemeral_keypair(
         &self,
         key_type: EcKeyType,
@@ -620,6 +715,18 @@ impl PkiBackendTrait for OpensslBackend {
         deriver.derive_to_vec().map_err(BackendError::OpenSSL)
     }
 
+    fn generate_authorization_signature(
+        &self,
+        key_index: u64,
+        data: &[u8],
+    ) -> BackendResult<EcdsaSignature> {
+        let Some(at_key) = self.at_certs_secret_keys.get(&key_index) else {
+            return Err(BackendError::NoSigningCertSecretKey);
+        };
+
+        self.sign(data, at_key)
+    }
+
     fn generate_enrollment_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature> {
         let Some(ec_key) = &self.ec_cert_secret_key else {
             return Err(BackendError::NoEnrollmentSecretKey);
@@ -629,7 +736,7 @@ impl PkiBackendTrait for OpensslBackend {
     }
 
     fn generate_canonical_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature> {
-        let Some(ec_key) = &self.ec_cert_secret_key else {
+        let Some(ec_key) = &self.canonical_secret_key else {
             return Err(BackendError::NoCanonicalSecretKey);
         };
 
@@ -672,16 +779,29 @@ impl PkiBackendTrait for OpensslBackend {
 
         let encrypted = &data[..data.len() - 16];
         let tag = &data[data.len() - 16..];
+        let mut output = vec![];
 
-        decrypt_aead(
-            symm::Cipher::aes_128_ccm(),
-            key,
-            Some(nonce),
-            &[],
-            encrypted,
-            tag,
-        )
-        .map_err(BackendError::OpenSSL)
+        let mut ctx = CipherCtx::new().map_err(BackendError::OpenSSL)?;
+        ctx.decrypt_init(Some(Cipher::aes_128_ccm()), Some(key), None)
+            .map_err(BackendError::OpenSSL)?;
+
+        ctx.set_iv_length(nonce.len())
+            .map_err(BackendError::OpenSSL)?;
+
+        ctx.set_tag_length(tag.len())
+            .map_err(BackendError::OpenSSL)?;
+
+        ctx.decrypt_init(None, Some(key), Some(nonce))
+            .map_err(BackendError::OpenSSL)?;
+
+        ctx.set_tag(tag).map_err(BackendError::OpenSSL)?;
+
+        ctx.cipher_update_vec(encrypted, &mut output)
+            .map_err(BackendError::OpenSSL)?;
+        ctx.cipher_final_vec(&mut output)
+            .map_err(BackendError::OpenSSL)?;
+
+        Ok(output)
     }
 
     fn hmac(
@@ -712,6 +832,7 @@ impl TryFrom<EciesKey> for PKey<Public> {
         let (nid, point) = match key {
             EciesKey::NistP256r1(p) => (Nid::X9_62_PRIME256V1, p),
             EciesKey::BrainpoolP256r1(p) => (Nid::BRAINPOOL_P256R1, p),
+            EciesKey::Sm2(p) => (Nid::SM2, p),
         };
 
         let group = EcGroup::from_curve_name(nid).map_err(BackendError::OpenSSL)?;

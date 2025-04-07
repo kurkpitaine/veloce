@@ -22,7 +22,7 @@ pub struct AuthorizationTicketCertificate {
 
 impl AuthorizationTicketCertificate {
     /// Constructs a Authorization Ticket from an [EtsiCertificate].
-    /// This method verifies if the certificate is valid relative to a Root certificate Asn.1 constraints.
+    /// This method verifies if the certificate is valid relative to an AT certificate Asn.1 constraints.
     /// Certificate is also canonicalized if necessary.
     pub fn from_etsi_cert<B>(
         cert: EtsiCertificate,
@@ -39,6 +39,19 @@ impl AuthorizationTicketCertificate {
         let raw = rasn::coer::encode(&inner).map_err(|_| CertificateError::Asn1)?;
 
         Ok(Self { raw, inner })
+    }
+
+    /// Constructs a Authorization Ticket from an [EtsiCertificate] without canonicalization.
+    pub fn from_etsi_cert_without_canonicalization(
+        cert: EtsiCertificate,
+    ) -> CertificateResult<AuthorizationTicketCertificate> {
+        Certificate::verify_ieee_constraints(&cert)?;
+        Certificate::verify_etsi_constraints(&cert)?;
+        Self::verify_constraints(&cert)?;
+
+        let raw = rasn::coer::encode(&cert).map_err(|_| CertificateError::Asn1)?;
+
+        Ok(Self { raw, inner: cert })
     }
 }
 

@@ -11,3 +11,6 @@ veloce-ipc/src/proto/*
 
 # Ignore examples assets
 examples/**/src/.veloce/assets/*
+
+# Ignore pki_client folder
+examples/pki_client

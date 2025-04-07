@@ -295,12 +295,7 @@ pub fn openssl_backend() -> OpensslBackend {
     #[cfg(not(debug_assertions))]
     let veloce_dir = ".veloce".to_string();
 
-    let config = OpensslBackendConfig {
-        veloce_dir: Some(veloce_dir),
-        keys_password: "test1234".to_string().into(),
-        ..Default::default()
-    };
-
+    let config = OpensslBackendConfig::new("test1234".to_string().into(), Some(veloce_dir));
     OpensslBackend::new(config).unwrap()
 }
 

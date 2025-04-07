@@ -3,16 +3,14 @@ use core::fmt;
 use veloce_asn1::{
     defs::etsi_103097_v211::{
         ieee1609_dot2::{self, Certificate as EtsiCertificate, VerificationKeyIndicator},
-        ieee1609_dot2_base_types::{
-            self, EccP256CurvePoint, EccP384CurvePoint, PublicVerificationKey,
-        },
+        ieee1609_dot2_base_types::{EccP256CurvePoint, EccP384CurvePoint, PublicVerificationKey},
     },
     prelude::rasn::{self, types::FixedOctetString},
 };
 
 use crate::{
     security::EciesKey,
-    time::{Duration, Instant, TAI2004},
+    time::{Instant, TAI2004},
 };
 
 use super::{
@@ -20,6 +18,7 @@ use super::{
     permission::{Permission, PermissionError},
     signature::{EcdsaSignature, EcdsaSignatureError, EcdsaSignatureInner},
     EccPoint, EcdsaKey, EcdsaKeyError, EciesKeyError, HashAlgorithm, HashedId8, Issuer,
+    ValidityPeriod,
 };
 
 mod at;
@@ -29,31 +28,11 @@ mod subordinate;
 mod tlm;
 
 pub use at::AuthorizationTicketCertificate;
-pub use ec::EnrollmentCredential;
+pub use ec::EnrollmentCredentialCertificate;
 pub use root::RootCertificate;
 pub use subordinate::AuthorizationAuthorityCertificate;
 pub use subordinate::EnrollmentAuthorityCertificate;
 pub use tlm::TrustListManagerCertificate;
-
-/// Certificate validity period.
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ValidityPeriod {
-    pub start: TAI2004,
-    pub end: TAI2004,
-}
-
-impl ValidityPeriod {
-    /// Check if `self` contains [TAI2004] `instant`.
-    pub fn contains_instant(&self, instant: TAI2004) -> bool {
-        instant >= self.start && instant <= self.end
-    }
-
-    /// Check if `self` contains `other` [ValidityPeriod].
-    pub fn contains(&self, other: &ValidityPeriod) -> bool {
-        self.start <= other.start && self.end >= other.end
-    }
-}
 
 /// Generic container to store a certificate along its [HashedId8].
 #[derive(Debug, Clone, PartialEq)]
@@ -159,7 +138,7 @@ pub enum Certificate {
     /// AT certificate type.
     AuthorizationTicket(AuthorizationTicketCertificate),
     /// EC certificate type.
-    EnrollmentCredential(EnrollmentCredential),
+    EnrollmentCredentialCertificate(EnrollmentCredentialCertificate),
     /* /// TLM certificate type.
     TrustedListManager(CertWrapper<>), */
 }
@@ -298,26 +277,8 @@ pub trait CertificateTrait {
 
     /// Returns the temporal validity period of the certificate.
     fn validity_period(&self) -> ValidityPeriod {
-        use ieee1609_dot2_base_types::Duration as IeeeDuration;
         let tbs = &self.inner().0.to_be_signed;
-
-        // Time in certificate is TAI seconds.
-        let start = TAI2004::from_secs(tbs.validity_period.start.0 .0);
-
-        let validity_duration = match &tbs.validity_period.duration {
-            IeeeDuration::microseconds(us) => Duration::from_micros(us.0.into()),
-            IeeeDuration::milliseconds(ms) => Duration::from_millis(ms.0.into()),
-            IeeeDuration::seconds(s) => Duration::from_secs(s.0.into()),
-            IeeeDuration::minutes(m) => Duration::from_secs(u64::from(m.0) * 60),
-            IeeeDuration::hours(h) => Duration::from_secs(u64::from(h.0) * 3600),
-            IeeeDuration::sixtyHours(sh) => Duration::from_secs(u64::from(sh.0) * 216_000),
-            IeeeDuration::years(y) => Duration::from_secs(u64::from(y.0) * 31_556_952), // One gregorian year is 31556952 seconds.
-        };
-
-        ValidityPeriod {
-            start,
-            end: start + validity_duration,
-        }
+        ValidityPeriod::from(&tbs.validity_period)
     }
 
     /// Canonicalize `certificate`, as defined in IEEE 1609.2 paragraph 6.4.3

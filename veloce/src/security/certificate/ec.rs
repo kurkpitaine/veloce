@@ -11,17 +11,17 @@ use super::{
 
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct EnrollmentCredential {
+pub struct EnrollmentCredentialCertificate {
     /// Raw COER encoded Authorization Ticket.
     raw: Vec<u8>,
     /// Inner certificate.
     inner: EtsiCertificate,
 }
 
-impl EnrollmentCredential {
+impl EnrollmentCredentialCertificate {
     /// Constructs an  from an [EtsiCertificate].
     /// This method verifies if the certificate is valid relative to Enrollment Credential Asn.1 constraints.
-    pub fn from_etsi_cert(cert: EtsiCertificate) -> CertificateResult<EnrollmentCredential> {
+    pub fn from_etsi_cert(cert: EtsiCertificate) -> CertificateResult<EnrollmentCredentialCertificate> {
         Certificate::verify_ieee_constraints(&cert)?;
         Certificate::verify_etsi_constraints(&cert)?;
         Self::verify_constraints(&cert)?;
@@ -32,9 +32,9 @@ impl EnrollmentCredential {
     }
 }
 
-impl ExplicitCertificate for EnrollmentCredential {}
+impl ExplicitCertificate for EnrollmentCredentialCertificate {}
 
-impl CertificateTrait for EnrollmentCredential {
+impl CertificateTrait for EnrollmentCredentialCertificate {
     fn inner(&self) -> &EtsiCertificate {
         &self.inner
     }

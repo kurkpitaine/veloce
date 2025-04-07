@@ -2,7 +2,9 @@ use core::fmt;
 
 use veloce_asn1::{
     defs::{
-        etsi_102941_v221::etsi_ts102941_types_enrolment::{EnrolmentResponseCode, InnerEcResponse},
+        etsi_102941_v221::etsi_ts102941_types_enrolment::{
+            EnrolmentResponseCode, InnerEcRequest, InnerEcResponse,
+        },
         etsi_103097_v211::{
             etsi_ts103097_module::{
                 EtsiTs103097Data, EtsiTs103097DataEncrypted, EtsiTs103097DataEncryptedUnicast,
@@ -147,7 +149,7 @@ impl<T: rasn::Decode + rasn::Encode> Asn1Wrapper<T> {
 
 impl<T> Asn1Wrapper<T>
 where
-    T: rasn::Decode + rasn::Encode,
+    T: Clone + rasn::Decode + rasn::Encode,
     Asn1Wrapper<T>: Asn1WrapperTrait<Wrapped = T>,
 {
     /// Constructs a [Asn1Wrapper] from the raw type.
@@ -173,6 +175,13 @@ where
     /// Get the [Asn1Wrapper] as bytes, encoded as Asn.1 COER.
     pub fn as_bytes(&self) -> Asn1WrapperResult<Vec<u8>> {
         Ok(Self::verify_and_encode(&self.inner)?)
+    }
+
+    /// Get the [Asn1Wrapper] as the raw type, verifying the Asn.1 constraints.
+    pub fn as_raw(&self) -> Asn1WrapperResult<T> {
+        Self::verify_constraints(&self.inner)?;
+
+        Ok(self.inner.clone())
     }
 
     /// Get a reference on the inner wrapped data.
@@ -236,8 +245,9 @@ where
             Ieee1609Dot2Content::encryptedData(ref ed) => {
                 for recipient in &ed.recipients.0 {
                     match recipient {
-                        RecipientInfo::signedDataRecipInfo(_) | RecipientInfo::certRecipInfo(_) => {
-                        }
+                        RecipientInfo::certRecipInfo(_)
+                        | RecipientInfo::pskRecipInfo(_) // Marked as absent in the ASN.1 definition but should be used in PKI communications...
+                        | RecipientInfo::signedDataRecipInfo(_) => {}
                         _ => return Err(Asn1WrapperError::Malformed),
                     }
                 }
@@ -399,6 +409,26 @@ impl Asn1WrapperTrait for Asn1Wrapper<EtsiTs103097DataSignedAndEncryptedUnicast>
                 }
             }
             _ => return Err(Asn1WrapperError::NotEncrypted),
+        }
+
+        Ok(())
+    }
+}
+
+impl Asn1WrapperTrait for Asn1Wrapper<InnerEcRequest> {
+    type Wrapped = InnerEcRequest;
+
+    /// Check `data` is valid according to InnerEcRequest Asn.1 definition.
+    /// This method is necessary as the rasn Asn.1 compiler does not generate
+    /// the validation code for custom parameterized types.
+    #[inline]
+    fn verify_constraints(data: &Self::Wrapped) -> Asn1WrapperResult<()> {
+        if data
+            .requested_subject_attributes
+            .cert_issue_permissions
+            .is_some()
+        {
+            return Err(Asn1WrapperError::Malformed);
         }
 
         Ok(())

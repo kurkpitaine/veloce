@@ -6,5 +6,8 @@
       "examples/pki_client/Cargo.toml",
       "./veloce/Cargo.toml"
    ],
-   "elixirLS.projectDir": "veloce-chemistry"
+   "elixirLS.projectDir": "veloce-chemistry",
+   "cSpell.words": [
+      "cantreachea"
+   ]
 }

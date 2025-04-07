@@ -49,8 +49,9 @@ fn test_create_canonical_key() {
         .into_string()
         .unwrap();
 
-    let config = OpensslBackendConfig {
-        veloce_dir: Some(
+    let config = OpensslBackendConfig::new(
+        "test1234".to_string().into(),
+        Some(
             base_path
                 .path()
                 .join("veloce")
@@ -58,9 +59,7 @@ fn test_create_canonical_key() {
                 .into_string()
                 .unwrap(),
         ),
-        keys_password: "test1234".to_string().into(),
-        ..Default::default()
-    };
+    );
 
     let mut backend = OpensslBackend::new(config).unwrap();
     let _pub_key = backend
@@ -101,11 +100,10 @@ fn test_load_secret_key() {
     key_path.pop();
     let key_path = std::fs::canonicalize(key_path).unwrap();
 
-    let config = OpensslBackendConfig {
-        veloce_dir: Some(key_path.into_os_string().into_string().unwrap()),
-        keys_password: "test1234".to_string().into(),
-        ..Default::default()
-    };
+    let config = OpensslBackendConfig::new(
+        "test1234".to_string().into(),
+        Some(key_path.into_os_string().into_string().unwrap()),
+    );
 
     OpensslBackend::new(config).unwrap();
 }
