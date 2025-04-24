@@ -1,5 +1,7 @@
 pub mod authorization;
+pub mod ectl;
 pub mod enrollment;
+pub mod tlm;
 
 pub struct PkiClientService {
     /// Unique identifier of the local ITS station.

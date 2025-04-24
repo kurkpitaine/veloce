@@ -1,5 +1,6 @@
 pub mod authorization;
 pub mod enrollment;
+pub mod ctl;
 
 use core::fmt;
 
@@ -430,7 +431,7 @@ where
 pub fn sign_with_authorization_key<B, T>(
     message: &mut SignedData<T>,
     algorithm: HashAlgorithm,
-    key_index: u64,
+    key_index: usize,
     backend: &B,
 ) -> SignerResult<()>
 where

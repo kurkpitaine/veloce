@@ -48,6 +48,8 @@ pub enum BackendError {
     UnsupportedOperation,
     /// Data input is invalid, ie: too short.
     InvalidData,
+    /// Authorization ticket secret key not found at provided index.
+    NoKeyAtIndex,
 }
 
 impl fmt::Display for BackendError {
@@ -72,6 +74,12 @@ impl fmt::Display for BackendError {
             BackendError::AlgorithmMismatch => write!(f, "Signature and key type mismatch"),
             BackendError::UnsupportedOperation => write!(f, "Unsupported operation"),
             BackendError::InvalidData => write!(f, "Invalid data"),
+            BackendError::NoKeyAtIndex => {
+                write!(
+                    f,
+                    "Authorization ticket secret key not found at provided index"
+                )
+            }
         }
     }
 }
@@ -89,15 +97,6 @@ pub enum Backend {
 impl Backend {
     #[inline]
     pub(super) fn inner(&self) -> &impl BackendTrait {
-        match self {
-            #[cfg(feature = "security-openssl")]
-            Backend::Openssl(backend) => backend,
-        }
-    }
-
-    #[cfg(feature = "pki")]
-    #[inline]
-    pub(super) fn inner_pki(&self) -> &impl PkiBackendTrait {
         match self {
             #[cfg(feature = "security-openssl")]
             Backend::Openssl(backend) => backend,
@@ -126,6 +125,9 @@ pub trait BackendTrait {
 
     /// Sign the given `data` slice with the current authorization ticket private key.
     fn generate_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature>;
+
+    /// Set the current authorization ticket private key to the one at `index`.
+    fn set_at_key_index(&mut self, index: usize) -> BackendResult<()>;
 
     /// Computes the SHA256 hash for a given `data` slice.
     fn sha256(&self, data: &[u8]) -> [u8; 32];
@@ -198,7 +200,7 @@ pub trait PkiBackendTrait: BackendTrait {
     fn generate_authorization_ticket_keypair(
         &mut self,
         key_type: EcKeyType,
-        id: u64,
+        id: usize,
     ) -> BackendResult<Self::BackendPublicKey>;
 
     /// Generate an EC key pair for a given `key_type`, and return a [KeyPair] containing the
@@ -227,7 +229,7 @@ pub trait PkiBackendTrait: BackendTrait {
     /// Sign the given `data` slice with the authorization private key at the provided `key_index`.
     fn generate_authorization_signature(
         &self,
-        key_index: u64,
+        key_index: usize,
         data: &[u8],
     ) -> BackendResult<EcdsaSignature>;
 

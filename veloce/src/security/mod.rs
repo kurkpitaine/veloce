@@ -50,16 +50,20 @@ pub mod secured_message;
 pub mod service;
 pub mod signature;
 pub mod ssp;
+pub mod storage;
 pub mod trust_chain;
 pub mod trust_store;
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 #[cfg(feature = "security-openssl")]
 pub use backend::openssl::{OpensslBackend, OpensslBackendConfig};
 
+pub use storage::directory::{DirectoryStorage, DirectoryStorageConfig};
+
 pub use backend::Backend as SecurityBackend;
+pub use storage::Storage as SecurityStorage;
 
 pub use certificate::Certificate;
 pub use service::SecurityService;

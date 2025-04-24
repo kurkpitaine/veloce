@@ -5,6 +5,8 @@ use veloce_asn1::{
     prelude::rasn,
 };
 
+use crate::security::backend::BackendTrait;
+
 use super::{
     Certificate, CertificateError, CertificateResult, CertificateTrait, ExplicitCertificate,
 };
@@ -21,7 +23,9 @@ pub struct EnrollmentCredentialCertificate {
 impl EnrollmentCredentialCertificate {
     /// Constructs an  from an [EtsiCertificate].
     /// This method verifies if the certificate is valid relative to Enrollment Credential Asn.1 constraints.
-    pub fn from_etsi_cert(cert: EtsiCertificate) -> CertificateResult<EnrollmentCredentialCertificate> {
+    pub fn from_etsi_cert(
+        cert: EtsiCertificate,
+    ) -> CertificateResult<EnrollmentCredentialCertificate> {
         Certificate::verify_ieee_constraints(&cert)?;
         Certificate::verify_etsi_constraints(&cert)?;
         Self::verify_constraints(&cert)?;
@@ -35,6 +39,18 @@ impl EnrollmentCredentialCertificate {
 impl ExplicitCertificate for EnrollmentCredentialCertificate {}
 
 impl CertificateTrait for EnrollmentCredentialCertificate {
+    type CertificateType = Self;
+
+    fn from_bytes<B>(bytes: &[u8], _backend: &B) -> CertificateResult<Self::CertificateType>
+    where
+        B: BackendTrait + ?Sized,
+    {
+        let raw_cert =
+            rasn::coer::decode::<EtsiCertificate>(bytes).map_err(|_| CertificateError::Asn1)?;
+
+        Self::from_etsi_cert(raw_cert)
+    }
+
     fn inner(&self) -> &EtsiCertificate {
         &self.inner
     }

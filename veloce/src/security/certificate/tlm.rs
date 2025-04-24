@@ -6,10 +6,14 @@ use veloce_asn1::{
     prelude::rasn::{self, types::Integer},
 };
 
-use crate::security::{
-    backend::BackendTrait,
-    permission::AID,
-    ssp::ctl::{CtlSsp, TLM_CTL},
+use crate::{
+    security::{
+        backend::BackendTrait,
+        permission::AID,
+        ssp::ctl::{CtlSsp, TLM_CTL},
+        HashAlgorithm,
+    },
+    time::{Instant, TAI2004},
 };
 
 use super::{
@@ -42,9 +46,61 @@ impl TrustListManagerCertificate {
     }
 }
 
-impl ExplicitCertificate for TrustListManagerCertificate {}
+impl ExplicitCertificate for TrustListManagerCertificate {
+    fn check<F, B, C>(&self, timestamp: Instant, backend: &B, _f: F) -> CertificateResult<bool>
+    where
+        B: BackendTrait + ?Sized,
+        C: ExplicitCertificate,
+        F: FnOnce(crate::security::HashedId8) -> Option<C>,
+    {
+        // Check validity period.
+        if self.validity_period().end <= TAI2004::from_unix_instant(timestamp) {
+            return Err(CertificateError::Expired);
+        }
+
+        // Get signature.
+        let sig = self.signature()?;
+
+        // Get public key.
+        let pubkey = self.public_verification_key()?;
+
+        // Get content to verify.
+        // Certificate has already been canonicalized by Self::from_etsi_certificate().
+        let tbs = self
+            .to_be_signed_bytes()
+            .map_err(|_| CertificateError::Other)?;
+
+        let hash = match sig.hash_algorithm() {
+            HashAlgorithm::SHA256 => [backend.sha256(&tbs), backend.sha256(&[])].concat(),
+            HashAlgorithm::SHA384 => [backend.sha384(&tbs), backend.sha384(&[])].concat(),
+            HashAlgorithm::SM3 => [
+                backend.sm3(&tbs).map_err(CertificateError::Backend)?,
+                backend.sm3(&[]).map_err(CertificateError::Backend)?,
+            ]
+            .concat(),
+        };
+
+        let res = backend
+            .verify_signature(sig, pubkey, &hash)
+            .map_err(CertificateError::Backend)?;
+
+        Ok(res)
+    }
+}
 
 impl CertificateTrait for TrustListManagerCertificate {
+    type CertificateType = Self;
+
+    fn from_bytes<B>(bytes: &[u8], backend: &B) -> CertificateResult<Self::CertificateType>
+    where
+        B: BackendTrait + ?Sized,
+    {
+        let raw_cert =
+            rasn::coer::decode::<EtsiCertificate>(bytes).map_err(|_| CertificateError::Asn1)?;
+
+        Self::from_etsi_cert(raw_cert, backend)
+    }
+
     fn inner(&self) -> &EtsiCertificate {
         &self.inner
     }

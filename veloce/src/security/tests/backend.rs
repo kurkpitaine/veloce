@@ -3,13 +3,9 @@ use openssl::{
     ec::{EcGroup, EcKey},
     nid::Nid,
 };
-use std::path::PathBuf;
 
 use crate::security::{
-    backend::{
-        openssl::{OpensslBackend, OpensslBackendConfig},
-        BackendTrait,
-    },
+    backend::{openssl::OpensslBackend, BackendTrait},
     EccPoint, EcdsaKey, UncompressedEccPoint,
 };
 
@@ -21,47 +17,23 @@ use crate::security::{
 };
 
 #[cfg(feature = "pki")]
-use std::{fs::DirBuilder, os::unix::fs::DirBuilderExt, path::Path};
-
-#[cfg(feature = "pki")]
-use tempfile::tempdir;
-
-#[cfg(feature = "pki")]
-use super::certificate;
+use std::path::Path;
 
 #[cfg(feature = "pki")]
 #[test]
 fn test_create_canonical_key() {
-    let base_path = tempdir().unwrap();
-
-    DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(base_path.path().join("veloce").join("assets"))
-        .unwrap();
+    let (base_path, _temp_dir) = super::create_temp_veloce_dir();
 
     let key_path = base_path
-        .path()
-        .join("veloce")
         .join("assets")
+        .join("private")
         .join("canonical.pem")
         .into_os_string()
         .into_string()
         .unwrap();
 
-    let config = OpensslBackendConfig::new(
-        "test1234".to_string().into(),
-        Some(
-            base_path
-                .path()
-                .join("veloce")
-                .into_os_string()
-                .into_string()
-                .unwrap(),
-        ),
-    );
+    let (_, mut backend) = super::setup_storage_and_crypto(base_path);
 
-    let mut backend = OpensslBackend::new(config).unwrap();
     let _pub_key = backend
         .generate_canonical_keypair(EcKeyType::NistP384r1)
         .unwrap();
@@ -82,7 +54,8 @@ fn test_compress_point() {
         .affine_coordinates(&group, &mut x, &mut y, &mut bn_ctx)
         .unwrap();
 
-    let backend = OpensslBackend::new(Default::default()).unwrap();
+    let (base_path, _temp_dir) = super::create_temp_veloce_dir();
+    let (_, backend) = super::setup_storage_and_crypto(base_path);
 
     let key = EcdsaKey::NistP256r1(EccPoint::Uncompressed(UncompressedEccPoint {
         x: x.to_vec(),
@@ -94,27 +67,25 @@ fn test_compress_point() {
 
 #[test]
 fn test_load_secret_key() {
-    let mut key_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    key_path.pop();
-    key_path.push(file!());
-    key_path.pop();
-    let key_path = std::fs::canonicalize(key_path).unwrap();
+    let base_path = super::get_test_storage_path();
+    let (_, mut backend) = super::setup_storage_and_crypto(base_path);
+    backend.set_at_key_index(0).unwrap();
 
-    let config = OpensslBackendConfig::new(
-        "test1234".to_string().into(),
-        Some(key_path.into_os_string().into_string().unwrap()),
-    );
-
-    OpensslBackend::new(config).unwrap();
+    backend
+        .generate_authorization_signature(0, &[0x00, 0x00, 0x00, 0x00])
+        .unwrap();
 }
 
 #[cfg(feature = "pki")]
 #[test]
 fn derive_key() {
-    let backend = OpensslBackend::new(Default::default()).unwrap();
+    use crate::security::storage::StorageTrait;
 
-    let raw_ea_cert = certificate::load_ea_cert();
-    let ea_cert = EnrollmentAuthorityCertificate::from_etsi_cert(raw_ea_cert.0, &backend).unwrap();
+    let base_path = super::get_test_storage_path();
+    let (storage, backend) = super::setup_storage_and_crypto(base_path);
+
+    let raw_ea_cert = storage.load_ea_certificate().unwrap();
+    let ea_cert = EnrollmentAuthorityCertificate::from_bytes(&raw_ea_cert, &backend).unwrap();
 
     let keypair = backend
         .generate_ephemeral_keypair(EcKeyType::NistP256r1)

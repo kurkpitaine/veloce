@@ -66,6 +66,18 @@ impl<T> SubordinateCertificate<T> {
 impl<T> ExplicitCertificate for SubordinateCertificate<T> {}
 
 impl<T> CertificateTrait for SubordinateCertificate<T> {
+    type CertificateType = Self;
+
+    fn from_bytes<B>(bytes: &[u8], backend: &B) -> CertificateResult<Self::CertificateType>
+    where
+        B: BackendTrait + ?Sized,
+    {
+        let raw_cert =
+            rasn::coer::decode::<EtsiCertificate>(bytes).map_err(|_| CertificateError::Asn1)?;
+
+        Self::from_etsi_cert(raw_cert, backend)
+    }
+
     fn inner(&self) -> &EtsiCertificate {
         &self.inner
     }

@@ -17,7 +17,7 @@ use super::{
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// Error returned by [`TrustStore::set_remote_aa`].
+/// Error returned by [`Store::set_remote_aa`].
 pub struct InexistentChainError;
 
 #[derive(Debug)]

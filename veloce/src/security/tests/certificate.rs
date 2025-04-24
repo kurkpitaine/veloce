@@ -1,3 +1,5 @@
+use std::{path::PathBuf, rc::Rc};
+
 use veloce_asn1::{defs::etsi_103097_v211::etsi_ts103097_module, prelude::rasn};
 
 use crate::{
@@ -8,12 +10,24 @@ use crate::{
             EnrollmentAuthorityCertificate, ExplicitCertificate, RootCertificate,
             TrustListManagerCertificate,
         },
+        DirectoryStorage, DirectoryStorageConfig, OpensslBackendConfig,
     },
     time::Instant,
 };
 
 pub fn openssl_backend() -> OpensslBackend {
-    OpensslBackend::new(Default::default()).unwrap()
+    let mut key_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    key_path.pop();
+    key_path.push(file!());
+    key_path.pop();
+    let key_path = std::fs::canonicalize(key_path).unwrap();
+
+    let storage_config =
+        DirectoryStorageConfig::new(Some(key_path.into_os_string().into_string().unwrap()));
+    let storage = Rc::new(DirectoryStorage::new(storage_config).unwrap());
+
+    let config = OpensslBackendConfig::new("test1234".to_string().into());
+    OpensslBackend::new(config, storage.clone()).unwrap()
 }
 
 pub fn load_root_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
@@ -32,7 +46,7 @@ pub fn load_aa_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
 }
 
 pub fn load_at_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
-    let input_at = include_bytes!("assets/AT.cert");
+    let input_at = include_bytes!("assets/AT_0.cert");
     rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Certificate>(input_at).unwrap()
 }
 
@@ -42,8 +56,8 @@ pub fn load_tlm_cert() -> etsi_ts103097_module::EtsiTs103097Certificate {
 }
 
 pub fn valid_timestamp() -> Instant {
-    // 2024-05-31 - 12h00m00s
-    Instant::from_secs(1717149600)
+    // 2024-05-26 - 00h00m00s
+    Instant::from_secs(1716674400)
 }
 
 #[test]

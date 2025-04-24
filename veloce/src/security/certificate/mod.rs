@@ -139,8 +139,8 @@ pub enum Certificate {
     AuthorizationTicket(AuthorizationTicketCertificate),
     /// EC certificate type.
     EnrollmentCredentialCertificate(EnrollmentCredentialCertificate),
-    /* /// TLM certificate type.
-    TrustedListManager(CertWrapper<>), */
+    /// TLM certificate type.
+    TrustListManager(TrustListManagerCertificate),
 }
 
 impl Certificate {
@@ -259,6 +259,16 @@ impl Certificate {
 }
 
 pub trait CertificateTrait {
+    /// Certificate type, ie: [RootCertificate], [EnrollmentAuthorityCertificate],
+    /// [AuthorizationAuthorityCertificate], [AuthorizationTicketCertificate],
+    /// [EnrollmentCredentialCertificate], [TrustListManagerCertificate]
+    type CertificateType;
+
+    /// Build certificate from bytes, containing Asn.1 COER encoded certificate.
+    fn from_bytes<B>(bytes: &[u8], backend: &B) -> CertificateResult<Self::CertificateType>
+    where
+        B: BackendTrait + ?Sized;
+
     /// Get a reference on the inner certificate.
     fn inner(&self) -> &EtsiCertificate;
 

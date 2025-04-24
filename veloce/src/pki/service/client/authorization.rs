@@ -33,7 +33,7 @@ use super::PkiClientService;
 pub struct AuthorizationRequestParameters {
     /// Storage ID of the requested AT certificate.
     /// Used by the backend for internal key management.
-    pub storage_id: u64,
+    pub storage_id: usize,
     /// Requested validity period of the requested AT certificate.
     pub validity_period: ValidityPeriod,
     /// Requested permissions in the requested AT certificate.

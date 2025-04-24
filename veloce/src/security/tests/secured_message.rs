@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, rc::Rc};
 
 use approx::assert_relative_eq;
 use uom::si::angle::degree;
@@ -6,23 +6,27 @@ use uom::si::angle::degree;
 use crate::{
     common::PotiPosition,
     security::{
-        backend::openssl::{OpensslBackend, OpensslBackendConfig},
+        backend::{
+            openssl::{OpensslBackend, OpensslBackendConfig},
+            BackendTrait,
+        },
         certificate::{
-            AuthorizationAuthorityCertificate, AuthorizationTicketCertificate, ExplicitCertificate,
-            RootCertificate,
+            AuthorizationAuthorityCertificate, AuthorizationTicketCertificate, CertificateTrait,
+            ExplicitCertificate, RootCertificate,
         },
         permission::Permission,
         secured_message::{SecuredMessage, SignerIdentifier},
         service::SecurityService,
         ssp::{cam::CamSsp, denm::DenmSsp},
+        storage::StorageTrait,
         trust_chain::TrustChain,
-        SecurityBackend,
+        DirectoryStorage, DirectoryStorageConfig, SecurityBackend,
     },
     time::Duration,
     types::{tenth_of_microdegree, Latitude, Longitude},
 };
 
-use super::certificate::{self, valid_timestamp};
+use super::certificate::valid_timestamp;
 
 const SECURITY_ENVELOPE: [u8; 313] = [
     0x03, 0x81, 0x00, 0x40, 0x03, 0x80, 0x42, 0x20, 0x50, 0x02, 0x00, 0x00, 0x1e, 0x01, 0x00, 0x3c,
@@ -62,20 +66,21 @@ fn setup_security_service() -> SecurityService {
     key_path.pop();
     let key_path = std::fs::canonicalize(key_path).unwrap();
 
-    let config = OpensslBackendConfig::new(
-        "test1234".to_string().into(),
-        Some(key_path.into_os_string().into_string().unwrap()),
-    );
+    let storage_config =
+        DirectoryStorageConfig::new(Some(key_path.into_os_string().into_string().unwrap()));
+    let storage = Rc::new(DirectoryStorage::new(storage_config).unwrap());
 
-    let backend = OpensslBackend::new(config).unwrap();
-    let raw_root_cert = certificate::load_root_cert();
-    let raw_aa_cert = certificate::load_aa_cert();
-    let raw_at_cert = certificate::load_at_cert();
+    let config = OpensslBackendConfig::new("test1234".to_string().into());
+    let mut backend = OpensslBackend::new(config, storage.clone()).unwrap();
+    backend.set_at_key_index(0).unwrap();
 
-    let root_cert = RootCertificate::from_etsi_cert(raw_root_cert.0, &backend).unwrap();
-    let aa_cert =
-        AuthorizationAuthorityCertificate::from_etsi_cert(raw_aa_cert.0, &backend).unwrap();
-    let at_cert = AuthorizationTicketCertificate::from_etsi_cert(raw_at_cert.0, &backend).unwrap();
+    let raw_root_cert = storage.load_root_certificate().unwrap();
+    let raw_aa_cert = storage.load_aa_certificate().unwrap();
+    let raw_at_cert = storage.load_at_certificate(0).unwrap();
+
+    let root_cert = RootCertificate::from_bytes(&raw_root_cert, &backend).unwrap();
+    let aa_cert = AuthorizationAuthorityCertificate::from_bytes(&raw_aa_cert, &backend).unwrap();
+    let at_cert = AuthorizationTicketCertificate::from_bytes(&raw_at_cert, &backend).unwrap();
 
     let mut own_chain = TrustChain::new(root_cert.into_with_hash_container(&backend).unwrap());
     own_chain.set_aa_cert(aa_cert.into_with_hash_container(&backend).unwrap());
