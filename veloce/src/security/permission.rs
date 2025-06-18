@@ -334,6 +334,7 @@ impl<'a> TryFrom<&'a Etsi102941PsidSsp> for Permission {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<Etsi102941PsidSsp> for Permission {
     fn into(self) -> Etsi102941PsidSsp {
         let psid = Psid(self.aid().into());

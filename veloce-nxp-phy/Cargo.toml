@@ -9,9 +9,13 @@ license = "GPL-3.0-only OR LicenseRef-Veloce-Software-1.0"
 
 [dependencies]
 rusb = "0.9"
-veloce = { path = "../veloce", features = ["packetmeta-power", "medium-ieee80211p"] }
+veloce = { path = "../veloce", features = [
+   "packetmeta-power",
+   "medium-ieee80211p",
+] }
 heapless = { git = "https://github.com/rust-embedded/heapless.git", branch = "main" }
 log = { version = "0.4", default-features = false }
+mio = "1.0"
 
 [dev-dependencies]
 clap = { version = "4.5", features = ["derive"] }

@@ -6,7 +6,7 @@ use alloc::collections::vec_deque::VecDeque;
 #[cfg(feature = "std")]
 use std::collections::VecDeque;
 
-use heapless::HistoryBuffer;
+use heapless::HistoryBuf;
 
 use uom::si::{
     angle::degree,
@@ -133,7 +133,7 @@ impl Poti {
     }
 
     /// Query whether the [Fix] confidence values are available.
-    /// See C2C Consortium Vehicle C-ITS station profile, requirement VRS_BSP_535.
+    /// See C2C Consortium Vehicle C-ITS station profile, requirement RS_BSP_535.
     pub fn confidence_available(&self) -> bool {
         self.fix.confidence_available()
     }
@@ -141,6 +141,11 @@ impl Poti {
     /// Get a reference on the current [PathHistory] points.
     pub fn path_history(&self) -> &PositionHistory {
         self.history.points()
+    }
+
+    /// Clears the [PathHistory] points.
+    pub fn clear_path_history(&mut self) {
+        self.history.clear();
     }
 
     fn push_fix_inner(&mut self, mut fix: Fix) -> Result<Fix, Error> {
@@ -209,7 +214,7 @@ impl core::fmt::Display for FixError {
 }
 
 /// A Poti GNSS fix.
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Fix {
     /// Fix mode.
@@ -257,13 +262,13 @@ impl Fix {
 
     /// Query whether self contains a stationary fix.
     /// "Does not move" is defined as when the speed is below 8cm/s.
-    /// See C2C Consortium Vehicle C-ITS station profile, requirement VRS_BSP_511.
-    /// Returns `Err(FixError::NoHeading)` if no heading is available.
+    /// See C2C Consortium Vehicle C-ITS station profile, requirement RS_BSP_511.
+    /// Returns `Err(FixError::NoSpeed)` if no speed is available.
     pub fn is_stationary(&self) -> Result<bool, FixError> {
         self.motion
             .speed
             .map(|s| s.get::<centimeter_per_second>() < 8.0)
-            .ok_or(FixError::NoHeading)
+            .ok_or(FixError::NoSpeed)
     }
 
     /// Apply the antenna offset to the given `fix`.
@@ -312,7 +317,7 @@ impl Fix {
     }
 
     /// Query whether the [Fix] confidence values are available.
-    /// See C2C Consortium Vehicle C-ITS station profile, requirement VRS_BSP_535.
+    /// See C2C Consortium Vehicle C-ITS station profile, requirement RS_BSP_535.
     pub fn confidence_available(&self) -> bool {
         self.confidence
             .position
@@ -348,7 +353,7 @@ pub enum Mode {
 
 /// Position category dimensions.
 /// Describes a position, as 3D point (x,y,z) in a WGS84 coordinates system.
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Position {
     /// Latitude of the position.
@@ -388,7 +393,7 @@ impl Position {
     }
 
     #[cfg(feature = "proto-security")]
-    /// Get the [Position] as a [ThreeDLocation] for use in security..
+    /// Get the [Position] as a [ThreeDLocation] for use in security.
     pub fn as_3d_location(&self) -> ThreeDLocation {
         use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2_base_types::{
             Elevation, Latitude, Longitude, NinetyDegreeInt, OneEightyDegreeInt, ThreeDLocation,
@@ -428,7 +433,7 @@ impl Position {
 
 /// Motion category dimensions.
 /// Describes the motion at a given position.
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Motion {
     /// Speed value at the position.
@@ -460,7 +465,7 @@ impl Motion {
 }
 
 /// Confidence category dimensions.
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Confidence {
     /// Confidence of the position.
@@ -521,7 +526,7 @@ impl Confidence {
 
 /// Horizontal position confidence.
 /// Describes the confidence ellipse of a `position`.
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PositionConfidence {
     /// Semi major axis confidence.
@@ -668,7 +673,7 @@ impl PositionHistory {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PathHistory {
     /// Vehicle path GNSS data points samples.
-    samples: HistoryBuffer<PathPoint, 3>,
+    samples: HistoryBuf<PathPoint, 3>,
     /// Concise points, ie: history points.
     concise_points: PositionHistory,
 }
@@ -677,9 +682,15 @@ impl PathHistory {
     /// Create a new [PathHistory].
     pub const fn new() -> Self {
         Self {
-            samples: HistoryBuffer::new(),
+            samples: HistoryBuf::new(),
             concise_points: PositionHistory(VecDeque::new()),
         }
+    }
+
+    /// Clear the [PathHistory].
+    pub fn clear(&mut self) {
+        self.samples.clear();
+        self.concise_points.0.clear();
     }
 
     /// Push a new [PathPoint] into the history.
@@ -692,7 +703,7 @@ impl PathHistory {
         }
 
         self.update_concise_points().ok();
-        self.trucate_concise_points();
+        self.truncate_concise_points();
     }
 
     /// Get a reference on the current [PathHistory] points.
@@ -750,7 +761,7 @@ impl PathHistory {
         Ok(())
     }
 
-    fn trucate_concise_points(&mut self) {
+    fn truncate_concise_points(&mut self) {
         if self.concise_points.0.len() > 2 {
             let mut distance = Length::new::<meter>(0.0);
             let mut points: VecDeque<PathPoint> = self

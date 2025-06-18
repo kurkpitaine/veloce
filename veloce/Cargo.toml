@@ -3,13 +3,12 @@ name = "veloce"
 version = "0.1.0"
 authors = ["Veloce developers <veloce@ferroxyde.com>"]
 edition = "2021"
-description = "A V2x stack for embedded devices"
+description = "A V2x stack library for embedded devices"
 license = "GPL-3.0-only OR LicenseRef-Veloce-Software-1.0"
 
 [dependencies]
 byteorder = "1.5"
 defmt = { version = "0.3", optional = true, features = ["alloc"] }
-env_logger = "0.11"
 heapless = { git = "https://github.com/rust-embedded/heapless.git", branch = "main" }
 libc = { version = "0.2", optional = true }
 log = { version = "0.4", default-features = false, optional = true }
@@ -22,6 +21,14 @@ openssl-sys = { version = "0.9", optional = true, features = ["vendored"] }
 secrecy = { version = "0.10", optional = true }
 directories = { version = "6.0.0", optional = true }
 regex = { version = "1.11.1", optional = true }
+mio = { version = "1.0", optional = true, features = [
+   "os-ext",
+   "os-poll",
+   "net",
+] }
+chrono = { version = "0.4.41", default-features = false, features = ["alloc"] }
+toml = { version = "0.8", optional = true }
+serde = { version = "1.0", optional = true, features = ["derive"] }
 
 [dev-dependencies]
 approx = "0.5"
@@ -31,7 +38,7 @@ tempfile = "3.12"
 thread-priority = "1.1.0"
 
 [features]
-std = ["managed/std"]
+std = ["managed/std", "chrono/std"]
 defmt = ["dep:defmt", "heapless/defmt"]
 asn1 = ["dep:veloce-asn1"]
 ipc = ["dep:veloce-ipc"]
@@ -43,8 +50,8 @@ pki = []
 "medium-ieee80211p" = []
 "medium-pc5" = []
 
-"phy-udp" = ["std"]
-"phy-raw_socket" = ["std", "dep:libc"]
+"phy-udp" = ["std", "dep:mio"]
+"phy-raw_socket" = ["std", "dep:libc", "dep:mio"]
 "phy-tuntap_interface" = ["std", "dep:libc", "medium-ethernet"]
 
 "proto-geonet" = []
@@ -67,12 +74,19 @@ pki = []
 "packetmeta-id" = []
 "packetmeta-power" = []
 
-"security-openssl" = [
+"proto-security-storage-directory" = [
+   "std",
+   "proto-security",
+   "dep:directories",
+   "dep:serde",
+   "dep:toml",
+]
+
+"security-backend-openssl" = [
    "std",
    "dep:openssl",
    "dep:openssl-sys",
    "dep:secrecy",
-   "dep:directories",
    "dep:regex",
 ]
 
@@ -91,6 +105,7 @@ default = [
    "phy-raw_socket",
    "proto-geonet",
    "proto-security",
+   "proto-security-storage-directory",
    "proto-btp",
    "socket",
    "socket-geonet",
@@ -100,7 +115,7 @@ default = [
    "socket-denm",
    "packetmeta-id",
    "packetmeta-power",
-   "security-openssl",
+   "security-backend-openssl",
    "async",
    "conformance",
 ]

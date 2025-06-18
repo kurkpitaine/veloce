@@ -12,7 +12,6 @@ use veloce::socket;
 use veloce::storage::PacketBuffer;
 use veloce::time::Instant;
 use veloce::types::{degree, Latitude, Longitude, Pseudonym};
-use veloce::utils;
 use veloce::wire::{EthernetAddress, StationType};
 
 use std::os::unix::io::AsRawFd;
@@ -30,7 +29,6 @@ fn main() {
     assert!(set_current_thread_priority(ThreadPriority::Max).is_ok());
 
     let args = Arguments::parse();
-    utils::setup_logging(args.log_level.as_str());
 
     let ll_addr = mac_address::mac_address_by_name(args.dev.as_str())
         .unwrap()

@@ -1,6 +1,5 @@
 use crate::{
     security::{
-        backend::BackendTrait,
         certificate::{
             AuthorizationTicketCertificate, CertificateError, CertificateTrait, ExplicitCertificate,
         },
@@ -59,14 +58,9 @@ impl SecurityService {
 
         if aid == AID::CA {
             // Check if our AT certificate is requested.
-            let at_requested = self
-                .store
-                .own_chain()
-                .at_cert()
-                .as_ref()
-                .map_or(false, |at| {
-                    p2p_requested_certs.contains(&at.hashed_id8().into())
-                });
+            let at_requested = self.store.own_chain().at_cert().as_ref().is_some_and(|at| {
+                p2p_requested_certs.contains(&at.at_container().hashed_id8().into())
+            });
 
             // Check if our AA certificate is requested.
             let aa_requested = self
@@ -74,9 +68,7 @@ impl SecurityService {
                 .own_chain()
                 .aa_cert()
                 .as_ref()
-                .map_or(false, |aa| {
-                    p2p_requested_certs.contains(&aa.hashed_id8().into())
-                });
+                .is_some_and(|aa| p2p_requested_certs.contains(&aa.hashed_id8().into()));
 
             if at_requested {
                 // Per ETSI TS 103 097 v2.1.1, paragraph 7.1.1, we shall

@@ -6,6 +6,8 @@ use std::{
     rc::Rc,
 };
 
+use mio::{event::Source, unix::SourceFd};
+
 use crate::phy::{self, Device, DeviceCapabilities, Medium};
 use crate::time::Instant;
 
@@ -39,11 +41,13 @@ impl<A: ToSocketAddrs> UdpSocket<A> {
 }
 
 impl<A: ToSocketAddrs + Clone> Device for UdpSocket<A> {
-    type RxToken<'a> = RxToken
+    type RxToken<'a>
+        = RxToken
     where
         Self: 'a;
 
-    type TxToken<'a> = TxToken<A>
+    type TxToken<'a>
+        = TxToken<A>
     where
         Self: 'a;
 
@@ -118,5 +122,29 @@ impl<A: ToSocketAddrs> phy::TxToken for TxToken<A> {
             Err(err) => panic!("{}", err),
         }
         result
+    }
+}
+
+impl<A: ToSocketAddrs> Source for UdpSocket<A> {
+    fn register(
+        &mut self,
+        registry: &mio::Registry,
+        token: mio::Token,
+        interests: mio::Interest,
+    ) -> io::Result<()> {
+        SourceFd(&self.as_raw_fd()).register(registry, token, interests)
+    }
+
+    fn reregister(
+        &mut self,
+        registry: &mio::Registry,
+        token: mio::Token,
+        interests: mio::Interest,
+    ) -> io::Result<()> {
+        SourceFd(&self.as_raw_fd()).reregister(registry, token, interests)
+    }
+
+    fn deregister(&mut self, registry: &mio::Registry) -> io::Result<()> {
+        SourceFd(&self.as_raw_fd()).deregister(registry)
     }
 }

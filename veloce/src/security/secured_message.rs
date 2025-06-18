@@ -31,9 +31,10 @@ use super::signature::{EcdsaSignature, EcdsaSignatureError};
 
 pub type SecuredMessageResult<T> = core::result::Result<T, SecuredMessageError>;
 
+/// Secured message signer identifier method. See [SecuredMessage::signer_identifier].
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// Secured message signer identifier method. See [SecuredMessage::signer_identifier].
+#[allow(clippy::large_enum_variant)]
 pub enum SignerIdentifier {
     /// Signer identifier is a certificate digest. Frequently used in CAM messages to
     /// shrink their size over the air.

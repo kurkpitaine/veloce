@@ -16,6 +16,7 @@ pub enum IpcError {
 }
 
 /// IpcDispatcher interfaces the sockets with the IPC requests.
+#[derive(Debug)]
 pub struct IpcDispatcher {
     /// DENM socket handle.
     pub denm_socket_handle: SocketHandle,

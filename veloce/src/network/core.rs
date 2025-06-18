@@ -7,19 +7,35 @@ use uom::si::velocity::meter_per_second;
 use crate::common::geo_area::GeoPosition;
 use crate::common::{Poti, PotiError, PotiFix, PotiPositionHistory};
 use crate::config;
+use crate::iface::Interface;
 use crate::rand::Rand;
-use crate::time::{Instant, TAI2004};
+use crate::time::{Duration, Instant, TAI2004};
 use crate::types::{degree, kilometer_per_hour, Heading, Latitude, Longitude, Pseudonym, Speed};
 use crate::wire::{
     EthernetAddress, GnAddress, LongPositionVectorRepr as LongPositionVector, StationType,
 };
 
 #[cfg(feature = "proto-security")]
-use crate::security::{SecurityBackend, SecurityService, TrustChain};
+use crate::security::{
+    privacy::PrivacyStrategy, SecurityBackend, SecurityService, SecurityServicePollEvent,
+    TrustChain,
+};
+
+/// Core module poll event.
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PollEvent {
+    /// No event.
+    None,
+    /// Security service has emitted an event.
+    #[cfg(feature = "proto-security")]
+    SecurityService(SecurityServicePollEvent),
+}
 
 /// Geonetworking local address configuration mode. If Geonetworking security is enabled,
 /// configuration mode will be forced to Anonymous mode.
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AddrConfigMode {
     /// Geonetworking address is automatically generated from a random seed.
     Auto,
@@ -31,12 +47,18 @@ pub enum AddrConfigMode {
 
 #[cfg(feature = "proto-security")]
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct SecurityConfig {
+    /// Security backend.
     pub security_backend: SecurityBackend,
+    /// Own trust chain of the local ITS station.
     pub own_trust_chain: TrustChain,
+    /// Privacy strategy.
+    pub privacy_strategy: PrivacyStrategy,
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Config {
     /// Random seed.
     /// The seed doesn't have to be cryptographically secure.
@@ -106,9 +128,9 @@ impl Core {
         let mut rand = Rand::new(config.random_seed);
 
         #[cfg(feature = "proto-security")]
-        let security = config
-            .security
-            .map(|s| SecurityService::new(s.own_trust_chain, s.security_backend));
+        let security = config.security.map(|s| {
+            SecurityService::new(s.own_trust_chain, s.security_backend, s.privacy_strategy)
+        });
 
         #[cfg(feature = "proto-security")]
         let (address, addr_auto_mode) = match (config.addr_config_mode, &security) {
@@ -201,7 +223,7 @@ impl Core {
     /// Performs the Duplicate Address Detection algorithm specified in
     /// ETSI TS 103 836-4-1 V2.1.1 chapter 10.2.1.5.
     /// Changes the local Geonetworking address mac address if duplicate.
-    /// Returns an option containing the new mac address part if the address is duplicate.
+    /// Returns an option containing the mac address part of the new address if duplicate.
     pub fn duplicate_address_detection(
         &mut self,
         sender_addr: EthernetAddress,
@@ -268,9 +290,9 @@ impl Core {
     }
 
     /// Set the position of the local ITS Station.
-    pub fn set_position(&mut self, fix: PotiFix) -> Result<(), PotiError> {
+    pub fn set_position(&mut self, fix: PotiFix, timestamp: Instant) -> Result<(), PotiError> {
         self.poti.push_fix(fix).map(|fix| {
-            self.ego_position_vector.timestamp = TAI2004::now().into();
+            self.ego_position_vector.timestamp = TAI2004::from_unix_instant(timestamp).into();
             self.ego_position_vector.latitude = fix
                 .position
                 .latitude
@@ -295,7 +317,65 @@ impl Core {
             } else {
                 self.ego_position_vector.is_accurate = false;
             }
+
+            // Notify the security service about the new position, if any.
+            if let Some(s) = &mut self.security {
+                s.notify_position(fix, timestamp);
+            }
         })
+    }
+
+    /// Return an _advisory wait time_ for calling [poll] the next time.
+    pub fn poll_delay(&self, timestamp: Instant) -> Option<Duration> {
+        #[cfg(feature = "proto-security")]
+        let res = self.security.as_ref().and_then(|s| match s.poll_at() {
+            Some(poll_at) if timestamp < poll_at => Some(poll_at - timestamp),
+            Some(_) => Some(Duration::ZERO),
+            _ => None,
+        });
+
+        #[cfg(not(feature = "proto-security"))]
+        let res = None;
+
+        res
+    }
+
+    /// Poll the Core module for internal processing.
+    pub fn poll(&mut self, iface: &mut Interface, timestamp: Instant) -> PollEvent {
+        #[cfg(feature = "proto-security")]
+        if let Some(s) = &mut self.security {
+            s.poll(timestamp)
+                .map(|sec_evt| {
+                    match sec_evt {
+                        SecurityServicePollEvent::PrivacyATCertificateRotation(_, h)
+                        | SecurityServicePollEvent::ATCertificateExpiration(_, h) => {
+                            // Change the pseudonym to the new certificate.
+                            self.pseudonym = h.into_pseudonym();
+
+                            // Same for the hardware address.
+                            let eth_addr = h.into_ethernet_address();
+                            self.ego_position_vector.address.set_mac_addr(eth_addr);
+                            iface
+                                .inner
+                                .set_hardware_addr(eth_addr.into_hardware_address());
+
+                            // Car 2 Car Vehicle C-ITS station profile, requirement RS_BSP_182.
+                            // Set sequence number to 0.
+                            iface.inner.reset_sequence_number();
+                            // Clear the path history.
+                            self.poti.clear_path_history();
+
+                            // Sync elections statistics.
+                            // s.at_certs_stats()
+
+                            PollEvent::SecurityService(sec_evt)
+                        }
+                    }
+                })
+                .unwrap_or(PollEvent::None)
+        } else {
+            PollEvent::None
+        }
     }
 }
 

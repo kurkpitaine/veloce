@@ -192,7 +192,7 @@ impl<I> SignedData<I> {
         let signed_data = EtsiSignedData::new(
             HashAlgorithm::sha256,
             tbs_data,
-            SignerIdentifier::Digest(HashedId8::from_u64(0).into()).into(),
+            SignerIdentifier::Digest(HashedId8::from_u64(0)).into(),
             Signature::ecdsaNistP256Signature(EcdsaP256Signature::new(
                 EccP256CurvePoint::fill(()),
                 FixedOctetString::new([0; 32]),

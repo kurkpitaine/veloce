@@ -1,0 +1,222 @@
+# Veloce basic configuration file
+
+# Top level options
+
+# Logging verbosity. Possible values are "error", "warn", "info", "debug" and
+# "trace".
+log_level = "trace"
+
+# Path to the unix socket file used to send commands to Veloce
+# default value points to "veloceCommand.sock" file in the /var/run directory.
+# command_socket = "/var/run/veloceCommand.sock"
+
+# PID file is a file containing the PID of the main process of Veloce.
+# It can be helpful to help systemd or any other service system to keep track
+# of the main process. PID file is not created unless this option
+# is set or if VELOCE_PID_FILE_PATH environment variable was defined at build time.
+# pid_file_path = "/var/run/veloce.pid"
+
+# IPC publisher port to bind to. Clients connecting to this port will be able
+# to be notified or reception of v2x messages.
+# ipc_publisher_port = 45556
+
+# IPC replier port to bind to. Clients connecting to this port will be able
+# to send requests to Veloce, for example to trigger/update/cancel a DENM.
+# ipc_replier_port = 45557
+
+# Network interface type where to send and receive packets.
+# Supported values are "nxp", "ethernet", "tuntap" and "udp".
+phy = "ethernet"
+
+
+# Geonetworking configuration
+[geonet]
+
+# Link layer (MAC) address of the Geonetworking interface, when not running with security activated.
+# Ignored if security is enabled.
+# Expected format is "xx:xx:xx:xx:xx:xx", in hexadecimal.
+# Default value is:
+#  - a randomly generated value if security is disabled
+#  - derived from AT certificate if security is enabled
+ll_address = "00:00:00:00:00:00"
+
+# Pseudonym, aka Station Id, when not running with security activated.
+# Ignored if security is enabled.
+# Default value is:
+#  - a randomly generated value if security is disabled
+# - derived from AT certificate if security is enabled
+pseudonym = 29270
+
+# Station type of this v2x device. Default value is "unknown".
+station_type = "passenger_car"
+
+
+# Security configuration
+[security]
+# Security master switch. Default is false.
+enable = true
+
+# Privacy strategy, aka certificate rotation strategy.
+# Supported values are "no", "threshold" and "c2c".
+# Default is "no", ie: certificate will never be rotated.
+# "threshold" to change certificate based on a maximum number of signatures.
+# "c2c" to change certificate based on the Car 2 Car Consortium Vehicle C-ITS station profile algorithm.
+privacy = "c2c"
+
+# Threshold privacy strategy threshold value.
+# When the number of signatures with an AT reaches the threshold, certificate rotation is triggered.
+# privacy_threshold = 2_000_000
+
+# Canonical identifier. Default is empty string.
+canonical_identifier = "BZH29ABCDEF"
+
+permissions = [
+   { type = "geonet" },
+   { type = "cam", version = 1, permissions = [
+      "SAFETY_CAR",
+      "EMERGENCY",
+      "RESCUE",
+      "ROADWORK",
+      "DANGEROUS_GOODS",
+      "SPECIAL_TRANSPORT",
+      "PUBLIC_TRANSPORT",
+      "TOLLING_ZONE",
+      "SPEED_LIMIT",
+      "NO_TRUCKS",
+      "NO_PASSING",
+      "FREE_CROSSING_REQ",
+      "RIGHT_OF_WAY_REQ",
+      "CLOSED_LANES"
+   ] },
+   { type = "denm", version = 1, permissions = [
+      "HUMAN_ON_ROAD",
+      "ANIMAL_ON_ROAD",
+      "OBSTACLE_ON_ROAD",
+      "SURFACE_COND",
+      "ADHESION",
+      "ROADWORKS",
+      "ACCIDENT",
+      "TRAFFIC_COND",
+       "VEHICLE_BREAKDOWN",
+      "END_OF_QUEUE",
+      "SLOW_VEHICLE",
+      "PRECIPITATION",
+      "VISIBILITY",
+      "EXTREME_WEATHER_COND",
+      "RESCUE_AND_RECOVERY",
+      "WRONG_WAY_DRIVING",
+      "DANGEROUS_SITUATION",
+      "SIGNAL_VIOLATION",
+      "COLLISION_RISK",
+      "DANGEROUS_CURVE",
+      "EMERGENCY_VEHICLE_APPROACHING",
+      "STATIONARY_VEHICLE",
+      "HUMAN_PROBLEM",
+      "POST_CRASH",
+      "RAILWAY_LEVEL_CROSSING",
+      "PUBLIC_TRANSPORT_VEHICLE_APPROACHING",
+      "AQUAPLANING",
+      "IMPASSABILITY",
+   ] },
+]
+
+# Root certificate identifier in ECTL. Default is empty string.
+# root_cert_id = ""
+
+# European C-ITS Point Of Contact URL. Default is "https://cpoc.jrc.ec.europa.eu/L0/".
+cpoc_url = "https://cpoc.jrc.ec.europa.eu/L0/"
+
+# Enrollment Authority URL. Default is empty string.
+# ea_url = ""
+
+# Authentication Authority URL. Default is empty string.
+# aa_url = ""
+
+# Request timeout in seconds. Default is 5 seconds.
+# timeout = 5
+
+# Secure storage path. Will use a .veloce directory in the
+# current user's home directory if not set.
+# storage_path = "/tmp/veloce"
+
+# Private keys secret. Default is empty (insecure) string
+# One should set this value to an output from a password generator.
+secret = "test1234"
+
+# GNSS positioning source configuration
+[gnss]
+# Service Specific Permissions (SSP) to include into certificates requests.
+# GNSS client driver mode. Either "fixed", "gpsd" or "replay".
+# Default is "gpsd".
+# Use "replay" to replay previously recorded GPS positions in `replay_file`.
+# Use "fixed" to use a fixed position with `latitude`, `longitude` and `altitude`
+# values below.
+mode = "replay"
+
+# GPSD server address and port. Default is "127.0.0.1:2947".
+gpsd_address = "127.0.0.1:2947"
+
+# Path of the replay file containing NMEA sentences.
+replay_file = "assets/replay.nmea"
+
+# Latitude in degrees of the fixed position. Default is 0.0°
+# fixed_position_latitude = 0.0
+
+# Longitude in degrees of the fixed position. Default is 0.0°
+# fixed_position_longitude = 0.0
+
+# Altitude in meters of the fixed position. Default is 0.0m
+# fixed_position_altitude = 0.0
+
+
+# NXP PHY driver configuration
+[nxp_phy]
+# Mode of the NXP driver, either "usb" or "llc".
+# Default is "llc"
+mode = "usb"
+
+# The name of the interface to use, generally cw-llc0.
+# For SAF5100, this will always be cw-llc or cw-llc0 depending on the driver version.
+# For SAF5400, in a single radio configuration: cw-llc0. In a dual radio configuration:
+# cw-llc0 or cw-llc1.
+# interface_name = "cw-llc0"
+
+# The name of the radio to use, either "A" or "B".
+# SAF5100 supports "A" only or "A" and "B".
+# SAF5400 supports "A" only. When paired with a second radio, it supports "A" and "B",
+# with the driver automatically opening the second radio interface.
+# radio = "A"
+
+# Logical channel slot to use on the radio. "0" or "1". NXP chips support channel switching on
+# the same radio, going from 0 to 1, then back to 0 every 50ms. We don't support this and
+# stick transmitting and receiving on the same `channel`.
+# slot = 0
+
+# Center frequency of the radio, using the WLAN channel identifier. We only support 10MHz channels.
+# Accepted values are: 172, 174, 176, 178, 180, 182, 184.
+# wireless_channel = 180
+
+# Default transmit power in dBm. Minimum is -10dBm and maximum is 26dBm. Values outside this range
+# are not supported by the NXP chips and will be clamped to the minimum or maximum value by the radio.
+# tx_power = 23
+
+
+# Ethernet PHY interface configuration
+[ethernet_phy]
+# Name of the interface on which the Ethernet PHY is connected.
+name = "eth0"
+
+
+# UDP PHY interface configuration
+[udp_phy]
+# Local UDP IP address + port to bind to.
+# local_addr = "127.0.0.1:50000"
+
+# Peer UDP IP address + port to send to.
+# peer_addr = "192.168.1.1:50001"
+
+
+# TunTap interface configuration. Only available on Linux or Android.
+[tuntap_phy]
+# Name of the interface on which the TunTap interface is connected.
+# name = "tun0"

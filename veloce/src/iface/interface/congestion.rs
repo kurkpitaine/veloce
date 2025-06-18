@@ -1,5 +1,6 @@
 use crate::{
-    iface::congestion::CongestionError,
+    config::{self, GnAreaForwardingAlgorithm, GnNonAreaForwardingAlgorithm},
+    iface::{congestion::CongestionError, location_table::LocationTable},
     network::GnCore,
     phy::{ChannelBusyRatio, Device, Medium, TxToken},
     time::{Duration, Instant},
@@ -92,24 +93,26 @@ impl Interface {
             return false;
         } */
 
-        // Find the queue with the smallest delay.
-        let queue_opt = trc
-            .queues
-            .iter_mut()
-            .filter(|e| !e.1.is_empty())
-            .map(|e| (e.1, trc.controller.inner().tx_allowed_at(Some(*e.0))))
-            .min_by_key(|k| k.1);
+        let rc = loop {
+            // Find the queue with the smallest delay.
+            let queue_opt = trc
+                .queues
+                .iter_mut()
+                .filter(|e| !e.1.is_empty())
+                .map(|e| (e.1, trc.controller.inner().tx_allowed_at(Some(*e.0))))
+                .min_by_key(|k| k.1);
 
-        let Some((q, _)) = queue_opt else {
-            return false;
-        };
+            let Some((q, _)) = queue_opt else {
+                // Nothing to transmit. If we get here, this means trc.egress_at has some value.
+                // Set it to None to avoid rescheduling for egress with empty queues.
+                trc.egress_at = None;
+                return false;
+            };
 
-        let rc = q
-            .dequeue_one(|node| {
-                let tx_token = device.transmit(core.now).ok_or_else(|| {
-                    net_debug!("failed to transmit DCC buffered packet: device exhausted");
-                    CongestionError::Exhausted
-                })?;
+            let res = q.dequeue_one(|node| {
+                let tx_token = device
+                    .transmit(core.now)
+                    .ok_or(CongestionError::Exhausted)?;
 
                 let dst_hw_addr = node.metadata().dst_hw_addr;
                 let gn_repr = node.metadata().packet.to_owned();
@@ -117,23 +120,46 @@ impl Interface {
 
                 let gn_pkt = GeonetPacket::new(gn_repr, Some(payload));
 
+                // ETSI TS 103 836-4-2 V2.1.1 annex C.2: If CBF algorithm is used,
+                // check if packet is a duplicate and drop it if so.
+                if (config::GN_AREA_FORWARDING_ALGORITHM == GnAreaForwardingAlgorithm::Cbf
+                    || config::GN_NON_AREA_FORWARDING_ALGORITHM
+                        == GnNonAreaForwardingAlgorithm::Cbf)
+                    && Self::cbf_duplication_check(
+                        gn_pkt.repr().inner(),
+                        &self.inner.location_table,
+                    )
+                {
+                    // Drop packet.
+                    return Err(CongestionError::CbfDuplicate);
+                }
+
                 self.inner
                     .dispatch_congestion_control(tx_token, core, dst_hw_addr, gn_pkt)
-            })
-            .is_some_and(|r| {
-                match r {
-                    Ok(total_len) => {
-                        // G5 bandwidth is 6 Mbps.
-                        let bytes_per_usec: f64 = 6.144 / 8.0;
-                        let tx_duration_usec = bytes_per_usec * total_len as f64;
-                        trc.controller
-                            .inner_mut()
-                            .notify_tx(core.now, Duration::from_micros(tx_duration_usec as u64));
-                        true
-                    }
-                    Err(_) => false,
-                }
             });
+
+            match res {
+                Some(Ok(l)) => break Some(l),
+                Some(Err(CongestionError::CbfDuplicate)) => {
+                    net_debug!("skipping DCC buffered packet: duplicate packet");
+                    continue;
+                }
+                Some(Err(CongestionError::Exhausted)) => {
+                    net_debug!("failed to transmit DCC buffered packet: device exhausted");
+                    break None;
+                }
+                _ => break None,
+            }
+        }
+        .is_some_and(|total_len| {
+            // G5 bandwidth is 6 Mbps.
+            let bytes_per_usec: f64 = 6.144 / 8.0;
+            let tx_duration_usec = bytes_per_usec * total_len as f64;
+            trc.controller
+                .inner_mut()
+                .notify_tx(core.now, Duration::from_micros(tx_duration_usec as u64));
+            true
+        });
 
         // Reschedule for egress if there is at least one queue with packets.
         let has_pkt = trc.queues.iter().filter(|q| !q.1.is_empty()).count() > 0;
@@ -144,6 +170,37 @@ impl Interface {
         }
 
         rc
+    }
+
+    /// Check if the packet is a duplicate.
+    fn cbf_duplication_check(pkt_variant: &GeonetVariant, location_table: &LocationTable) -> bool {
+        let address = pkt_variant.source_address();
+
+        let seq_number = match pkt_variant {
+            GeonetVariant::Unicast(p) => p.extended_header.sequence_number,
+            GeonetVariant::Anycast(p) => p.extended_header.sequence_number,
+            GeonetVariant::Broadcast(p) => p.extended_header.sequence_number,
+            GeonetVariant::TopoBroadcast(p) => p.extended_header.sequence_number,
+            GeonetVariant::LocationServiceRequest(p) => p.extended_header.sequence_number,
+            GeonetVariant::LocationServiceReply(p) => p.extended_header.sequence_number,
+            _ => return false,
+        };
+
+        let Some(dpc) = location_table.duplicate_counter(address, seq_number) else {
+            return false;
+        };
+
+        if dpc > 1 {
+            net_debug!(
+                "DCC: duplicate packet: src={} seq={} dpc={}",
+                address,
+                seq_number,
+                dpc
+            );
+            true
+        } else {
+            false
+        }
     }
 }
 

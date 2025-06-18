@@ -7,7 +7,7 @@ use rusb::{
     Context, Device, DeviceDescriptor, DeviceHandle, Direction, TransferType, UsbContext,
 };
 
-use crate::{Error, Result, LLC_BUFFER_LEN};
+use crate::{NxpError, NxpResult, LLC_BUFFER_LEN};
 
 /// NXP SAF 5100 USB Vendor ID.
 pub const VID: u16 = 0x1fc9;
@@ -34,8 +34,8 @@ pub struct USB {
 }
 
 impl USB {
-    pub fn new() -> Result<USB> {
-        let mut ctx = Context::new().map_err(|_| Error::USB)?;
+    pub fn new() -> NxpResult<USB> {
+        let mut ctx = Context::new().map_err(|_| NxpError::USB)?;
 
         let (mut dev, desc, mut handle) = Self::open_device(&mut ctx, VID, PID_SDR)?;
         let (iface, read_addr, write_addr) =
@@ -58,7 +58,7 @@ impl USB {
     /// Any timeout value under 1 millisecond will be set to 1 millisecond.
     /// If timeout is None, this function call will block.
     /// Returns the number of bytes available to read, if any.
-    pub fn poll_wait(&mut self, timeout: Option<Duration>) -> Result<usize> {
+    pub fn poll_wait(&mut self, timeout: Option<Duration>) -> NxpResult<usize> {
         let timeout = match timeout {
             Some(t) if t < Duration::from_millis(1) => core::time::Duration::from_millis(1),
             Some(t) => core::time::Duration::from_micros(t.micros()),
@@ -71,8 +71,8 @@ impl USB {
                 self.rx_len = *s;
             })
             .map_err(|e| match e {
-                rusb::Error::Timeout => Error::Timeout,
-                _ => Error::USB,
+                rusb::Error::Timeout => NxpError::Timeout,
+                _ => NxpError::USB,
             })
     }
 
@@ -81,9 +81,9 @@ impl USB {
         self.rx_len > 0
     }
 
-    pub fn recv_wait(&mut self, buffer: &mut [u8]) -> Result<usize> {
+    pub fn recv_wait(&mut self, buffer: &mut [u8]) -> NxpResult<usize> {
         if self.rx_len == 0 {
-            return Err(Error::NoRxPacket);
+            return Err(NxpError::NoRxPacket);
         }
 
         let size = self.rx_len;
@@ -95,23 +95,23 @@ impl USB {
         Ok(size)
     }
 
-    pub fn recv(&mut self, buffer: &mut [u8]) -> Result<usize> {
-        let timeout = core::time::Duration::from_millis(1);
+    pub fn recv(&mut self, buffer: &mut [u8]) -> NxpResult<usize> {
+        let timeout = core::time::Duration::from_millis(0);
         self.handle
             .read_bulk(self.read_addr, buffer, timeout)
             .map_err(|e| match e {
-                rusb::Error::Timeout => Error::Timeout,
-                _ => Error::USB,
+                rusb::Error::Timeout => NxpError::Timeout,
+                _ => NxpError::USB,
             })
     }
 
-    pub fn send(&mut self, buffer: &[u8]) -> Result<usize> {
-        let timeout = core::time::Duration::from_millis(1);
+    pub fn send(&mut self, buffer: &[u8]) -> NxpResult<usize> {
+        let timeout = core::time::Duration::from_millis(0);
         self.handle
             .write_bulk(self.write_addr, buffer, timeout)
             .map_err(|e| match e {
-                rusb::Error::Timeout => Error::Timeout,
-                _ => Error::USB,
+                rusb::Error::Timeout => NxpError::Timeout,
+                _ => NxpError::USB,
             })
     }
 
@@ -120,8 +120,8 @@ impl USB {
         context: &mut T,
         vid: u16,
         pid: u16,
-    ) -> Result<(Device<T>, DeviceDescriptor, DeviceHandle<T>)> {
-        let devices = context.devices().map_err(|_| Error::USB)?;
+    ) -> NxpResult<(Device<T>, DeviceDescriptor, DeviceHandle<T>)> {
+        let devices = context.devices().map_err(|_| NxpError::USB)?;
 
         for device in devices.iter() {
             let Ok(descriptor) = device.device_descriptor() else {
@@ -129,20 +129,20 @@ impl USB {
             };
 
             if descriptor.vendor_id() == vid && descriptor.product_id() == pid {
-                let handle = device.open().map_err(|_| Error::USB)?;
+                let handle = device.open().map_err(|_| NxpError::USB)?;
 
                 return Ok((device, descriptor, handle));
             }
         }
 
-        Err(Error::USB)
+        Err(NxpError::USB)
     }
 
     /// Finds the readable and the writeable endpoint of the USB device.
     fn find_interface_readable_and_writeable_endpoint<T: UsbContext>(
         device: &mut Device<T>,
         device_desc: &DeviceDescriptor,
-    ) -> Result<(u8, u8, u8)> {
+    ) -> NxpResult<(u8, u8, u8)> {
         let mut iface = None;
         let mut readable = None;
         let mut writeable = None;
@@ -180,13 +180,13 @@ impl USB {
 
         match (iface, readable, writeable) {
             (Some(i), Some(r), Some(w)) => Ok((i, r, w)),
-            _ => Err(Error::USB),
+            _ => Err(NxpError::USB),
         }
     }
 
     /// Claim the endpoint interface.
-    fn configure_endpoint<T: UsbContext>(handle: &mut DeviceHandle<T>, iface: u8) -> Result<()> {
-        handle.claim_interface(iface).map_err(|_| Error::USB)
+    fn configure_endpoint<T: UsbContext>(handle: &mut DeviceHandle<T>, iface: u8) -> NxpResult<()> {
+        handle.claim_interface(iface).map_err(|_| NxpError::USB)
     }
 
     /// Return the file descriptor list to poll for USB operation.

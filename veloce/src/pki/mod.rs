@@ -1,7 +1,9 @@
 use core::fmt;
 
 use veloce_asn1::{
-    defs::etsi_103097_v211::ieee1609_dot2::{self, HashedData as EtsiHashedData},
+    defs::etsi_103097_v211::ieee1609_dot2::{
+        self, Certificate as EtsiCertificate, HashedData as EtsiHashedData, SequenceOfCertificate,
+    },
     prelude::rasn::types::FixedOctetString,
 };
 
@@ -36,12 +38,14 @@ impl fmt::Display for SignerIdentifierError {
 }
 
 /// Signer identifier.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SignerIdentifier {
     /// Signer identifier is self-signed.
     SelfSigned,
     /// Signer identifier is a certificate digest.
     Digest(HashedId8),
+    /// Signer identifier is a collection of full certificates.
+    Certificate(Vec<EtsiCertificate>),
 }
 
 impl fmt::Display for SignerIdentifier {
@@ -49,6 +53,7 @@ impl fmt::Display for SignerIdentifier {
         match self {
             SignerIdentifier::SelfSigned => write!(f, "SelfSigned"),
             SignerIdentifier::Digest(h) => write!(f, "Digest({})", h),
+            SignerIdentifier::Certificate(h) => write!(f, "Certificate({:?})", h),
         }
     }
 }
@@ -62,6 +67,9 @@ impl TryFrom<&ieee1609_dot2::SignerIdentifier> for SignerIdentifier {
                 SignerIdentifier::Digest(digest.into())
             }
             ieee1609_dot2::SignerIdentifier::R_self(_) => SignerIdentifier::SelfSigned,
+            ieee1609_dot2::SignerIdentifier::certificate(seq_of_certs) => {
+                SignerIdentifier::Certificate(seq_of_certs.0.clone())
+            }
             _ => return Err(SignerIdentifierError::UnsupportedSignerIdentifier),
         };
 
@@ -76,6 +84,9 @@ impl From<SignerIdentifier> for ieee1609_dot2::SignerIdentifier {
                 ieee1609_dot2::SignerIdentifier::digest(digest.into())
             }
             SignerIdentifier::SelfSigned => ieee1609_dot2::SignerIdentifier::R_self(()),
+            SignerIdentifier::Certificate(certs) => {
+                ieee1609_dot2::SignerIdentifier::certificate(SequenceOfCertificate(certs))
+            }
         }
     }
 }

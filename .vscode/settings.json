@@ -1,10 +1,7 @@
 {
-   "rust-analyzer.files.excludeDirs": ["veloce-chemistry"],
    "rust-analyzer.linkedProjects": [
-      "examples/obu/Cargo.toml",
-      "examples/mk5/Cargo.toml",
+      "bin/Cargo.toml",
       "examples/pki_client/Cargo.toml",
-      "./veloce/Cargo.toml"
    ],
    "elixirLS.projectDir": "veloce-chemistry",
    "cSpell.words": [

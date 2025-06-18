@@ -23,7 +23,6 @@ pub mod socket;
 pub mod storage;
 pub mod time;
 pub mod types;
-pub mod utils;
 pub mod wire;
 
 #[cfg(feature = "ipc")]

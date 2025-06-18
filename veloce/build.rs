@@ -1,7 +1,7 @@
 pub fn main() {
     #[cfg(feature = "proto-security")]
     {
-        #[cfg(not(any(feature = "security-openssl")))]
+        #[cfg(not(any(feature = "security-backend-openssl")))]
         panic!("When proto-security feature is selected, at least one security-backend feature should be enabled, ie: security-openssl");
     }
 

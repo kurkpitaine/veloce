@@ -54,8 +54,8 @@ impl ExplicitCertificate for TrustListManagerCertificate {
         F: FnOnce(crate::security::HashedId8) -> Option<C>,
     {
         // Check validity period.
-        if self.validity_period().end <= TAI2004::from_unix_instant(timestamp) {
-            return Err(CertificateError::Expired);
+        if self.validity_period().end() <= TAI2004::from_unix_instant(timestamp) {
+            return Err(CertificateError::Expired(self.validity_period().end()));
         }
 
         // Get signature.

@@ -1,7 +1,6 @@
 use std::io::{ErrorKind, Read, Result, Write};
 use std::mem;
 use std::net::SocketAddr;
-use std::time::{Duration, Instant};
 
 use chrono::{DateTime, TimeDelta, Utc};
 use gpsd_proto::{Mode as GpsdMode, UnifiedResponse as GpsdResponse};
@@ -13,6 +12,7 @@ use uom::si::angle::degree;
 use uom::si::f64::{Angle, Length, Velocity};
 use uom::si::length::meter;
 use uom::si::velocity::meter_per_second;
+use veloce::time::{Duration, Instant};
 
 use crate::{FixMode, GpsInfo};
 
@@ -47,6 +47,7 @@ enum ClientState {
 }
 
 /// GPSD client.
+#[derive(Debug)]
 pub struct Gpsd {
     /// Gps position.
     position: GpsInfo,
@@ -72,14 +73,17 @@ pub struct Gpsd {
 impl Gpsd {
     /// Constructs a new [Gpsd]. The connection is not launched until the Gpsd
     /// client is polled.
-    pub fn new(server: String, registry: Registry, reg_token: Token) -> Result<Gpsd> {
-        let server_addr = server.parse().map_err(|_| ErrorKind::InvalidInput)?;
-
+    pub fn new(
+        server_addr: SocketAddr,
+        registry: Registry,
+        reg_token: Token,
+        timestamp: Instant,
+    ) -> Result<Gpsd> {
         Ok(Gpsd {
             position: GpsInfo::default(),
             cache: GpsInfo::default(),
             last_rx_time: DateTime::default(),
-            state: ClientState::Initial(Instant::now()),
+            state: ClientState::Initial(timestamp),
             registry,
             token: reg_token,
             server_addr,
@@ -93,9 +97,7 @@ impl Gpsd {
         self.position
     }
 
-    pub fn poll(&mut self) -> Result<()> {
-        let timestamp = Instant::now();
-
+    pub fn poll(&mut self, timestamp: Instant) -> Result<()> {
         // Move state into a local variable to be able to change it.
         let client_state = mem::replace(&mut self.state, ClientState::Idle);
 
@@ -114,7 +116,7 @@ impl Gpsd {
                 error!(
                     "timeout when connecting to GPSD server {}, retry in {} secs",
                     self.server_addr,
-                    RETRY.as_secs(),
+                    RETRY.secs(),
                 );
                 self.registry.deregister(&mut stream)?;
                 self.state = ClientState::Connecting(ConnectingState {
@@ -137,13 +139,12 @@ impl Gpsd {
 
     /// Query whether the GPSD client is ready to receive data.
     /// Returns `true` if there is new position data to be fetched.
-    pub fn ready(&mut self, event: &Event) -> bool {
+    pub fn ready(&mut self, event: &Event, timestamp: Instant) -> bool {
         if event.token() != self.token {
             error!("event token does not match");
             return false;
         }
 
-        let timestamp = Instant::now();
         let mut position_updated = false;
 
         if event.is_writable() {
@@ -165,7 +166,7 @@ impl Gpsd {
                         error!(
                             "failed to connect to GPSD server {}, retry in {} secs - {}",
                             self.server_addr,
-                            RETRY.as_secs(),
+                            RETRY.secs(),
                             e
                         );
                         self.state = ClientState::Initial(timestamp + RETRY);
@@ -184,7 +185,7 @@ impl Gpsd {
                 self.state = ClientState::Initial(timestamp + RETRY);
                 error!(
                     "unexpected disconnect from GPSD server, restarting connection in {} secs",
-                    RETRY.as_secs()
+                    RETRY.secs()
                 );
                 return false;
             }
@@ -214,7 +215,7 @@ impl Gpsd {
                         Err(_) => {
                             error!(
                                 "failed to enable GPSD protocol - retry in {} secs",
-                                RETRY.as_secs()
+                                RETRY.secs()
                             );
                             self.state = ClientState::Initial(timestamp + RETRY);
                         }
@@ -421,7 +422,7 @@ impl Gpsd {
 
                     self.cache.fix.time = Some(tpv_time);
 
-                    self.cache.fix.ept = tpv.ept.map(Duration::from_secs_f32);
+                    self.cache.fix.ept = tpv.ept.map(|e| Duration::from_secs(e as u64));
                     self.cache.fix.latitude = tpv.lat.map(Angle::new::<degree>);
                     self.cache.fix.epy = tpv.epy.map(|epy| Length::new::<meter>(epy.into()));
                     self.cache.fix.longitude = tpv.lon.map(Angle::new::<degree>);

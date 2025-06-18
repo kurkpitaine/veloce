@@ -44,11 +44,12 @@ gpsd = [
    "dep:chrono",
    "dep:log",
 ]
+fixed = ["std", "dep:log"]
 nmea = ["dep:nmea", "dep:chrono"]
 ubx = ["dep:ublox"]
-replay = ["std", "nmea"]
+replay = ["std", "nmea", "dep:log"]
 
-default = ["gpsd", "replay"]
+default = ["fixed", "gpsd", "replay"]
 
 [[example]]
 name = "gpsd"

@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use heapless::{FnvIndexMap, Vec};
+use heapless::{index_map::FnvIndexMap, Vec};
 
 use crate::{
     common::{PacketBuffer, PacketBufferMeta},
@@ -279,6 +279,8 @@ pub(crate) enum Error {
     /// Generic buffer error, ie: the packet
     /// is too big to fit in the buffer.
     Buffer,
+    /// Duplicate packet detected (only when CBF routing algorithm is used).
+    CbfDuplicate,
 }
 
 /// Transmit Rate Control controller algorithm.

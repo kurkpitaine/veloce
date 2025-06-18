@@ -13,11 +13,92 @@ use crate::wire::GnAddress;
 use crate::wire::{
     EthernetAddress as MacAddress, LongPositionVectorRepr as LongPositionVector, SequenceNumber,
 };
-use heapless::{FnvIndexMap, HistoryBuffer, Vec};
+use heapless::{index_map::FnvIndexMap, Vec};
 pub use uom::si::f64::InformationRate;
 pub use uom::si::information_rate::{byte_per_second, kilobit_per_second};
 
 use super::location_service::LocationServiceRequestHandle;
+
+/// An entry of the duplicate packet list.
+///
+/// Packets are identified by their sequence number, along a counter that
+/// indicates the number of times the packet has been received.
+#[derive(Debug, Clone)]
+pub struct DuplicatePacketListEntry {
+    /// Timestamp of the last time this entry has been modified.
+    timestamp: Instant,
+    /// Sequence number of the packet.
+    pub sequence_number: SequenceNumber,
+    /// View counter of the number of times the packet identified by `sequence_number` has been received.
+    pub counter: usize,
+}
+
+impl DuplicatePacketListEntry {
+    /// Create a new [DuplicatePacketListEntry]. View counter is initialized to 1.
+    pub fn new(sequence_number: SequenceNumber, timestamp: Instant) -> Self {
+        Self {
+            timestamp,
+            sequence_number,
+            counter: 1,
+        }
+    }
+}
+
+/// Duplicate packet list.
+#[derive(Debug, Clone)]
+pub struct DuplicatePacketList<const N: usize> {
+    /// Index of the next free slot in the storage.
+    next_free_slot: usize,
+    /// Storage of the duplicate packet list.
+    storage: [Option<DuplicatePacketListEntry>; N],
+}
+
+impl<const N: usize> DuplicatePacketList<N> {
+    /// Create a new [DuplicatePacketList].
+    pub const fn new() -> Self {
+        Self {
+            next_free_slot: 0,
+            storage: [const { None }; N],
+        }
+    }
+
+    /// Adds the given `entry` to the list; overwriting the oldest entry if the list is full.
+    pub fn write(&mut self, entry: DuplicatePacketListEntry) {
+        if self.full() {
+            let slot = self.oldest_entry_index();
+            self.storage[slot] = Some(entry);
+        } else {
+            self.storage[self.next_free_slot] = Some(entry);
+            self.next_free_slot += 1;
+        }
+    }
+
+    /// Get a reference on the underlying storage.
+    pub fn as_slice(&self) -> &[Option<DuplicatePacketListEntry>; N] {
+        &self.storage
+    }
+
+    /// Get a mutable reference on the underlying storage.
+    pub fn as_slice_mut(&mut self) -> &mut [Option<DuplicatePacketListEntry>; N] {
+        &mut self.storage
+    }
+
+    /// Query whether the list is full.
+    fn full(&self) -> bool {
+        self.next_free_slot >= N
+    }
+
+    /// Get the oldest entry index in the list.
+    /// Return 0 if the list is empty.
+    fn oldest_entry_index(&self) -> usize {
+        self.storage
+            .iter()
+            .flatten()
+            .enumerate()
+            .min_by_key(|(_, e)| e.timestamp)
+            .map_or_else(|| 0, |(idx, _)| idx)
+    }
+}
 
 /// A location table entry.
 ///
@@ -33,7 +114,7 @@ pub(super) struct LocationTableEntry {
     /// Flag indicating if the station is a neighbour.
     pub is_neighbour: bool,
     /// Duplicate packet list received from the station.
-    pub dup_packet_list: HistoryBuffer<SequenceNumber, GN_DPL_LENGTH>,
+    pub dup_packet_list: DuplicatePacketList<GN_DPL_LENGTH>,
     /// Packet data rate as Exponential Moving Average.
     pub packet_data_rate: InformationRate,
     /// Packet data rate last update time point.
@@ -89,18 +170,32 @@ impl LocationTableEntry {
     }
 
     /// Check if `seq_number` is present in the Duplicate Packet List.
-    /// `seq_number` is inserted in the Duplicate Packet List if not found.
-    pub fn check_duplicate(&mut self, seq_number: SequenceNumber) -> bool {
-        let duplicate = self
-            .dup_packet_list
-            .oldest_ordered()
-            .any(|s| *s == seq_number);
+    /// Timestamp and counter are updated if the packet is found.
+    pub fn check_duplicate(&mut self, seq_number: SequenceNumber, timestamp: Instant) -> bool {
+        self.dup_packet_list
+            .as_slice_mut()
+            .iter_mut()
+            .flatten()
+            .find(|e| e.sequence_number == seq_number)
+            .map_or_else(
+                || false,
+                |e| {
+                    // Update timestamp and counter.
+                    e.timestamp = timestamp;
+                    e.counter += 1;
+                    true
+                },
+            )
+    }
 
-        if !duplicate {
-            self.dup_packet_list.write(seq_number);
-        }
-
-        duplicate
+    /// Get the duplicate packet counter of the packet identified by `seq_number`, if any.
+    pub fn duplicate_counter(&self, seq_number: SequenceNumber) -> Option<usize> {
+        self.dup_packet_list
+            .as_slice()
+            .iter()
+            .flatten()
+            .find(|e| e.sequence_number == seq_number)
+            .map(|e| e.counter)
     }
 }
 
@@ -166,7 +261,7 @@ impl LocationTable {
                 position_vector: *position_vector,
                 ls_pending: None,
                 is_neighbour: false,
-                dup_packet_list: HistoryBuffer::new(),
+                dup_packet_list: DuplicatePacketList::new(),
                 packet_data_rate: InformationRate::new::<kilobit_per_second>(0.0),
                 packet_data_rate_updated_at: timestamp,
                 extensions: None,
@@ -238,7 +333,7 @@ impl LocationTable {
                 position_vector: *position_vector,
                 ls_pending: None,
                 is_neighbour: false,
-                dup_packet_list: HistoryBuffer::new(),
+                dup_packet_list: DuplicatePacketList::new(),
                 packet_data_rate: InformationRate::new::<kilobit_per_second>(0.0),
                 packet_data_rate_updated_at: timestamp,
                 extensions: None,
@@ -287,15 +382,27 @@ impl LocationTable {
     }
 
     /// Performs the duplicate packet detection for an incoming packet from `address` with sequence number `seq_number`.
-    /// In case `address` in unknown, `None` is returned.
+    /// In case `address` is unknown, `None` is returned.
     pub fn duplicate_packet_detection(
         &mut self,
         address: GnAddress,
         seq_number: SequenceNumber,
+        timestamp: Instant,
     ) -> Option<bool> {
         self.storage
             .get_mut(&address.mac_addr())
-            .map(|entry| entry.check_duplicate(seq_number))
+            .map(|entry| entry.check_duplicate(seq_number, timestamp))
+    }
+
+    /// Get the duplicate packet counter of the packet identified by `seq_number`, originated from `address`, if any.
+    pub fn duplicate_counter(
+        &self,
+        address: GnAddress,
+        seq_number: SequenceNumber,
+    ) -> Option<usize> {
+        self.storage
+            .get(&address.mac_addr())
+            .map(|entry| entry.duplicate_counter(seq_number))?
     }
 
     /// Removes all the entries of the Location Table.

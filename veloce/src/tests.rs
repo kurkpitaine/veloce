@@ -39,7 +39,7 @@ use super::network::GnCoreGonfig;
 /// A testing device.
 #[derive(Debug)]
 pub struct TestingDevice {
-    pub(crate) queue: Deque<Vec<u8, 1514>, 4>,
+    pub(crate) queue: Deque<Vec<u8, 1514, usize>, 4>,
     max_transmission_unit: usize,
     medium: Medium,
 }
@@ -97,7 +97,7 @@ impl Device for TestingDevice {
 
 #[doc(hidden)]
 pub struct RxToken {
-    buffer: Vec<u8, 1514>,
+    buffer: Vec<u8, 1514, usize>,
 }
 
 impl phy::RxToken for RxToken {
@@ -112,7 +112,7 @@ impl phy::RxToken for RxToken {
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct TxToken<'a> {
-    queue: &'a mut Deque<Vec<u8, 1514>, 4>,
+    queue: &'a mut Deque<Vec<u8, 1514, usize>, 4>,
 }
 
 impl<'a> phy::TxToken for TxToken<'a> {

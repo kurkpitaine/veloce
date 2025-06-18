@@ -190,6 +190,6 @@ impl EncryptedData {
             _ => return Err(EncryptedDataError::DataContent),
         };
 
-        Ok(Ciphertext::try_from(ciphertext).map_err(EncryptedDataError::Ciphertext)?)
+        Ciphertext::try_from(ciphertext).map_err(EncryptedDataError::Ciphertext)
     }
 }

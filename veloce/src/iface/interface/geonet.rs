@@ -2,6 +2,7 @@ use uom::si::angle::{degree, radian};
 use uom::si::f64::{Angle, Length};
 use uom::si::length::meter;
 
+use crate::iface::location_table::DuplicatePacketListEntry;
 #[cfg(feature = "medium-ieee80211p")]
 use crate::{iface::location_table::LocationTableG5Extension, phy::Medium, wire::G5Extension};
 
@@ -196,6 +197,7 @@ impl InterfaceInner {
     )> {
         let ch = check!(CommonHeader::new_checked(packet));
         let ch_repr = check!(CommonHeaderRepr::parse(&ch));
+        let timestamp = ctx.core.now;
 
         // Step 1: check the MHL field.
         if ch_repr.max_hop_limit < bh_repr.remaining_hop_limit {
@@ -207,7 +209,7 @@ impl InterfaceInner {
         }
 
         // Step 2: process the BC forwarding packet buffer
-        ctx.bc_forwarding_buffer.mark_flush(ctx.core.now, |_| true);
+        ctx.bc_forwarding_buffer.mark_flush(timestamp, |_| true);
 
         let packet = ch.payload();
         match ch_repr.header_type {
@@ -265,6 +267,7 @@ impl InterfaceInner {
     )> {
         let beacon = check!(BeaconHeader::new_checked(packet));
         let beacon_repr = check!(BeaconHeaderRepr::parse(&beacon));
+        let timestamp = ctx.core.now;
 
         // TODO: check if payload length is 0.
 
@@ -278,7 +281,7 @@ impl InterfaceInner {
         /* Step 4: update Location table */
         let entry = self
             .location_table
-            .update_mut(ctx.core.now, &beacon_repr.source_position_vector);
+            .update_mut(timestamp, &beacon_repr.source_position_vector);
 
         /* Step 5: update PDR in Location table */
         #[cfg(not(feature = "proto-security"))]
@@ -290,7 +293,7 @@ impl InterfaceInner {
             None => bh_repr.buffer_len() + ch_repr.buffer_len() + beacon_repr.buffer_len(),
         };
 
-        entry.update_pdr(packet_size, ctx.core.now);
+        entry.update_pdr(packet_size, timestamp);
 
         /* Step 6: set `is_neighbour` flag in Location table */
         entry.is_neighbour = true;
@@ -299,7 +302,7 @@ impl InterfaceInner {
 
         /* Step 8: flush location service and unicast buffers for this packet source address */
         if let Some(handle) = entry.ls_pending {
-            ctx.ls_buffer.mark_flush(ctx.core.now, |packet_node| {
+            ctx.ls_buffer.mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == beacon_repr.src_addr().mac_addr()
             });
@@ -308,7 +311,7 @@ impl InterfaceInner {
         }
 
         ctx.uc_forwarding_buffer
-            .mark_flush(ctx.core.now, |packet_node| {
+            .mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == beacon_repr.src_addr().mac_addr()
             });
@@ -331,15 +334,18 @@ impl InterfaceInner {
     )> {
         let ls_req = check!(LocationServiceRequestHeader::new_checked(packet));
         let ls_req_repr = check!(LocationServiceRequestRepr::parse(&ls_req));
+        let timestamp = ctx.core.now;
 
         // TODO: check if there are no bytes following the LS Request header.
 
         /* Steps 3 to 6 are equal on both destination and forwarder operations */
 
         /* Step 3: duplicate packet detection */
-        let dup_opt = self
-            .location_table
-            .duplicate_packet_detection(ls_req_repr.request_address, ls_req_repr.sequence_number);
+        let dup_opt = self.location_table.duplicate_packet_detection(
+            ls_req_repr.request_address,
+            ls_req_repr.sequence_number,
+            timestamp,
+        );
 
         if dup_opt.is_some_and(|x| x) {
             /* Packet is duplicate, discard packet. */
@@ -356,11 +362,12 @@ impl InterfaceInner {
         /* Step 5-6: add/update location table */
         let entry = self
             .location_table
-            .update_mut(ctx.core.now, &ls_req_repr.source_position_vector);
+            .update_mut(timestamp, &ls_req_repr.source_position_vector);
 
         /* Add received packet sequence number to the duplicate packet list */
         if dup_opt.is_none() {
-            entry.dup_packet_list.write(ls_req_repr.sequence_number);
+            let dpl_entry = DuplicatePacketListEntry::new(ls_req_repr.sequence_number, timestamp);
+            entry.dup_packet_list.write(dpl_entry);
         }
 
         /* Step 5-6: update PDR in Location table */
@@ -373,7 +380,7 @@ impl InterfaceInner {
             None => bh_repr.buffer_len() + ch_repr.buffer_len() + ls_req_repr.buffer_len(),
         };
 
-        entry.update_pdr(packet_size, ctx.core.now);
+        entry.update_pdr(packet_size, timestamp);
 
         /* Determine if we are the location service destination */
         if ls_req_repr.request_address.mac_addr() == ctx.core.address().mac_addr() {
@@ -440,7 +447,7 @@ impl InterfaceInner {
             that are destined to the source of the incoming Location Service Request packet. */
             /* Step 8a */
             if let Some(handle) = entry.ls_pending {
-                ctx.ls_buffer.mark_flush(ctx.core.now, |packet_node| {
+                ctx.ls_buffer.mark_flush(timestamp, |packet_node| {
                     packet_node.metadata().inner().dst_addr().mac_addr()
                         == ls_req_repr.src_addr().mac_addr()
                 });
@@ -450,7 +457,7 @@ impl InterfaceInner {
 
             /* Step 8b */
             ctx.uc_forwarding_buffer
-                .mark_flush(ctx.core.now, |packet_node| {
+                .mark_flush(timestamp, |packet_node| {
                     packet_node.metadata().inner().dst_addr().mac_addr()
                         == ls_req_repr.src_addr().mac_addr()
                 });
@@ -506,6 +513,7 @@ impl InterfaceInner {
     )> {
         let ls_rep = check!(LocationServiceReplyHeader::new_checked(packet));
         let ls_rep_repr = check!(LocationServiceReplyRepr::parse(&ls_rep));
+        let timestamp = ctx.core.now;
 
         // TODO: check if there are no bytes following the LS Reply header.
 
@@ -515,9 +523,11 @@ impl InterfaceInner {
         {
             /* We are the destination. */
             /* Step 3: duplicate packet detection */
-            let dup_opt = self
-                .location_table
-                .duplicate_packet_detection(ls_rep_repr.src_addr(), ls_rep_repr.sequence_number);
+            let dup_opt = self.location_table.duplicate_packet_detection(
+                ls_rep_repr.src_addr(),
+                ls_rep_repr.sequence_number,
+                timestamp,
+            );
 
             if dup_opt.is_some_and(|x| x) {
                 return None;
@@ -533,11 +543,13 @@ impl InterfaceInner {
             /* Step 4: update Location table */
             let entry = self
                 .location_table
-                .update_mut(ctx.core.now, &ls_rep_repr.source_position_vector);
+                .update_mut(timestamp, &ls_rep_repr.source_position_vector);
 
             /* Add received packet sequence number to the duplicate packet list */
             if dup_opt.is_none() {
-                entry.dup_packet_list.write(ls_rep_repr.sequence_number);
+                let dpl_entry =
+                    DuplicatePacketListEntry::new(ls_rep_repr.sequence_number, timestamp);
+                entry.dup_packet_list.write(dpl_entry);
             }
 
             /* Step 5: update PDR in Location table */
@@ -551,12 +563,12 @@ impl InterfaceInner {
                 None => bh_repr.buffer_len() + ch_repr.buffer_len() + ls_rep_repr.buffer_len(),
             };
 
-            entry.update_pdr(packet_size, ctx.core.now);
+            entry.update_pdr(packet_size, timestamp);
 
             /* Step 6-7-8: Flush packets inside Location Service and Unicast forwarding buffers
             that are destined to the source of the incoming Location Service Reply packet. */
             if let Some(handle) = entry.ls_pending {
-                ctx.ls_buffer.mark_flush(ctx.core.now, |packet_node| {
+                ctx.ls_buffer.mark_flush(timestamp, |packet_node| {
                     packet_node.metadata().inner().dst_addr().mac_addr()
                         == ls_rep_repr.src_addr().mac_addr()
                 });
@@ -565,7 +577,7 @@ impl InterfaceInner {
             }
 
             ctx.uc_forwarding_buffer
-                .mark_flush(ctx.core.now, |packet_node| {
+                .mark_flush(timestamp, |packet_node| {
                     packet_node.metadata().inner().dst_addr().mac_addr()
                         == ls_rep_repr.src_addr().mac_addr()
                 });
@@ -596,6 +608,7 @@ impl InterfaceInner {
     )> {
         let shb = check!(SingleHopHeader::new_checked(packet));
         let shb_repr = check!(SingleHopHeaderRepr::parse(&shb));
+        let timestamp = ctx.core.now;
 
         let packet = shb.payload();
 
@@ -615,7 +628,7 @@ impl InterfaceInner {
             /* Step 4: update Location table */
             let entry = self
                 .location_table
-                .update_mut(ctx.core.now, &shb_repr.source_position_vector);
+                .update_mut(timestamp, &shb_repr.source_position_vector);
 
             /* Step 5: update PDR in Location table */
             #[cfg(not(feature = "proto-security"))]
@@ -635,7 +648,7 @@ impl InterfaceInner {
                 }
             };
 
-            entry.update_pdr(packet_size, ctx.core.now);
+            entry.update_pdr(packet_size, timestamp);
 
             /* Step 6: set ìs_neighbour` flag in Location table */
             entry.is_neighbour = true;
@@ -645,7 +658,7 @@ impl InterfaceInner {
             if self.caps.medium == Medium::Ieee80211p {
                 let g5_ext = G5Extension::from_bytes(shb_repr.extension());
                 let extension = LocationTableG5Extension {
-                    local_update_tst: ctx.core.now,
+                    local_update_tst: timestamp,
                     station_pv_tst: shb_repr.source_position_vector.timestamp.into(),
                     local_cbr: g5_ext.cbr_l0_hop(),
                     one_hop_cbr: g5_ext.cbr_l1_hop(),
@@ -669,7 +682,7 @@ impl InterfaceInner {
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming SHB packet. */
         if let Some(handle) = ls_pending {
-            ctx.ls_buffer.mark_flush(ctx.core.now, |packet_node| {
+            ctx.ls_buffer.mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == shb_repr.src_addr().mac_addr()
             });
@@ -678,7 +691,7 @@ impl InterfaceInner {
         }
 
         ctx.uc_forwarding_buffer
-            .mark_flush(ctx.core.now, |packet_node| {
+            .mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == shb_repr.src_addr().mac_addr()
             });
@@ -706,6 +719,7 @@ impl InterfaceInner {
         let tsb_repr = check!(TopoBroadcastRepr::parse(&tsb));
 
         let payload = tsb.payload();
+        let timestamp = ctx.core.now;
 
         /* Check if we are the sender of the packet */
         if tsb_repr.src_addr() == ctx.core.address() {
@@ -713,9 +727,11 @@ impl InterfaceInner {
         }
 
         /* Step 3: duplicate packet detection */
-        let dup_opt = self
-            .location_table
-            .duplicate_packet_detection(tsb_repr.src_addr(), tsb_repr.sequence_number);
+        let dup_opt = self.location_table.duplicate_packet_detection(
+            tsb_repr.src_addr(),
+            tsb_repr.sequence_number,
+            timestamp,
+        );
 
         if dup_opt.is_some_and(|x| x) {
             return None;
@@ -732,11 +748,12 @@ impl InterfaceInner {
             /* Step 5-6: update Location table */
             let entry = self
                 .location_table
-                .update_mut(ctx.core.now, &tsb_repr.source_position_vector);
+                .update_mut(timestamp, &tsb_repr.source_position_vector);
 
             /* Add received packet sequence number to the duplicate packet list */
             if dup_opt.is_none() {
-                entry.dup_packet_list.write(tsb_repr.sequence_number);
+                let dpl_entry = DuplicatePacketListEntry::new(tsb_repr.sequence_number, timestamp);
+                entry.dup_packet_list.write(dpl_entry);
             }
 
             /* Step 5-6: update PDR in Location table */
@@ -757,7 +774,7 @@ impl InterfaceInner {
                 }
             };
 
-            entry.update_pdr(packet_size, ctx.core.now);
+            entry.update_pdr(packet_size, timestamp);
 
             entry.ls_pending
         };
@@ -769,7 +786,7 @@ impl InterfaceInner {
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming TSB packet. */
         if let Some(handle) = ls_pending {
-            ctx.ls_buffer.mark_flush(ctx.core.now, |packet_node| {
+            ctx.ls_buffer.mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == tsb_repr.src_addr().mac_addr()
             });
@@ -778,7 +795,7 @@ impl InterfaceInner {
         }
 
         ctx.uc_forwarding_buffer
-            .mark_flush(ctx.core.now, |packet_node| {
+            .mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == tsb_repr.src_addr().mac_addr()
             });
@@ -806,7 +823,7 @@ impl InterfaceInner {
             let metadata = GeonetRepr::Unsecured(buf_packet);
 
             ctx.bc_forwarding_buffer
-                .enqueue(metadata, payload, ctx.core.now)
+                .enqueue(metadata, payload, timestamp)
                 .ok();
 
             return None;
@@ -873,10 +890,14 @@ impl InterfaceInner {
         EthernetAddress,
         GeonetPacket<'payload>,
     )> {
+        let timestamp = ctx.core.now;
+
         /* Step 3: duplicate packet detection */
-        let dup_opt = self
-            .location_table
-            .duplicate_packet_detection(uc_repr.src_addr(), uc_repr.sequence_number);
+        let dup_opt = self.location_table.duplicate_packet_detection(
+            uc_repr.src_addr(),
+            uc_repr.sequence_number,
+            timestamp,
+        );
 
         /* Ignore result only if we are using CBF algorithm */
         if GN_NON_AREA_FORWARDING_ALGORITHM != GnNonAreaForwardingAlgorithm::Cbf
@@ -890,7 +911,7 @@ impl InterfaceInner {
         borrowing twice the location_table since we need mutable (exclusive) access to a value. */
         let uc_repr = {
             let destination = self.location_table.update_if(
-                ctx.core.now,
+                timestamp,
                 &uc_repr.destination_position_vector.into(),
                 |e| !e.is_neighbour,
             );
@@ -923,11 +944,12 @@ impl InterfaceInner {
         /* Step 4: update Location table */
         let entry = self
             .location_table
-            .update_mut(ctx.core.now, &uc_repr.source_position_vector);
+            .update_mut(timestamp, &uc_repr.source_position_vector);
 
         /* Add received packet sequence number to the duplicate packet list */
         if dup_opt.is_none() {
-            entry.dup_packet_list.write(uc_repr.sequence_number);
+            let dpl_entry = DuplicatePacketListEntry::new(uc_repr.sequence_number, timestamp);
+            entry.dup_packet_list.write(dpl_entry);
         }
 
         /* Step 5-6: update PDR in Location table */
@@ -948,12 +970,12 @@ impl InterfaceInner {
             }
         };
 
-        entry.update_pdr(packet_size, ctx.core.now);
+        entry.update_pdr(packet_size, timestamp);
 
         /* Step 9: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming Unicast packet. */
         if let Some(handle) = entry.ls_pending {
-            ctx.ls_buffer.mark_flush(ctx.core.now, |packet_node| {
+            ctx.ls_buffer.mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == uc_repr.src_addr().mac_addr()
             });
@@ -962,7 +984,7 @@ impl InterfaceInner {
         }
 
         ctx.uc_forwarding_buffer
-            .mark_flush(ctx.core.now, |packet_node| {
+            .mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == uc_repr.src_addr().mac_addr()
             });
@@ -990,7 +1012,7 @@ impl InterfaceInner {
             let metadata = GeonetRepr::Unsecured(fwd_packet);
 
             ctx.uc_forwarding_buffer
-                .enqueue(metadata, payload, ctx.core.now)
+                .enqueue(metadata, payload, timestamp)
                 .ok();
 
             return None;
@@ -1033,10 +1055,14 @@ impl InterfaceInner {
         payload: &[u8],
         link_layer: EthernetRepr,
     ) {
+        let timestamp = ctx.core.now;
+
         /* Step 3: duplicate packet detection */
-        let dup_opt = self
-            .location_table
-            .duplicate_packet_detection(uc_repr.src_addr(), uc_repr.sequence_number);
+        let dup_opt = self.location_table.duplicate_packet_detection(
+            uc_repr.src_addr(),
+            uc_repr.sequence_number,
+            timestamp,
+        );
 
         if dup_opt.is_some_and(|x| x) {
             return;
@@ -1052,11 +1078,12 @@ impl InterfaceInner {
         /* Step 5-6: update Location table */
         let entry = self
             .location_table
-            .update_mut(ctx.core.now, &uc_repr.source_position_vector);
+            .update_mut(timestamp, &uc_repr.source_position_vector);
 
         /* Add received packet sequence number to the duplicate packet list */
         if dup_opt.is_none() {
-            entry.dup_packet_list.write(uc_repr.sequence_number);
+            let dpl_entry = DuplicatePacketListEntry::new(uc_repr.sequence_number, timestamp);
+            entry.dup_packet_list.write(dpl_entry);
         }
 
         /* Step 5-6: update PDR in Location table */
@@ -1077,12 +1104,12 @@ impl InterfaceInner {
             }
         };
 
-        entry.update_pdr(packet_size, ctx.core.now);
+        entry.update_pdr(packet_size, timestamp);
 
         /* Step 7: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming Unicast packet. */
         if let Some(handle) = entry.ls_pending {
-            ctx.ls_buffer.mark_flush(ctx.core.now, |packet_node| {
+            ctx.ls_buffer.mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == uc_repr.src_addr().mac_addr()
             });
@@ -1091,7 +1118,7 @@ impl InterfaceInner {
         }
 
         ctx.uc_forwarding_buffer
-            .mark_flush(ctx.core.now, |packet_node| {
+            .mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == uc_repr.src_addr().mac_addr()
             });
@@ -1119,6 +1146,7 @@ impl InterfaceInner {
     )> {
         let gbc = check!(GeoBroadcastHeader::new_checked(packet));
         let gbc_repr = check!(GeoBroadcastRepr::parse(&gbc));
+        let timestamp = ctx.core.now;
 
         let payload = gbc.payload();
 
@@ -1132,9 +1160,11 @@ impl InterfaceInner {
         let inside = dst_area.inside_or_at_border(ctx.core.geo_position());
 
         /* Step 3a-3b: duplicate packet detection */
-        let dup_opt = self
-            .location_table
-            .duplicate_packet_detection(gbc_repr.src_addr(), gbc_repr.sequence_number);
+        let dup_opt = self.location_table.duplicate_packet_detection(
+            gbc_repr.src_addr(),
+            gbc_repr.sequence_number,
+            timestamp,
+        );
 
         /* Ignore result only if we are using CBF algorithm */
         if ((!inside && GN_NON_AREA_FORWARDING_ALGORITHM != GnNonAreaForwardingAlgorithm::Cbf)
@@ -1155,11 +1185,12 @@ impl InterfaceInner {
             /* Step 5-6: update Location table */
             let entry = self
                 .location_table
-                .update_mut(ctx.core.now, &gbc_repr.source_position_vector);
+                .update_mut(timestamp, &gbc_repr.source_position_vector);
 
             /* Add received packet sequence number to the duplicate packet list */
             if dup_opt.is_none() {
-                entry.dup_packet_list.write(gbc_repr.sequence_number);
+                let dpl_entry = DuplicatePacketListEntry::new(gbc_repr.sequence_number, timestamp);
+                entry.dup_packet_list.write(dpl_entry);
             }
 
             /* Step 5-6: update PDR in Location table */
@@ -1180,7 +1211,7 @@ impl InterfaceInner {
                 }
             };
 
-            entry.update_pdr(packet_size, ctx.core.now);
+            entry.update_pdr(packet_size, timestamp);
 
             entry.ls_pending
         };
@@ -1194,7 +1225,7 @@ impl InterfaceInner {
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming GBC packet. */
         if let Some(handle) = ls_pending {
-            ctx.ls_buffer.mark_flush(ctx.core.now, |packet_node| {
+            ctx.ls_buffer.mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == gbc_repr.src_addr().mac_addr()
             });
@@ -1203,7 +1234,7 @@ impl InterfaceInner {
         }
 
         ctx.uc_forwarding_buffer
-            .mark_flush(ctx.core.now, |packet_node| {
+            .mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == gbc_repr.src_addr().mac_addr()
             });
@@ -1231,7 +1262,7 @@ impl InterfaceInner {
         if !self.location_table.has_neighbour() && ch_repr.traffic_class.store_carry_forward() {
             /* Buffer the packet into the broadcast buffer */
             ctx.bc_forwarding_buffer
-                .enqueue(packet, payload, ctx.core.now)
+                .enqueue(packet, payload, timestamp)
                 .ok();
 
             return None;
@@ -1269,6 +1300,7 @@ impl InterfaceInner {
     )> {
         let gac = check!(GeoAnycastHeader::new_checked(packet));
         let gac_repr = check!(GeoAnycastRepr::parse(&gac));
+        let timestamp = ctx.core.now;
 
         let payload = gac.payload();
 
@@ -1278,9 +1310,11 @@ impl InterfaceInner {
         }
 
         /* Step 3: duplicate packet detection */
-        let dup_opt = self
-            .location_table
-            .duplicate_packet_detection(gac_repr.src_addr(), gac_repr.sequence_number);
+        let dup_opt = self.location_table.duplicate_packet_detection(
+            gac_repr.src_addr(),
+            gac_repr.sequence_number,
+            timestamp,
+        );
 
         if dup_opt.is_some_and(|x| x) {
             return None;
@@ -1296,11 +1330,12 @@ impl InterfaceInner {
         /* Step 5-6: update Location table */
         let entry = self
             .location_table
-            .update_mut(ctx.core.now, &gac_repr.source_position_vector);
+            .update_mut(timestamp, &gac_repr.source_position_vector);
 
         /* Add received packet sequence number to the duplicate packet list */
         if dup_opt.is_none() {
-            entry.dup_packet_list.write(gac_repr.sequence_number);
+            let dpl_entry = DuplicatePacketListEntry::new(gac_repr.sequence_number, timestamp);
+            entry.dup_packet_list.write(dpl_entry);
         }
 
         /* Step 5-6: update PDR in Location table */
@@ -1321,7 +1356,7 @@ impl InterfaceInner {
             }
         };
 
-        entry.update_pdr(packet_size, ctx.core.now);
+        entry.update_pdr(packet_size, timestamp);
 
         /* Step 7: determine function F(x,y) */
         let dst_area = GeoArea::from_gac(&ch_repr.header_type, &gac_repr);
@@ -1330,7 +1365,7 @@ impl InterfaceInner {
         /* Step 8: Flush packets inside Location Service and Unicast forwarding buffers
         that are destined to the source of the incoming GAC packet. */
         if let Some(handle) = entry.ls_pending {
-            ctx.ls_buffer.mark_flush(ctx.core.now, |packet_node| {
+            ctx.ls_buffer.mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == gac_repr.src_addr().mac_addr()
             });
@@ -1339,7 +1374,7 @@ impl InterfaceInner {
         }
 
         ctx.uc_forwarding_buffer
-            .mark_flush(ctx.core.now, |packet_node| {
+            .mark_flush(timestamp, |packet_node| {
                 packet_node.metadata().inner().dst_addr().mac_addr()
                     == gac_repr.src_addr().mac_addr()
             });
@@ -1373,7 +1408,7 @@ impl InterfaceInner {
         if !self.location_table.has_neighbour() && ch_repr.traffic_class.store_carry_forward() {
             /* Buffer the packet into the broadcast buffer */
             ctx.bc_forwarding_buffer
-                .enqueue(packet, payload, ctx.core.now)
+                .enqueue(packet, payload, timestamp)
                 .ok();
 
             return None;
@@ -1403,7 +1438,9 @@ impl InterfaceInner {
             (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
-        if self.retransmit_beacon_at > ctx.core.now {
+        let timestamp = ctx.core.now;
+
+        if self.retransmit_beacon_at > timestamp {
             return Ok(());
         }
 
@@ -1480,6 +1517,8 @@ impl InterfaceInner {
             (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
+        let timestamp = ctx.core.now;
+
         for r in ctx.ls.ls_requests.iter_mut() {
             if let Some(LocationServiceRequest { state, .. }) = r {
                 match state {
@@ -1493,7 +1532,7 @@ impl InterfaceInner {
                         }
 
                         // Transmission timeout.
-                        if pr.retransmit_at > ctx.core.now {
+                        if pr.retransmit_at > timestamp {
                             continue;
                         }
 
@@ -1551,7 +1590,7 @@ impl InterfaceInner {
                             (EthernetAddress::BROADCAST, packet),
                         )?;
 
-                        pr.retransmit_at = ctx.core.now + GN_LOCATION_SERVICE_RETRANSMIT_TIMER;
+                        pr.retransmit_at = timestamp + GN_LOCATION_SERVICE_RETRANSMIT_TIMER;
                         pr.attempts += 1;
 
                         break;
@@ -1591,6 +1630,8 @@ impl InterfaceInner {
             (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
+        let timestamp = ctx.core.now;
+
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1642,7 +1683,7 @@ impl InterfaceInner {
                 #[cfg(not(feature = "proto-security"))]
                 let metadata = GeonetRepr::Unsecured(buf_packet);
 
-                ctx.ls_buffer.enqueue(metadata, payload, ctx.core.now).ok();
+                ctx.ls_buffer.enqueue(metadata, payload, timestamp).ok();
 
                 return Ok(());
             }
@@ -1666,7 +1707,7 @@ impl InterfaceInner {
                 let packet_meta = GeonetRepr::Unsecured(buf_packet);
 
                 ctx.uc_forwarding_buffer
-                    .enqueue(packet_meta, payload, ctx.core.now)
+                    .enqueue(packet_meta, payload, timestamp)
                     .ok();
 
                 return Ok(());
@@ -1710,7 +1751,7 @@ impl InterfaceInner {
             emit(self, ctx.core, ctx.congestion_control, (nh_ll_addr, packet))?;
         } else {
             /* Step 2a: invoke location service for this destination */
-            let Ok(handle) = ctx.ls.request(metadata.destination, ctx.core.now) else {
+            let Ok(handle) = ctx.ls.request(metadata.destination, timestamp) else {
                 /* Error invoking Location Service. */
                 net_trace!("Error invoking Location Service");
                 // TODO: we should return an error.
@@ -1722,7 +1763,7 @@ impl InterfaceInner {
                 address: metadata.destination,
                 ..Default::default()
             };
-            let entry = self.location_table.update_mut(ctx.core.now, &pv);
+            let entry = self.location_table.update_mut(timestamp, &pv);
             entry.ls_pending = Some(handle);
 
             /* Set the fields of the unicast header */
@@ -1749,7 +1790,7 @@ impl InterfaceInner {
             #[cfg(not(feature = "proto-security"))]
             let metadata = GeonetRepr::Unsecured(buf_packet);
 
-            ctx.ls_buffer.enqueue(metadata, payload, ctx.core.now).ok();
+            ctx.ls_buffer.enqueue(metadata, payload, timestamp).ok();
         }
 
         Ok(())
@@ -1771,6 +1812,8 @@ impl InterfaceInner {
             (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
+        let timestamp = ctx.core.now;
+
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1821,7 +1864,7 @@ impl InterfaceInner {
         if !self.location_table.has_neighbour() && metadata.traffic_class.store_carry_forward() {
             /* Buffer the packet into the broadcast buffer */
             ctx.bc_forwarding_buffer
-                .enqueue(packet_meta, payload, ctx.core.now)
+                .enqueue(packet_meta, payload, timestamp)
                 .ok();
 
             return Ok(());
@@ -1857,6 +1900,8 @@ impl InterfaceInner {
             (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
+        let timestamp = ctx.core.now;
+
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -1920,7 +1965,7 @@ impl InterfaceInner {
         if !self.location_table.has_neighbour() && metadata.traffic_class.store_carry_forward() {
             /* Buffer the packet into the broadcast buffer */
             ctx.bc_forwarding_buffer
-                .enqueue(packet_meta, payload, ctx.core.now)
+                .enqueue(packet_meta, payload, timestamp)
                 .ok();
 
             return Ok(());
@@ -1956,6 +2001,8 @@ impl InterfaceInner {
             (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
+        let timestamp = ctx.core.now;
+
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -2014,7 +2061,7 @@ impl InterfaceInner {
         if !self.location_table.has_neighbour() && metadata.traffic_class.store_carry_forward() {
             /* Buffer the packet into the broadcast buffer */
             ctx.bc_forwarding_buffer
-                .enqueue(packet_meta, payload, ctx.core.now)
+                .enqueue(packet_meta, payload, timestamp)
                 .ok();
 
             return Ok(());
@@ -2055,6 +2102,8 @@ impl InterfaceInner {
             (EthernetAddress, GeonetPacket),
         ) -> Result<(), E>,
     {
+        let timestamp = ctx.core.now;
+
         /* Step 1a: set the fields of the basic header */
         let bh_repr = BasicHeaderRepr {
             version: GN_PROTOCOL_VERSION,
@@ -2113,7 +2162,7 @@ impl InterfaceInner {
         if !self.location_table.has_neighbour() && metadata.traffic_class.store_carry_forward() {
             /* Buffer the packet into the broadcast buffer */
             ctx.bc_forwarding_buffer
-                .enqueue(packet_meta, payload, ctx.core.now)
+                .enqueue(packet_meta, payload, timestamp)
                 .ok();
 
             return Ok(());
@@ -2153,13 +2202,15 @@ impl InterfaceInner {
             (EthernetAddress, GeonetRepr<GeonetVariant>, &[u8]),
         ) -> Result<(), E>,
     {
+        let timestamp = ctx.core.now;
+
         ctx.ls_buffer.flush_one(|packet| {
             let expiry = packet.expires_at();
             let meta = packet.metadata_mut().inner_mut();
             let dest_mac_addr = meta.dst_addr().mac_addr();
 
             // Update the packet lifetime.
-            meta.set_lifetime(expiry - ctx.core.now);
+            meta.set_lifetime(expiry - timestamp);
             // Update ego position in packet.
             meta.set_source_position_vector(ctx.core.ego_position_vector());
 
@@ -2195,6 +2246,8 @@ impl InterfaceInner {
             (EthernetAddress, GeonetRepr<GeonetVariant>, &[u8]),
         ) -> Result<(), E>,
     {
+        let timestamp = ctx.core.now;
+
         ctx.uc_forwarding_buffer.flush_one(|packet| {
             let expiry = packet.expires_at();
             let secured = packet.metadata().is_secured();
@@ -2202,7 +2255,7 @@ impl InterfaceInner {
             let dest_addr = meta.dst_addr().mac_addr();
 
             // Update the packet lifetime.
-            meta.set_lifetime(expiry - ctx.core.now);
+            meta.set_lifetime(expiry - timestamp);
 
             // For unsecured packets, update position only if we are the origin.
             if !secured
@@ -2238,13 +2291,15 @@ impl InterfaceInner {
             (EthernetAddress, GeonetRepr<GeonetVariant>, &[u8]),
         ) -> Result<(), E>,
     {
+        let timestamp = ctx.core.now;
+
         ctx.bc_forwarding_buffer.flush_one(|packet| {
             let expiry = packet.expires_at();
             let secured = packet.metadata().is_secured();
             let meta = packet.metadata_mut().inner_mut();
 
             // Update the packet lifetime.
-            meta.set_lifetime(expiry - ctx.core.now);
+            meta.set_lifetime(expiry - timestamp);
 
             // For unsecured packets, update position only if we are the origin.
             if !secured
@@ -2281,14 +2336,16 @@ impl InterfaceInner {
             (EthernetAddress, GeonetRepr<GeonetVariant>, &[u8]),
         ) -> Result<(), E>,
     {
+        let timestamp = ctx.core.now;
+
         ctx.cb_forwarding_buffer
-            .dequeue_expired(ctx.core.now, |packet| {
+            .dequeue_expired(timestamp, |packet| {
                 let expiry = packet.expires_at();
                 let secured = packet.metadata().is_secured();
                 let meta = packet.metadata_mut().inner_mut();
 
                 // Update the packet lifetime.
-                meta.set_lifetime(expiry - ctx.core.now);
+                meta.set_lifetime(expiry - timestamp);
 
                 // For unsecured packets, update position only if we are the origin
                 if !secured
@@ -2375,6 +2432,7 @@ impl InterfaceInner {
         packet: &GeonetRepr<GeonetVariant>,
         payload: &[u8],
     ) -> Option<EthernetAddress> {
+        let timestamp = ctx.core.now;
         let inner = packet.inner();
         let dest = inner.geo_destination();
         let dist_ego_dest = ctx.core.geo_position().distance_to(&dest);
@@ -2420,12 +2478,12 @@ impl InterfaceInner {
                         },
                     };
                     ctx.uc_forwarding_buffer
-                        .enqueue(buf_packet, payload, ctx.core.now)
+                        .enqueue(buf_packet, payload, timestamp)
                         .ok();
                 }
                 GeonetVariant::Anycast(_) | GeonetVariant::Broadcast(_) => {
                     ctx.bc_forwarding_buffer
-                        .enqueue(packet.to_owned(), payload, ctx.core.now)
+                        .enqueue(packet.to_owned(), payload, timestamp)
                         .ok();
                 }
                 _ => unreachable!(),
@@ -2456,6 +2514,7 @@ impl InterfaceInner {
             return Some(EthernetAddress::BROADCAST);
         };
 
+        let timestamp = ctx.core.now;
         let inner = packet.inner();
         let cbf_id = CbfIdentifier(inner.source_address(), inner.sequence_number());
         if ctx.cb_forwarding_buffer.remove(cbf_id) {
@@ -2481,7 +2540,7 @@ impl InterfaceInner {
                             payload,
                             cbf_id,
                             cbf_timer,
-                            ctx.core.now,
+                            timestamp,
                             src_addr,
                         )
                         .ok();
@@ -2494,7 +2553,7 @@ impl InterfaceInner {
                         payload,
                         cbf_id,
                         GN_CBF_MAX_TIME,
-                        ctx.core.now,
+                        timestamp,
                         src_addr,
                     )
                     .ok();
@@ -2531,6 +2590,7 @@ impl InterfaceInner {
             return Some(EthernetAddress::BROADCAST);
         };
 
+        let timestamp = ctx.core.now;
         let inner = packet.inner();
         let cbf_id = CbfIdentifier(inner.source_address(), inner.sequence_number());
         if ctx.cb_forwarding_buffer.remove(cbf_id) {
@@ -2554,7 +2614,7 @@ impl InterfaceInner {
                 payload,
                 cbf_id,
                 cbf_timer,
-                ctx.core.now,
+                timestamp,
                 src_addr,
             )
             .ok();
@@ -2584,6 +2644,7 @@ impl InterfaceInner {
             return Some(EthernetAddress::BROADCAST);
         };
 
+        let timestamp = ctx.core.now;
         let inner = packet.inner();
         let cbf_id = CbfIdentifier(inner.source_address(), inner.sequence_number());
 
@@ -2633,7 +2694,7 @@ impl InterfaceInner {
                     };
 
                     e.cbf_counter += 1;
-                    e.cbf_expires_at = ctx.core.now + cbf_timer;
+                    e.cbf_expires_at = timestamp + cbf_timer;
 
                     false
                 }
@@ -2648,7 +2709,7 @@ impl InterfaceInner {
                     payload,
                     cbf_id,
                     GN_CBF_MAX_TIME,
-                    ctx.core.now,
+                    timestamp,
                     src_addr,
                 )
                 .ok();
@@ -2676,7 +2737,7 @@ impl InterfaceInner {
                     payload,
                     cbf_id,
                     cbf_timer,
-                    ctx.core.now,
+                    timestamp,
                     src_addr,
                 )
                 .ok();

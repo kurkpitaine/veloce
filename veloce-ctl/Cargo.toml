@@ -1,0 +1,16 @@
+[package]
+name = "veloce-ctl"
+version = "0.1.0"
+authors = ["Veloce developers <veloce@ferroxyde.com>"]
+edition = "2021"
+description = "CLI app to control the Veloce networking stack."
+license = "GPL-3.0-only OR LicenseRef-Veloce-Software-1.0"
+
+[dependencies]
+veloce = { path = "../veloce" }
+
+clap = { version = "4.5", features = ["derive"] }
+
+[[bin]]
+name = "velocectl"
+path = "src/main.rs"

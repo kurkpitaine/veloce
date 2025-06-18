@@ -2,8 +2,11 @@ use core::fmt;
 
 use veloce_asn1::{
     defs::{
-        etsi_102941_v221::etsi_ts102941_types_enrolment::{
-            EnrolmentResponseCode, InnerEcRequest, InnerEcResponse,
+        etsi_102941_v221::{
+            etsi_ts102941_trust_lists::{CtlCommand, CtlEntry, ToBeSignedRcaCtl, ToBeSignedTlmCtl},
+            etsi_ts102941_types_enrolment::{
+                EnrolmentResponseCode, InnerEcRequest, InnerEcResponse,
+            },
         },
         etsi_103097_v211::{
             etsi_ts103097_module::{
@@ -174,7 +177,7 @@ where
 
     /// Get the [Asn1Wrapper] as bytes, encoded as Asn.1 COER.
     pub fn as_bytes(&self) -> Asn1WrapperResult<Vec<u8>> {
-        Ok(Self::verify_and_encode(&self.inner)?)
+        Self::verify_and_encode(&self.inner)
     }
 
     /// Get the [Asn1Wrapper] as the raw type, verifying the Asn.1 constraints.
@@ -447,5 +450,53 @@ impl Asn1WrapperTrait for Asn1Wrapper<InnerEcResponse> {
             (_, None) => Ok(()),
             (_, _) => Err(Asn1WrapperError::Malformed),
         }
+    }
+}
+
+impl Asn1WrapperTrait for Asn1Wrapper<ToBeSignedTlmCtl> {
+    type Wrapped = ToBeSignedTlmCtl;
+
+    /// Check `data` is valid according to ToBeSignedTlmCtl Asn.1 definition.
+    /// This method is necessary as the rasn Asn.1 compiler does not generate
+    /// the validation code for custom parameterized types.
+    #[inline]
+    fn verify_constraints(data: &Self::Wrapped) -> Asn1WrapperResult<()> {
+        for command in &data.0.ctl_commands {
+            match command {
+                CtlCommand::add(CtlEntry::ea(_) | CtlEntry::aa(_)) => {
+                    return Err(Asn1WrapperError::Malformed)
+                }
+                CtlCommand::delete(_) if data.0.is_full_ctl => {
+                    return Err(Asn1WrapperError::Malformed)
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Asn1WrapperTrait for Asn1Wrapper<ToBeSignedRcaCtl> {
+    type Wrapped = ToBeSignedRcaCtl;
+
+    /// Check `data` is valid according to ToBeSignedRcaCtl Asn.1 definition.
+    /// This method is necessary as the rasn Asn.1 compiler does not generate
+    /// the validation code for custom parameterized types.
+    #[inline]
+    fn verify_constraints(data: &Self::Wrapped) -> Asn1WrapperResult<()> {
+        for command in &data.0.ctl_commands {
+            match command {
+                CtlCommand::add(CtlEntry::rca(_) | CtlEntry::tlm(_)) => {
+                    return Err(Asn1WrapperError::Malformed)
+                }
+                CtlCommand::delete(_) if data.0.is_full_ctl => {
+                    return Err(Asn1WrapperError::Malformed)
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
     }
 }

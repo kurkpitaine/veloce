@@ -6,7 +6,6 @@ use veloce::network::{GnAddrConfigMode, GnCore, GnCoreGonfig};
 use veloce::socket;
 use veloce::time::Instant;
 use veloce::types::{Power, Pseudonym};
-use veloce::utils;
 use veloce::wire::{EthernetAddress, StationType};
 
 use veloce_nxp_phy::{NxpChannel, NxpConfig, NxpRadio, NxpUsbDevice, NxpWirelessChannel};
@@ -17,8 +16,7 @@ struct Arguments {
 }
 
 fn main() {
-    let args = Arguments::parse();
-    utils::setup_logging(args.log_level.as_str());
+    let _args = Arguments::parse();
 
     let ll_addr = EthernetAddress([0x04, 0xe5, 0x48, 0xfa, 0xde, 0xca]);
 
@@ -31,6 +29,10 @@ fn main() {
     );
     // Configure NXP device
     let mut device = NxpUsbDevice::new(config).unwrap();
+
+    // Wait for the device to be ready.
+    let mut device = device.wait_for_ready().unwrap();
+
     device.commit_config().expect("Cannot configure device");
 
     // Configure interface

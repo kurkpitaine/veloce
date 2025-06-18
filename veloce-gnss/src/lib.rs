@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use chrono::{DateTime, Utc};
 use log::{error, trace};
 use uom::si::{
@@ -10,9 +8,14 @@ use uom::si::{
 
 use veloce::{
     common::{PotiConfidence, PotiFix, PotiMode, PotiMotion, PotiPosition, PotiPositionConfidence},
-    time::{Instant, TAI2004},
+    time::{Duration, Instant, TAI2004},
     types::{LatitudeTrait, LongitudeTrait},
 };
+
+#[cfg(feature = "fixed")]
+mod fixed;
+#[cfg(feature = "fixed")]
+pub use fixed::{Fixed, FixedError};
 
 #[cfg(feature = "gpsd")]
 mod gpsd;
@@ -22,7 +25,7 @@ pub use gpsd::Gpsd;
 #[cfg(feature = "replay")]
 mod replay;
 #[cfg(feature = "replay")]
-pub use replay::Replay;
+pub use replay::{Replay, ReplayError};
 
 /// Accumulated GPS data. Most of the nested fields are optional,
 /// due to GPSs not sending all the relevant data at once.

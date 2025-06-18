@@ -42,6 +42,7 @@ impl fmt::Display for Protocol {
 
 /// Geonetworking packet Repr.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum Repr<T: PacketBufferMeta> {
     /// Unsecured packet kind.
     Unsecured(T),

@@ -1,3 +1,4 @@
+#![allow(clippy::large_enum_variant)]
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
@@ -18,8 +19,8 @@ mod etsi_messages_r2;
 
 // Reexport Rasn
 pub mod prelude {
-    pub use rasn;
     pub use num_traits;
+    pub use rasn;
 }
 
 pub mod defs {

@@ -90,6 +90,8 @@ pub enum EnrollmentRequestError {
     Encrypted(EncryptedDataError),
     /// No canonical key available.
     NoCanonicalKey,
+    /// No enrollment key available.
+    NoEnrollmentKey,
 }
 
 impl fmt::Display for EnrollmentRequestError {
@@ -122,6 +124,7 @@ impl fmt::Display for EnrollmentRequestError {
             EnrollmentRequestError::Encryption(e) => write!(f, "encryption : {}", e),
             EnrollmentRequestError::Encrypted(e) => write!(f, "encrypted: {}", e),
             EnrollmentRequestError::NoCanonicalKey => write!(f, "no canonical key available"),
+            EnrollmentRequestError::NoEnrollmentKey => write!(f, "no enrollment key available"),
         }
     }
 }
@@ -245,6 +248,7 @@ impl EnrollmentRequest {
     /// The returned [OuterEcRequest] is ready to be signed. It does not contain any signature.
     pub fn emit_outer_ec_request(
         for_pop: InnerEcRequestSignedForPop,
+        signer: SignerIdentifier,
         timestamp: Instant,
     ) -> EnrollmentRequestResult<OuterEcRequest> {
         let etsi_data = EtsiTs102941Data::new(
@@ -272,7 +276,7 @@ impl EnrollmentRequest {
             .map_err(EnrollmentRequestError::Outer)?;
 
         outer_ec_request
-            .set_signer_identifier(SignerIdentifier::SelfSigned)
+            .set_signer_identifier(signer)
             .map_err(EnrollmentRequestError::Outer)?;
 
         Ok(outer_ec_request)
@@ -436,7 +440,9 @@ impl EnrollmentResponse {
     }
 
     /// Get the certificate of the [EnrollmentResponse], as an [EnrollmentCredentialCertificate].
-    pub fn enrollment_credential(&self) -> EnrollmentResponseResult<Option<EnrollmentCredentialCertificate>> {
+    pub fn enrollment_credential(
+        &self,
+    ) -> EnrollmentResponseResult<Option<EnrollmentCredentialCertificate>> {
         let inner = self.inner.inner();
         let Some(cert) = &inner.certificate else {
             return Ok(None);

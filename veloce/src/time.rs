@@ -17,6 +17,8 @@ use core::{fmt, ops};
 #[cfg(feature = "asn1")]
 use veloce_asn1::defs::etsi_messages_r2::etsi__its__cdd::TimestampIts;
 
+use chrono::DateTime;
+
 /// A representation of an absolute TAI time value.
 /// Clock zero date is 01-01-2004 at 00:00:00 UTC.
 /// Also, leap seconds must be considered when generating a
@@ -87,6 +89,13 @@ impl TAI2004 {
         Instant::from_micros_const(unix.total_micros())
     }
 
+    /// Return as an ISO8601 string.
+    pub fn as_iso8601(&self) -> String {
+        let unix = self.as_unix_instant();
+        let naive = DateTime::from_timestamp_nanos(unix.total_micros() * 1000);
+        naive.format("%+").to_string()
+    }
+
     /// Create a new `TAI2004` from the current [std::time::SystemTime].
     ///
     /// See [std::time::SystemTime::now]
@@ -122,7 +131,7 @@ impl TAI2004 {
         self.micros / 1000
     }
 
-    /// The total number of milliseconds that have passed since
+    /// The total number of microseconds that have passed since
     /// the beginning of time.
     pub const fn total_micros(&self) -> i64 {
         self.micros
@@ -265,6 +274,12 @@ impl Instant {
         }
     }
 
+    /// Return as an ISO8601 string.
+    pub fn as_iso8601(&self) -> String {
+        let naive = DateTime::from_timestamp_nanos(self.total_micros() * 1000);
+        naive.format("%+").to_string()
+    }
+
     /// Create a new `Instant` from the current [std::time::SystemTime].
     ///
     /// See [std::time::SystemTime::now]
@@ -299,7 +314,7 @@ impl Instant {
     pub const fn total_millis(&self) -> i64 {
         self.micros / 1000
     }
-    /// The total number of milliseconds that have passed since
+    /// The total number of microseconds that have passed since
     /// the beginning of time.
     pub const fn total_micros(&self) -> i64 {
         self.micros

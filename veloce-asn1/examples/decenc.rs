@@ -39,7 +39,7 @@ fn main() {
 
     match rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Data>(input_eu_ectl) {
         Ok(d) => {
-            println!("EU ECTL: {:?}\n", d);
+            println!("EU ECTL: {}\n", rasn::jer::encode(&d).unwrap());
 
             match rasn::coer::encode(&d) {
                 Ok(e) => {
@@ -58,7 +58,7 @@ fn main() {
         Err(e) => println!("Cannot decode EU ECTL: {}\n", e),
     }
 
-    match rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Data>(input_vw_ectl) {
+    match rasn::coer::decode::<etsi_ts103097_module::EtsiTs103097Data>(input_eu_ectl) {
         Ok(d) => {
             println!("VW ECTL: {:?}\n", d);
 

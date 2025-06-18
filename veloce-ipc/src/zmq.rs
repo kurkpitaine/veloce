@@ -27,6 +27,11 @@ impl Publisher {
     pub fn send(&self, data: &[u8]) -> io::Result<()> {
         Ok(self.socket.send(data, zmq::DONTWAIT)?)
     }
+
+    /// Returns the underlying socket file descriptor.
+    pub fn raw_fd(&self) -> io::Result<i32> {
+        Ok(self.socket.get_fd()?)
+    }
 }
 
 /// ZeroMQ based subscriber.
@@ -106,12 +111,24 @@ pub struct Replier {
 }
 
 impl Replier {
-    /// Constructs a new [Responder]. `addr` should contain the ip address of the
-    /// interface the responder binds to, and also the port, ie: `127.0.0.1:5556`.
+    /// Constructs a new [Replier]. `addr` should contain the ip address of the
+    /// interface the replier binds to, and also the port, ie: `127.0.0.1:5556`.
     pub fn new(addr: String) -> io::Result<Replier> {
         let ctx = Context::new();
         let socket = ctx.socket(zmq::SocketType::REP)?;
         let endpoint = "tcp://".to_string() + &addr;
+
+        socket.bind(&endpoint)?;
+
+        Ok(Replier { socket })
+    }
+
+    /// Constructs a new [Replier] backed by a Unix Domain Socket.
+    /// `name` should contain the path to the Unix Domain Socket the replier binds to.
+    pub fn new_uds(name: String) -> io::Result<Replier> {
+        let ctx = Context::new();
+        let socket = ctx.socket(zmq::SocketType::REP)?;
+        let endpoint = "ipc://".to_string() + &name;
 
         socket.bind(&endpoint)?;
 
@@ -180,13 +197,28 @@ pub struct Requester {
 
 impl Requester {
     /// Constructs a new [Requester]. `addr` should contain the ip address
-    /// the subscriber connects to, and also the port, ie: `127.0.0.1:5556`.
+    /// the requester connects to, and also the port, ie: `127.0.0.1:5556`.
     /// FQDNs in place of ip address are supported by ZeroMQ but it will make
     /// this function a blocking call for the time the DNS resolution is made.
     pub fn new(addr: String) -> io::Result<Requester> {
         let ctx = Context::new();
         let socket = ctx.socket(zmq::SocketType::REQ)?;
         let endpoint = "tcp://".to_string() + &addr;
+
+        socket.connect(&endpoint)?;
+        socket.set_subscribe(&[])?;
+        socket.set_reconnect_ivl_max(500)?;
+
+        Ok(Requester { socket })
+    }
+
+    /// Constructs a new [Requester] backed by a Unix Domain Socket.
+    /// `name` should contain the path to the Unix Domain Socket that
+    /// the requester connects to.
+    pub fn new_uds(name: String) -> io::Result<Requester> {
+        let ctx = Context::new();
+        let socket = ctx.socket(zmq::SocketType::REQ)?;
+        let endpoint = "ipc://".to_string() + &name;
 
         socket.connect(&endpoint)?;
         socket.set_subscribe(&[])?;

@@ -38,12 +38,12 @@ defmodule Chemistry.MixProject do
 
   defp deps do
     [
-      {:protobuf, "~> 0.12.0"},
+      {:protobuf, "~> 0.14.1"},
       {:protobuf_compiler,
        git: "https://github.com/OffgridElectric/protobuf_compiler.git", runtime: false},
-      {:chumak, "~> 1.4"},
+      {:chumak, "~> 1.5"},
       {:asn1_compiler, "~> 0.1.1", runtime: false},
-      {:amqp, "~> 3.3"}
+      {:amqp, "~> 4.1"}
     ]
   end
 end

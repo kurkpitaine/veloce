@@ -104,6 +104,8 @@ pub struct OpensslBackend {
     canonical_secret_key: Option<EcKey<Private>>,
     /// EC certificate secret key.
     ec_cert_secret_key: Option<EcKey<Private>>,
+    /// EC certificate re-keying secret key.
+    ec_cert_rekeying_secret_key: Option<EcKey<Private>>,
     /// AT certificates secret keys. Used to sign the messages over the air.
     at_certs_secret_keys: HashMap<usize, EcKey<Private>>,
     /// Index of the current AT certificate secret key used for signing.
@@ -171,6 +173,7 @@ impl OpensslBackend {
             storage,
             canonical_secret_key,
             ec_cert_secret_key,
+            ec_cert_rekeying_secret_key: None,
             at_certs_secret_keys,
             current_at_id: None,
         })
@@ -263,7 +266,7 @@ impl OpensslBackend {
             },
             |buf| {
                 EcKey::private_key_from_pem_passphrase(&buf, password.expose_secret().as_bytes())
-                    .map(|k| Some(k))
+                    .map(Some)
                     .map_err(OpensslBackendError::OpenSSL)
             },
         )
@@ -439,6 +442,19 @@ impl BackendTrait for OpensslBackend {
         }
     }
 
+    fn available_at_keys(&self) -> BackendResult<Vec<(usize, EcdsaKey)>> {
+        let mut res = Vec::new();
+        for (i, k) in &self.at_certs_secret_keys {
+            let ec_key =
+                EcKey::from_public_key(k.group(), k.public_key()).map_err(BackendError::OpenSSL)?;
+
+            let pkey = PKey::from_ec_key(ec_key).map_err(BackendError::OpenSSL)?;
+            res.push((*i, pkey.try_into()?));
+        }
+
+        Ok(res)
+    }
+
     fn sha256(&self, data: &[u8]) -> [u8; 32] {
         sha::sha256(data)
     }
@@ -449,9 +465,9 @@ impl BackendTrait for OpensslBackend {
 
     fn sm3(&self, data: &[u8]) -> BackendResult<[u8; 32]> {
         let data = hash::hash(hash::MessageDigest::sm3(), data).map_err(BackendError::OpenSSL)?;
-        Ok((*data)
+        (*data)
             .try_into()
-            .map_err(|_| BackendError::InvalidHashFormat)?)
+            .map_err(|_| BackendError::InvalidHashFormat)
     }
 
     fn compress_ecies_key(&self, key: EciesKey) -> BackendResult<EciesKey> {
@@ -518,7 +534,7 @@ impl PkiBackendTrait for OpensslBackend {
 
         PKey::from_ec_key(ec_key)
             .map_err(BackendError::OpenSSL)
-            .map(|k| Some(k))
+            .map(Some)
     }
 
     fn enrollment_pubkey(&self) -> BackendResult<Option<Self::BackendPublicKey>> {
@@ -531,7 +547,7 @@ impl PkiBackendTrait for OpensslBackend {
 
         PKey::from_ec_key(ec_key)
             .map_err(BackendError::OpenSSL)
-            .map(|k| Some(k))
+            .map(Some)
     }
 
     fn generate_canonical_keypair(
@@ -548,7 +564,7 @@ impl PkiBackendTrait for OpensslBackend {
         Self::store_secret_key(&secret_key, name, &self.config.keys_password, &self.storage)?;
         self.canonical_secret_key = Some(secret_key);
 
-        Ok(PKey::from_ec_key(public_key).map_err(BackendError::OpenSSL)?)
+        PKey::from_ec_key(public_key).map_err(BackendError::OpenSSL)
     }
 
     fn generate_enrollment_keypair(
@@ -565,7 +581,20 @@ impl PkiBackendTrait for OpensslBackend {
         Self::store_secret_key(&secret_key, name, &self.config.keys_password, &self.storage)?;
         self.ec_cert_secret_key = Some(secret_key);
 
-        Ok(PKey::from_ec_key(public_key).map_err(BackendError::OpenSSL)?)
+        PKey::from_ec_key(public_key).map_err(BackendError::OpenSSL)
+    }
+
+    fn generate_re_enrollment_keypair(
+        &mut self,
+        key_type: EcKeyType,
+    ) -> BackendResult<Self::BackendPublicKey> {
+        let secret_key =
+            OpensslBackend::generate_secret_key(key_type).map_err(BackendError::OpenSSL)?;
+        let public_key = EcKey::from_public_key(secret_key.group(), secret_key.public_key())
+            .map_err(BackendError::OpenSSL)?;
+
+        self.ec_cert_rekeying_secret_key = Some(secret_key);
+        PKey::from_ec_key(public_key).map_err(BackendError::OpenSSL)
     }
 
     fn generate_authorization_ticket_keypair(
@@ -583,7 +612,7 @@ impl PkiBackendTrait for OpensslBackend {
         Self::store_secret_key(&secret_key, name, &self.config.keys_password, &self.storage)?;
         self.at_certs_secret_keys.insert(id, secret_key);
 
-        Ok(PKey::from_ec_key(public_key).map_err(BackendError::OpenSSL)?)
+        PKey::from_ec_key(public_key).map_err(BackendError::OpenSSL)
     }
 
     fn generate_ephemeral_keypair(
@@ -641,12 +670,33 @@ impl PkiBackendTrait for OpensslBackend {
         self.sign(data, ec_key)
     }
 
+    fn generate_re_enrollment_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature> {
+        let Some(ec_key) = &self.ec_cert_rekeying_secret_key else {
+            return Err(BackendError::NoEnrollmentSecretKey);
+        };
+
+        self.sign(data, ec_key)
+    }
+
     fn generate_canonical_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature> {
         let Some(ec_key) = &self.canonical_secret_key else {
             return Err(BackendError::NoCanonicalSecretKey);
         };
 
         self.sign(data, ec_key)
+    }
+
+    fn commit_re_enrollment_key(&mut self) -> BackendResult<()> {
+        let name = self.config.ec_key_filename.clone();
+
+        let Some(secret_key) = self.ec_cert_rekeying_secret_key.take() else {
+            return Err(BackendError::NoReEnrollmentSecretKey);
+        };
+
+        Self::store_secret_key(&secret_key, name, &self.config.keys_password, &self.storage)?;
+        self.ec_cert_secret_key = Some(secret_key);
+
+        Ok(())
     }
 
     fn encrypt_aes128_ccm(&self, data: &[u8], key: &[u8], nonce: &[u8]) -> BackendResult<Vec<u8>> {
@@ -843,7 +893,7 @@ impl TryInto<EciesKey> for PKey<Public> {
 
         let bytes = ec_key
             .public_key()
-            .to_bytes(&group, PointConversionForm::COMPRESSED, &mut ctx)
+            .to_bytes(group, PointConversionForm::COMPRESSED, &mut ctx)
             .map_err(BackendError::OpenSSL)?;
 
         let ecc_point = match bytes[0] {
@@ -872,7 +922,7 @@ impl TryInto<EcdsaKey> for PKey<Public> {
 
         let bytes = ec_key
             .public_key()
-            .to_bytes(&group, PointConversionForm::COMPRESSED, &mut ctx)
+            .to_bytes(group, PointConversionForm::COMPRESSED, &mut ctx)
             .map_err(BackendError::OpenSSL)?;
 
         let ecc_point = match bytes[0] {

@@ -1,12 +1,14 @@
+use core::fmt;
 use std::{
     fs::File,
     io::{self, BufRead, BufReader},
     iter::{Cycle, Peekable},
-    path::Path,
+    path::PathBuf,
     vec::IntoIter,
 };
 
 use chrono::{NaiveTime, TimeDelta, Utc};
+use log::error;
 use nmea::{
     sentences::{
         AamData, BwcData, BwwData, DbkData, DbsData, GgaData, GllData, GnsData, GstData, GsvData,
@@ -95,14 +97,29 @@ impl Clone for NmeaSentenceWrapper {
 }
 
 #[derive(Debug)]
-pub enum ReplayError<'a> {
+pub enum ReplayError {
     /// IO error.
     Io(io::Error),
     /// NMEA error.
-    Nmea(nmea::Error<'a>),
+    Nmea(String),
 }
 
-pub type ReplayResult<'a, T> = Result<T, ReplayError<'a>>;
+impl From<nmea::Error<'_>> for ReplayError {
+    fn from(error: nmea::Error<'_>) -> Self {
+        Self::Nmea(error.to_string())
+    }
+}
+
+impl fmt::Display for ReplayError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ReplayError::Io(e) => write!(f, "IO error: {e}"),
+            ReplayError::Nmea(e) => write!(f, "NMEA error: {e}"),
+        }
+    }
+}
+
+pub type ReplayResult<T> = Result<T, ReplayError>;
 
 /// Re-player of NMEA sentences.
 #[derive(Debug)]
@@ -123,30 +140,35 @@ impl Replay {
     /// Constructs a new [Replay] which will read from the given `file`. [Replay] will rewind
     /// to the beginning of the sequence when end of file is reached and start another playing.
     /// Repetitions will be delayed by `rewind_delay` .
-    /// Only sentences of type `GGA` and `RMC` will be processed, others will be ignored.
-    ///
-    /// # Panics
-    /// This function panics if NMEA sentences are invalid.
-    pub fn new(file: &Path, rewind_delay: Duration) -> ReplayResult<Replay> {
-        let file = File::open(file).map_err(ReplayError::Io)?;
+    /// Only valid NMEA sentences of type `GGA` and `RMC` will be processed, others will be ignored.
+    pub fn new(file: PathBuf, rewind_delay: Duration) -> ReplayResult<Replay> {
+        let file = File::open(&file).map_err(ReplayError::Io)?;
         let reader = BufReader::new(file);
 
         let sentences = reader
             .lines()
-            .map(|l| l.unwrap())
-            .filter_map(|line| {
+            .filter_map(|l| {
+                let line = l
+                    .inspect_err(|e| error!("Cannot read line from file: {}", e))
+                    .ok()?;
+
                 // Ignore GPGSA sentences, NMEA parser is bugged.
                 if line.starts_with("$GPGSA") {
                     return None;
                 }
-                Some((NmeaSentenceWrapper(nmea::parse_str(&line).unwrap()), line))
+
+                nmea::parse_str(&line)
+                    .inspect_err(|e| error!("Cannot parse NMEA sentence: {}", e))
+                    .ok()
+                    .map(|sentence| (NmeaSentenceWrapper(sentence), line))
             })
             .collect::<Vec<_>>();
 
         Ok(Self {
             cycle: sentences.into_iter().cycle().peekable(),
             position: Default::default(),
-            cache: Nmea::create_for_navigation(&[SentenceType::RMC, SentenceType::GGA]).unwrap(),
+            cache: Nmea::create_for_navigation(&[SentenceType::RMC, SentenceType::GGA])
+                .map_err(ReplayError::from)?,
             rewind_delay,
             next_sentence_at: Instant::ZERO,
         })
@@ -160,41 +182,49 @@ impl Replay {
     /// Processes a GPS sentence present in the replay file.
     ///
     /// This function returns a boolean value indicating whether a new position is available or not.
-    pub fn poll(&mut self, timestamp: Instant) -> bool {
+    pub fn poll(&mut self, timestamp: Instant) -> ReplayResult<bool> {
         if timestamp < self.next_sentence_at {
-            return false;
+            return Ok(false);
         }
 
-        // First we call next() to get the value.
-        let (current, current_str) = self.cycle.next().unwrap_or_else(|| unreachable!());
-        let current_tst_opt = current.timestamp().cloned();
+        let ready = loop {
+            // First we call next() to get the value.
+            let (current, current_str) = self.cycle.next().unwrap_or_else(|| unreachable!());
+            let current_tst_opt = current.timestamp().cloned();
 
-        let ready = self.update_cache(&current_str);
+            let ready = self.update_cache(&current_str);
 
-        // Then we call peek() to see when the next sentence will have to be processed.
-        let (next, _) = self.cycle.peek().unwrap_or_else(|| unreachable!());
-        match (next.timestamp(), current_tst_opt) {
-            (Some(next_tst), Some(current_tst)) => {
-                let delta = *next_tst - current_tst;
+            // Then we call peek() to see when the next sentence will have to be processed.
+            let (next, _) = self.cycle.peek().unwrap_or_else(|| unreachable!());
+            match (next.timestamp(), current_tst_opt) {
+                (Some(next_tst), Some(current_tst)) => {
+                    let delta = *next_tst - current_tst;
+                    if delta == TimeDelta::zero() {
+                        // Next sentence has the same timestamp as the current one.
+                        continue;
+                    } else if delta > TimeDelta::zero() {
+                        self.next_sentence_at = timestamp
+                            + Duration::from_millis(delta.num_milliseconds().unsigned_abs());
 
-                if delta >= TimeDelta::zero() {
-                    self.next_sentence_at =
-                        timestamp + Duration::from_millis(delta.num_milliseconds().unsigned_abs());
-                } else {
-                    // Rewind to the beginning of the sequence.
-                    self.cache =
-                        Nmea::create_for_navigation(&[SentenceType::RMC, SentenceType::GGA])
-                            .unwrap();
-                    self.next_sentence_at = timestamp + self.rewind_delay;
+                        break ready;
+                    } else {
+                        // Rewind to the beginning of the sequence.
+                        self.cache =
+                            Nmea::create_for_navigation(&[SentenceType::RMC, SentenceType::GGA])
+                                .map_err(ReplayError::from)?;
+                        self.next_sentence_at = timestamp + self.rewind_delay;
+
+                        break ready;
+                    }
+                }
+                _ => {
+                    // Skip incomplete sentences.
+                    continue;
                 }
             }
-            _ => {
-                // Schedule for immediate polling.
-                self.next_sentence_at = timestamp;
-            }
-        }
+        };
 
-        ready
+        Ok(ready)
     }
 
     /// Return the instant at which the re-player should be polled.
@@ -240,7 +270,7 @@ impl Replay {
                     .speed_over_ground
                     .map(|speed| Velocity::new::<meter_per_second>(speed.into()));
 
-                // Fake confidence values sine NMEA parser does not provide them.
+                // Fake confidence values since NMEA parser does not provide them.
                 self.position.confidence = Some(crate::Confidence {
                     semi_major_axis: Length::new::<meter>(10.0),
                     semi_minor_axis: Length::new::<meter>(10.0),

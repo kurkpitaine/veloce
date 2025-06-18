@@ -216,7 +216,8 @@ where
         Some(rc)
     }
 
-    /// Dequeue one packet from the buffer.
+    /// Dequeue one packet from the buffer and pass it to the given function `f`.
+    /// Packet is always removed from the buffer, ignoring `f` result.
     pub fn dequeue_one<F, E, S>(&mut self, f: F) -> Option<Result<S, E>>
     where
         F: FnOnce(&mut Node<T>) -> Result<S, E>,

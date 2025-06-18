@@ -262,7 +262,7 @@ impl Interface {
     /// Create a network interface using the previously provided configuration.
     ///
     /// # Panics
-    /// This function panics if the [`Config::hardware_address`] does not match
+    /// This function panics if the [`Config::hardware_addr`] does not match
     /// the medium of the device.
     pub fn new<D>(config: Config, device: &mut D) -> Self
     where
@@ -411,8 +411,8 @@ impl Interface {
     ///
     /// [poll]: #method.poll
     /// [Instant]: struct.Instant.html
-    pub fn poll_at(&mut self, sockets: &SocketSet<'_>) -> Option<Instant> {
-        let inner = &mut self.inner;
+    pub fn poll_at(&self, sockets: &SocketSet<'_>) -> Option<Instant> {
+        let inner = &self.inner;
 
         let trc_timeout = self.congestion_control.poll_at();
         let beacon_timeout = Some(inner.retransmit_beacon_at);
@@ -450,7 +450,7 @@ impl Interface {
     ///
     /// [poll]: #method.poll
     /// [Duration]: struct.Duration.html
-    pub fn poll_delay(&mut self, timestamp: Instant, sockets: &SocketSet<'_>) -> Option<Duration> {
+    pub fn poll_delay(&self, timestamp: Instant, sockets: &SocketSet<'_>) -> Option<Duration> {
         match self.poll_at(sockets) {
             Some(poll_at) if timestamp < poll_at => Some(poll_at - timestamp),
             Some(_) => Some(Duration::ZERO),
@@ -1205,6 +1205,12 @@ impl InterfaceInner {
     }
 
     #[cfg(feature = "medium-ethernet")]
+    #[allow(unused)] // unused depending on which sockets are enabled
+    pub(crate) fn set_hardware_addr(&mut self, addr: HardwareAddress) {
+        self.hardware_addr = addr;
+    }
+
+    #[cfg(feature = "medium-ethernet")]
     #[allow(unused)]
     fn check_hardware_addr(addr: &HardwareAddress) {
         if !addr.is_unicast() {
@@ -1475,7 +1481,7 @@ impl InterfaceInner {
         self.location_table.clear();
     }
 
-    #[cfg(all(feature = "proto-geonet", feature = "conformance"))]
+    #[cfg(feature = "proto-geonet")]
     pub fn reset_sequence_number(&mut self) {
         self.sequence_number.0 = 0;
     }

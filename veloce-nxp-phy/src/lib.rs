@@ -28,23 +28,29 @@ pub const RAW_FRAME_LENGTH_MAX: usize = 1518;
 pub const LLC_BUFFER_LEN: usize = 4096;
 
 #[derive(Debug)]
-pub enum Error {
+pub enum NxpError {
     /// Operation has expired.
     Timeout,
     /// No Rx packet in buffer.
     NoRxPacket,
     /// An error occured during USB operation.
     USB,
+    /// Radio error. Contains the error code.
+    Radio(i16),
+    /// IO error.
+    IO(std::io::Error),
 }
 
-impl fmt::Display for Error {
+impl fmt::Display for NxpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Error::Timeout => f.write_str("timeout"),
-            Error::NoRxPacket => f.write_str("no rx packet in buffer"),
-            Error::USB => f.write_str("USB error"),
+            NxpError::Timeout => f.write_str("timeout"),
+            NxpError::NoRxPacket => f.write_str("no rx packet in buffer"),
+            NxpError::USB => f.write_str("USB error"),
+            NxpError::Radio(code) => write!(f, "Radio error: {}", code),
+            NxpError::IO(ref e) => write!(f, "IO error: {}", e),
         }
     }
 }
 
-pub type Result<T> = core::result::Result<T, Error>;
+pub type NxpResult<T> = core::result::Result<T, NxpError>;

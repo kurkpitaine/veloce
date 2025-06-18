@@ -3,10 +3,10 @@ use core::fmt;
 use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2::Certificate as EtsiCertificate;
 
 use crate::{
-    security::certificate::{
-        AuthorizationAuthorityCertificate, CertificateError, ExplicitCertificate,
+    security::{
+        certificate::{AuthorizationAuthorityCertificate, CertificateError, ExplicitCertificate},
+        service::SecurityService,
     },
-    security::service::SecurityService,
     time::Instant,
 };
 
@@ -54,7 +54,7 @@ impl SecurityService {
             .own_chain()
             .aa_cert()
             .as_ref()
-            .map_or(false, |own_aa| own_aa.hashed_id8() == req_aa.hashed_id8());
+            .is_some_and(|own_aa| own_aa.hashed_id8() == req_aa.hashed_id8());
 
         if aa_found {
             // This is our AA certificate.

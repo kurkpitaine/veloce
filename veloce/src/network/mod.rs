@@ -12,7 +12,10 @@ use crate::security::{permission::Permission, HashedId8};
 use crate::time::Duration;
 use crate::wire::GnProtocol;
 use crate::wire::{GnAddress, GnTrafficClass};
-pub use core::{AddrConfigMode as GnAddrConfigMode, Config as GnCoreGonfig, Core as GnCore};
+pub use core::{
+    AddrConfigMode as GnAddrConfigMode, Config as GnCoreGonfig, Core as GnCore,
+    PollEvent as GnCorePollEvent,
+};
 pub use request::{AddressableRequest, GeoZonableRequest, HoppableRequest};
 
 use super::config;

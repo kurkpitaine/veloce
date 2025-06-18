@@ -4,6 +4,9 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::vec::Vec;
 
+use mio::event::Source;
+use mio::unix::SourceFd;
+
 use crate::phy::{self, sys, Device, DeviceCapabilities, Medium};
 use crate::time::Instant;
 
@@ -48,10 +51,12 @@ impl RawSocket {
 }
 
 impl Device for RawSocket {
-    type RxToken<'a> = RxToken
+    type RxToken<'a>
+        = RxToken
     where
         Self: 'a;
-    type TxToken<'a> = TxToken
+    type TxToken<'a>
+        = TxToken
     where
         Self: 'a;
 
@@ -122,5 +127,29 @@ impl phy::TxToken for TxToken {
             Err(err) => panic!("{}", err),
         }
         result
+    }
+}
+
+impl Source for RawSocket {
+    fn register(
+        &mut self,
+        registry: &mio::Registry,
+        token: mio::Token,
+        interests: mio::Interest,
+    ) -> io::Result<()> {
+        SourceFd(&self.as_raw_fd()).register(registry, token, interests)
+    }
+
+    fn reregister(
+        &mut self,
+        registry: &mio::Registry,
+        token: mio::Token,
+        interests: mio::Interest,
+    ) -> io::Result<()> {
+        SourceFd(&self.as_raw_fd()).reregister(registry, token, interests)
+    }
+
+    fn deregister(&mut self, registry: &mio::Registry) -> io::Result<()> {
+        SourceFd(&self.as_raw_fd()).deregister(registry)
     }
 }

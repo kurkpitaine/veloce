@@ -1,5 +1,12 @@
 //! A trust chain contains a PKI signing certificates, ie: RCA, EA and AA certificates.
 //! Also, it contains the Certificate Revocation List.
+#[cfg(not(feature = "std"))]
+use alloc::collections::btree_map::BTreeMap;
+
+#[cfg(feature = "std")]
+use std::collections::BTreeMap;
+
+use core::{fmt, hash::Hash};
 
 use super::{
     certificate::{
@@ -11,6 +18,48 @@ use super::{
 };
 
 type Container<C> = CertificateWithHashContainer<C>;
+
+/// Container for the AT certificate.
+#[derive(Debug)]
+pub struct ATContainer {
+    /// The AT certificate.
+    at_cert: Container<AuthorizationTicketCertificate>,
+    /// Number of times the AT has been elected to sign messages.
+    elected: usize,
+}
+
+impl ATContainer {
+    /// Create a new [ATContainer] from an [AuthorizationTicketCertificate] and a number of times
+    /// it has been elected to sign messages.
+    pub fn new(at_cert: Container<AuthorizationTicketCertificate>, elected: usize) -> Self {
+        Self { at_cert, elected }
+    }
+
+    /// Return a reference on the [AuthorizationTicketCertificate].
+    pub fn at_container(&self) -> &Container<AuthorizationTicketCertificate> {
+        &self.at_cert
+    }
+
+    /// Return the number of times this AT has been elected to sign messages.
+    pub fn elected(&self) -> usize {
+        self.elected
+    }
+
+    /// Notify this AT has been elected to sign messages.
+    pub fn notify_elected(&mut self) {
+        self.elected += 1;
+    }
+}
+
+/// Error returned when trying to set an index that does not exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NoCertificateAtIndexError(usize);
+
+impl fmt::Display for NoCertificateAtIndexError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "No certificate at index {}", self.0)
+    }
+}
 
 /// A certificate trust chain.
 #[derive(Debug)]
@@ -24,10 +73,12 @@ pub struct TrustChain {
     ec_cert: Option<Container<EnrollmentCredentialCertificate>>,
     /// Authorization Authority certificate of the trust chain.
     aa_cert: Option<Container<AuthorizationAuthorityCertificate>>,
-    /// Authorization Ticket certificate of the trust chain.
-    at_cert: Option<Container<AuthorizationTicketCertificate>>,
+    /// Authorization Ticket certificates of the trust chain.
+    at_certs: BTreeMap<usize, ATContainer>,
     /// Revoked certificates.
     revoked_certs: Vec<HashedId8>,
+    /// Current Authorization Ticket certificate index.
+    current_at_id: Option<usize>,
 }
 
 impl TrustChain {
@@ -38,8 +89,9 @@ impl TrustChain {
             ea_cert: None,
             ec_cert: None,
             aa_cert: None,
-            at_cert: None,
+            at_certs: BTreeMap::new(),
             revoked_certs: Vec::new(),
+            current_at_id: None,
         }
     }
 
@@ -49,23 +101,29 @@ impl TrustChain {
     }
 
     /// Get a reference on the Enrollment Authority certificate, if any.
-    pub fn ea_cert(&self) -> &Option<Container<EnrollmentAuthorityCertificate>> {
-        &self.ea_cert
+    pub fn ea_cert(&self) -> Option<&Container<EnrollmentAuthorityCertificate>> {
+        self.ea_cert.as_ref()
     }
 
     /// Get a reference on the Enrollment Credential certificate, if any.
-    pub fn ec_cert(&self) -> &Option<Container<EnrollmentCredentialCertificate>> {
-        &self.ec_cert
+    pub fn ec_cert(&self) -> Option<&Container<EnrollmentCredentialCertificate>> {
+        self.ec_cert.as_ref()
     }
 
     /// Get a reference on the Authorization Authority certificate, if any.
-    pub fn aa_cert(&self) -> &Option<Container<AuthorizationAuthorityCertificate>> {
-        &self.aa_cert
+    pub fn aa_cert(&self) -> Option<&Container<AuthorizationAuthorityCertificate>> {
+        self.aa_cert.as_ref()
     }
 
     /// Get a reference on the Authorization Ticket certificate, if any.
-    pub fn at_cert(&self) -> &Option<Container<AuthorizationTicketCertificate>> {
-        &self.at_cert
+    pub fn at_cert(&self) -> Option<&ATContainer> {
+        let index = self.current_at_id?;
+        self.at_certs.get(&index)
+    }
+
+    /// Get a reference on all the Authorization Ticket certificates.
+    pub fn at_certs(&self) -> &BTreeMap<usize, ATContainer> {
+        &self.at_certs
     }
 
     /// Set the Enrollment Authority Certificate.
@@ -83,9 +141,27 @@ impl TrustChain {
         self.aa_cert = Some(aa_cert);
     }
 
-    /// Set the Authorization Ticket Certificate.
-    pub fn set_at_cert(&mut self, at_cert: Container<AuthorizationTicketCertificate>) {
-        self.at_cert = Some(at_cert);
+    /// Set the Authorization Ticket Certificates.
+    /// This method will clear any previously added Authorization Ticket certificates.
+    pub fn set_at_certs(&mut self, at_certs: BTreeMap<usize, ATContainer>) {
+        self.at_certs = at_certs;
+    }
+
+    /// Add an Authorization Ticket certificate `at_cert` at `index`.
+    pub fn add_at_cert(&mut self, index: usize, at_cert: ATContainer) {
+        self.at_certs.insert(index, at_cert);
+    }
+
+    /// Set the current Authorization Ticket certificate index.
+    /// Increments the election counter of the AT certificate.
+    pub fn set_at_cert_index(&mut self, index: usize) -> Result<(), NoCertificateAtIndexError> {
+        let Some(entry) = self.at_certs.get_mut(&index) else {
+            return Err(NoCertificateAtIndexError(index));
+        };
+
+        self.current_at_id = Some(index);
+        entry.notify_elected();
+        Ok(())
     }
 
     /// Add a certificate [HashedId8] to the revoked certificates list.

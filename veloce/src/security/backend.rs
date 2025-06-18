@@ -5,7 +5,7 @@ use super::{signature::EcdsaSignature, EcdsaKey, EciesKey};
 #[cfg(feature = "pki")]
 use super::{EcKeyType, HashAlgorithm, KeyPair};
 
-#[cfg(feature = "security-openssl")]
+#[cfg(feature = "security-backend-openssl")]
 pub mod openssl;
 
 #[derive(Debug)]
@@ -13,7 +13,7 @@ pub enum BackendError {
     #[cfg(feature = "std")]
     /// IO error, ie: reading/writing a file failed.
     Io(std::io::Error),
-    #[cfg(feature = "security-openssl")]
+    #[cfg(feature = "security-backend-openssl")]
     /// OpenSSL internal error.
     OpenSSL(::openssl::error::ErrorStack),
     /// Key type is not supported by crypto backend.
@@ -32,6 +32,8 @@ pub enum BackendError {
     NoCanonicalSecretKey,
     /// No enrollment secret key is available.
     NoEnrollmentSecretKey,
+    /// No re-enrollment secret key is available.
+    NoReEnrollmentSecretKey,
     /// Invalid key.
     InvalidKey,
     /// Hash format is invalid.
@@ -56,7 +58,7 @@ impl fmt::Display for BackendError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             BackendError::Io(e) => write!(f, "IO error: {}", e),
-            #[cfg(feature = "security-openssl")]
+            #[cfg(feature = "security-backend-openssl")]
             BackendError::OpenSSL(e) => write!(f, "OpenSSL error: {}", e),
             BackendError::UnsupportedKeyType => write!(f, "Unsupported key type"),
             BackendError::InvalidKeyFormat => write!(f, "Invalid key format"),
@@ -66,6 +68,7 @@ impl fmt::Display for BackendError {
             BackendError::NoSigningCertSecretKey => write!(f, "No signing certificate secret key"),
             BackendError::NoCanonicalSecretKey => write!(f, "No canonical secret key"),
             BackendError::NoEnrollmentSecretKey => write!(f, "No enrollment secret key"),
+            BackendError::NoReEnrollmentSecretKey => write!(f, "No re-enrollment secret key"),
             BackendError::InvalidKey => write!(f, "Invalid key"),
             BackendError::InvalidHashFormat => write!(f, "Invalid hash format"),
             BackendError::InternalError => write!(f, "Internal error"),
@@ -89,25 +92,25 @@ pub type BackendResult<T> = Result<T, BackendError>;
 /// Cryptography operations backend.
 #[derive(Debug)]
 pub enum Backend {
-    #[cfg(feature = "security-openssl")]
+    #[cfg(feature = "security-backend-openssl")]
     /// OpenSSL based backend.
     Openssl(openssl::OpensslBackend),
 }
 
 impl Backend {
     #[inline]
-    pub(super) fn inner(&self) -> &impl BackendTrait {
+    pub fn inner(&self) -> &dyn BackendTrait {
         match self {
-            #[cfg(feature = "security-openssl")]
+            #[cfg(feature = "security-backend-openssl")]
             Backend::Openssl(backend) => backend,
         }
     }
 
     #[allow(unused)]
     #[inline]
-    pub(super) fn inner_mut(&mut self) -> &mut impl BackendTrait {
+    pub fn inner_mut(&mut self) -> &mut dyn BackendTrait {
         match self {
-            #[cfg(feature = "security-openssl")]
+            #[cfg(feature = "security-backend-openssl")]
             Backend::Openssl(backend) => backend,
         }
     }
@@ -128,6 +131,10 @@ pub trait BackendTrait {
 
     /// Set the current authorization ticket private key to the one at `index`.
     fn set_at_key_index(&mut self, index: usize) -> BackendResult<()>;
+
+    /// Get the available authorization ticket authorization ticket private key indexes,
+    /// along with the corresponding public key.
+    fn available_at_keys(&self) -> BackendResult<Vec<(usize, EcdsaKey)>>;
 
     /// Computes the SHA256 hash for a given `data` slice.
     fn sha256(&self, data: &[u8]) -> [u8; 32];
@@ -192,6 +199,18 @@ pub trait PkiBackendTrait: BackendTrait {
         key_type: EcKeyType,
     ) -> BackendResult<Self::BackendPublicKey>;
 
+    /// Generate a new enrollment key pair for a given `key_type`, and return the public key part
+    /// of it.
+    ///
+    /// WARNING: the enrollment key pair is VERY sensitive as it used by the ITS station to sign
+    /// Authorization Tickets requests to the PKI or to re-enroll.
+    /// Underlying secret key storage is left to the backend, special care should be taken to ensure
+    /// secret key stays secret.
+    fn generate_re_enrollment_keypair(
+        &mut self,
+        key_type: EcKeyType,
+    ) -> BackendResult<Self::BackendPublicKey>;
+
     /// Generate a new authorization ticket key pair for a given `key_type`, tag it wih the given `id`,
     /// and return the public key part of it.
     ///
@@ -226,6 +245,10 @@ pub trait PkiBackendTrait: BackendTrait {
     /// Sign the given `data` slice with the current enrollment credential private key.
     fn generate_enrollment_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature>;
 
+    /// Sign the given `data` slice with the current re-enrollment credential private key.
+    /// Don't forget to call [PkiBackendTrait::commit_re_enrollment_key] afterwards.
+    fn generate_re_enrollment_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature>;
+
     /// Sign the given `data` slice with the authorization private key at the provided `key_index`.
     fn generate_authorization_signature(
         &self,
@@ -235,6 +258,11 @@ pub trait PkiBackendTrait: BackendTrait {
 
     /// Sign the given `data` slice with the canonical private key.
     fn generate_canonical_signature(&self, data: &[u8]) -> BackendResult<EcdsaSignature>;
+
+    /// Commit the re-enrollment key pair.
+    /// The current enrollment credential secret key is set to the re-enrollment secret key
+    /// erasing the existing one.
+    fn commit_re_enrollment_key(&mut self) -> BackendResult<()>;
 
     /// Encrypt the given 'data' slice as an AES-128-CCM cipher with the provided `key` and `nonce`.
     /// The generated AES tag is appended to the encrypted data.

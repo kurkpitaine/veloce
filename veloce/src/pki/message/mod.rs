@@ -1,6 +1,6 @@
 pub mod authorization;
-pub mod enrollment;
 pub mod ctl;
+pub mod enrollment;
 
 use core::fmt;
 
@@ -20,8 +20,8 @@ use crate::security::{
     ciphertext::{Ciphertext, CiphertextError},
     permission::AID,
     signature::EcdsaSignature,
-    EcdsaKey, EcdsaKeyError, EciesKeyError, EncryptedEciesKey, EncryptedEciesKeyError,
-    HashAlgorithm, HashedId8, KeyPair,
+    EcdsaKeyError, EciesKeyError, EncryptedEciesKey, EncryptedEciesKeyError, HashAlgorithm,
+    HashedId8, KeyPair,
 };
 
 use super::{
@@ -272,6 +272,10 @@ pub enum VerifierError {
     },
     /// Invalid certificate.
     InvalidCertificate(CertificateError),
+    /// Unexpected certificate.
+    UnexpectedSignerCertificate,
+    /// False certificate signature.
+    FalseCertificateSignature,
     /// Insufficient permissions.
     InsufficientPermissions,
     /// Off validity period.
@@ -291,6 +295,10 @@ impl fmt::Display for VerifierError {
             VerifierError::InvalidCertificate(e) => {
                 write!(f, "invalid certificate: {}", e)
             }
+            VerifierError::UnexpectedSignerCertificate => {
+                write!(f, "unexpected signer certificate")
+            }
+            VerifierError::FalseCertificateSignature => write!(f, "false certificate signature"),
             VerifierError::InsufficientPermissions => write!(f, "insufficient permissions"),
             VerifierError::OffValidityPeriod => write!(f, "off validity period"),
         }
@@ -301,16 +309,16 @@ impl fmt::Display for VerifierError {
 /// Various content checks are performed and the signature is verified with the provided `backend` and `certificate`.
 /// `pub_key` callback should provide the public key used to verify the signature. None is returned if it cannot be found.
 /// `verify_app` callback verifies if the AID matches the application. Expected AID should be returned if not.
-pub fn verify_signed_data<B, F, A, T>(
+pub fn verify_signed_data<B, C, F, A, T>(
     data: &SignedData<T>,
-    certificate: &impl ExplicitCertificate,
     backend: &B,
-    pub_key: F,
+    certificate: F,
     verify_app: A,
 ) -> VerifierResult<bool>
 where
     B: PkiBackendTrait,
-    F: FnOnce(SignerIdentifier) -> VerifierResult<Option<EcdsaKey>>,
+    C: ExplicitCertificate,
+    F: FnOnce(SignerIdentifier) -> VerifierResult<Option<C>>,
     A: FnOnce(AID) -> Result<(), AID>,
 {
     // Retrieve generation time.
@@ -327,14 +335,19 @@ where
     // Get application identifier.
     let aid = data.application_id().map_err(VerifierError::SignedData)?;
 
-    let signer_pubkey = pub_key(signer_id)?.ok_or(VerifierError::UnknownSigner(signer_id))?;
+    // Signer certificate.
+    let signer_cert =
+        certificate(signer_id.clone())?.ok_or(VerifierError::UnknownSigner(signer_id))?;
 
     // Get content to verify.
     let tbs = data
         .to_be_signed_bytes()
         .map_err(VerifierError::SignedData)?;
 
-    let signer_data = certificate.raw_bytes();
+    let signer_data = signer_cert.raw_bytes();
+    let signer_pubkey = signer_cert
+        .public_verification_key()
+        .map_err(VerifierError::InvalidCertificate)?;
 
     let hash = match signature.hash_algorithm() {
         HashAlgorithm::SHA256 => [backend.sha256(&tbs), backend.sha256(signer_data)].concat(),
@@ -347,11 +360,11 @@ where
     };
 
     verify_app(aid).map_err(|expected| VerifierError::InvalidAid {
-        expected: expected,
+        expected,
         actual: aid,
     })?;
 
-    let signer_permissions = certificate
+    let signer_permissions = signer_cert
         .application_permissions()
         .map_err(VerifierError::InvalidCertificate)?;
 
@@ -360,7 +373,7 @@ where
     };
 
     // Verify generation time vs cert validity period.
-    if !certificate
+    if !signer_cert
         .validity_period()
         .contains_instant(generation_time)
     {
@@ -408,6 +421,23 @@ where
 {
     sign_with(message, algorithm, signer_data, backend, |hash, backend| {
         backend.generate_enrollment_signature(&hash)
+    })
+}
+
+/// Sign `message` which contain the data to be hashed and signed, with the re-enrollment key.
+/// Additional hash data can be provided with `signer_data`, which usually contains the certificate bytes.
+/// Signature is inserted into the provided `data`.
+pub fn sign_with_re_enrollment_key<B, T>(
+    message: &mut SignedData<T>,
+    algorithm: HashAlgorithm,
+    signer_data: &[u8],
+    backend: &B,
+) -> SignerResult<()>
+where
+    B: PkiBackendTrait,
+{
+    sign_with(message, algorithm, signer_data, backend, |hash, backend| {
+        backend.generate_re_enrollment_signature(&hash)
     })
 }
 
@@ -509,6 +539,7 @@ impl fmt::Display for EncryptionError {
 /// Encrypt `data` bytes using the provided symmetric `symm_encryption_key`, `certificate`,  and cryptography `backend`.
 /// Returns the encrypted data and the ephemeral encryption key pair.
 /// The returned [EncryptedData] structure is filled and ready to be serialized.
+#[allow(clippy::type_complexity)]
 pub fn encrypt<B>(
     data: Vec<u8>,
     symm_encryption_key: &Aes128Key,

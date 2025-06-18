@@ -8,6 +8,7 @@ use alloc::collections::btree_map::BTreeMap;
 use std::collections::BTreeMap;
 
 use crate::config::SEC_CERT_CACHE_ENTRY_LIFETIME;
+use crate::security::certificate::CertificateTrait;
 use crate::time::Instant;
 
 use super::certificate::AuthorizationTicketCertificate;
@@ -45,7 +46,9 @@ impl CertificateCache {
         certificate: AuthorizationTicketCertificate,
         timestamp: Instant,
     ) {
-        let expires_at = timestamp + SEC_CERT_CACHE_ENTRY_LIFETIME;
+        let cache_expiration = timestamp + SEC_CERT_CACHE_ENTRY_LIFETIME;
+        let cert_expiration = certificate.validity_period().end().as_unix_instant();
+        let expires_at = cache_expiration.min(cert_expiration);
 
         let cached_cert = CachedCertificate {
             certificate,

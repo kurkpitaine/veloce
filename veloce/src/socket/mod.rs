@@ -56,6 +56,7 @@ pub(crate) enum PollAt {
 /// [AnySocket]: trait.AnySocket.html
 /// [SocketSet::get]: struct.SocketSet.html#method.get
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Socket<'a> {
     #[cfg(feature = "socket-geonet")]
     Geonet(geonet::Socket<'a>),
@@ -70,7 +71,7 @@ pub enum Socket<'a> {
 }
 
 impl<'a> Socket<'a> {
-    pub(crate) fn poll_at(&self, cx: &mut Context) -> PollAt {
+    pub(crate) fn poll_at(&self, cx: &Context) -> PollAt {
         match self {
             #[cfg(feature = "socket-geonet")]
             Socket::Geonet(s) => s.poll_at(cx),

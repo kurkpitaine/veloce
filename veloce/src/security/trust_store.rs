@@ -44,6 +44,11 @@ impl Store {
         &self.own_chain
     }
 
+    /// Get a mutable reference to the own certificate chain.
+    pub fn own_chain_mut(&mut self) -> &mut TrustChain {
+        &mut self.own_chain
+    }
+
     /// Query whether the certificate identifier `hash` is in the revoked
     /// certificates list of any trust chain.
     pub fn is_revoked(&self, hash: HashedId8) -> bool {
@@ -81,7 +86,7 @@ impl Store {
         self.remote_chains
             .iter()
             .find_map(|(_, chain)| match chain.aa_cert() {
-                Some(aa) if aa.hashed_id8() == hash => return Some(aa.certificate().clone()),
+                Some(aa) if aa.hashed_id8() == hash => Some(aa.certificate().clone()),
                 _ => None,
             });
 

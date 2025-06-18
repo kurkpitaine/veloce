@@ -1,5 +1,6 @@
-use core::fmt;
+use core::{fmt, num::ParseIntError};
 use std::{
+    collections::BTreeMap,
     fs::{self},
     io::{self, Read, Result as IoResult, Write},
     os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
@@ -7,6 +8,9 @@ use std::{
 };
 
 use directories::UserDirs;
+use serde::{Deserialize, Serialize};
+
+use crate::security::storage::StorageMetadata;
 
 use super::{StorageError, StorageResult, StorageTrait};
 
@@ -30,6 +34,8 @@ pub struct DirectoryStorageConfig {
     ec_cert_filename: String,
     /// AT certs filename prefix.
     at_cert_filename_prefix: String,
+    /// Certificates metadata filename.
+    metadata_filename: String,
 }
 
 impl DirectoryStorageConfig {
@@ -56,6 +62,7 @@ impl Default for DirectoryStorageConfig {
             ea_cert_filename: "EA.cert".into(),
             ec_cert_filename: "EC.cert".into(),
             at_cert_filename_prefix: "AT_".into(),
+            metadata_filename: "metadata.toml".into(),
         }
     }
 }
@@ -71,6 +78,10 @@ pub enum DirectoryStorageError {
     HomeDirNotFound,
     /// Bad permissions. Expected value is the second parameter.
     BadPermissions(PathBuf, u32),
+    /// Error while deserializing metadata TOML file.
+    TomlDecode(String),
+    /// Error while serializing metadata TOML file.
+    TomlEncode(String),
 }
 
 impl fmt::Display for DirectoryStorageError {
@@ -80,6 +91,12 @@ impl fmt::Display for DirectoryStorageError {
             DirectoryStorageError::HomeDirNotFound => write!(f, "home directory not found"),
             DirectoryStorageError::BadPermissions(p, m) => {
                 write!(f, "bad permissions, should be {:#o} on: {}", m, p.display())
+            }
+            DirectoryStorageError::TomlDecode(e) => {
+                write!(f, "Error while deserializing metadata TOML file: {}", e)
+            }
+            DirectoryStorageError::TomlEncode(e) => {
+                write!(f, "Error while serializing metadata TOML file: {}", e)
             }
         }
     }
@@ -203,7 +220,6 @@ impl DirectoryStorage {
 
     /// Stores `content` at `path`, with optional `permissions`.
     /// If no permissions are provided, the file is created with inherited folder permissions.
-    /// Blocks until the file contents and it's metadata are written to the disk.
     fn store_file(path: PathBuf, content: &[u8], permissions: Option<u32>) -> IoResult<()> {
         let mut opts = fs::OpenOptions::new();
         opts.write(true);
@@ -214,9 +230,7 @@ impl DirectoryStorage {
         }
 
         let mut file = opts.open(path)?;
-
-        file.write_all(&content)?;
-        file.sync_all()
+        file.write_all(content)
     }
 
     /// Loads the file identified by `name` from the private directory.
@@ -234,14 +248,8 @@ impl DirectoryStorage {
         let res = Self::list_files(&self.private_path)?
             .iter()
             .filter_map(|path| {
-                let Some(filename) = path.file_name() else {
-                    return None;
-                };
-
-                let Some(name_str) = filename.to_str() else {
-                    return None;
-                };
-
+                let filename = path.file_name()?;
+                let name_str = filename.to_str()?;
                 let call = f(name_str);
 
                 if !call.0 {
@@ -263,6 +271,51 @@ impl DirectoryStorage {
     pub fn store_private_file(&self, name: String, content: &[u8]) -> IoResult<()> {
         let file_path = self.private_path.join(name);
         Self::store_file(file_path, content, Some(0o600))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+/// Metadata file content.
+struct FileMetadata {
+    at_elections_stats: BTreeMap<String, usize>,
+}
+
+impl FileMetadata {
+    /// Serialize the metadata to a TOML string.
+    pub fn to_toml(&self) -> Result<String, toml::ser::Error> {
+        toml::to_string(self)
+    }
+
+    /// Deserialize the metadata from a TOML string.
+    pub fn from_toml(toml: &str) -> Result<Self, toml::de::Error> {
+        toml::from_str(toml)
+    }
+}
+
+impl From<StorageMetadata> for FileMetadata {
+    fn from(value: StorageMetadata) -> Self {
+        let at_elections_stats = value
+            .at_elections_stats
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect();
+
+        Self { at_elections_stats }
+    }
+}
+
+impl TryFrom<FileMetadata> for StorageMetadata {
+    type Error = ParseIntError;
+
+    fn try_from(value: FileMetadata) -> Result<Self, Self::Error> {
+        let mut at_elections_stats = BTreeMap::new();
+        for (k, v) in &value.at_elections_stats {
+            let ku = k.parse()?;
+            at_elections_stats.insert(ku, *v);
+        }
+
+        Ok(Self { at_elections_stats })
     }
 }
 
@@ -320,6 +373,20 @@ impl StorageTrait for DirectoryStorage {
         load_file_storage_map!(path)
     }
 
+    fn load_metadata(&self) -> StorageResult<StorageMetadata> {
+        let path = self.assets_path.join(self.config.metadata_filename.clone());
+        let meta_bytes = load_file_storage_map!(path)?;
+        let str = String::from_utf8(meta_bytes).map_err(|e| StorageError::Other(e.into()))?;
+        let file_metadata =
+            FileMetadata::from_toml(&str).map_err(|e| StorageError::Other(e.into()))?;
+
+        let metadata = file_metadata
+            .try_into()
+            .map_err(|e: ParseIntError| StorageError::Other(e.into()))?;
+
+        Ok(metadata)
+    }
+
     fn store_tlm_certificate(&self, cert: &[u8]) -> StorageResult<()> {
         let path = self.assets_path.join(self.config.tlm_cert_filename.clone());
         Self::store_file(path, cert, None).map_err(|e| StorageError::Other(e.into()))
@@ -357,5 +424,13 @@ impl StorageTrait for DirectoryStorage {
             self.config.at_cert_filename_prefix.clone() + index.to_string().as_str() + ".cert";
         let path = self.assets_path.join(file_name);
         Self::store_file(path, cert, None).map_err(|e| StorageError::Other(e.into()))
+    }
+
+    fn store_metadata(&self, meta: StorageMetadata) -> StorageResult<()> {
+        let path = self.assets_path.join(self.config.metadata_filename.clone());
+        let toml = FileMetadata::from(meta)
+            .to_toml()
+            .map_err(|e| StorageError::Other(e.into()))?;
+        Self::store_file(path, toml.as_bytes(), None).map_err(|e| StorageError::Other(e.into()))
     }
 }

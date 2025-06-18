@@ -1,7 +1,9 @@
 use crate::{
     common::PotiPosition,
     security::{
-        backend::BackendTrait, certificate::{CertificateTrait, ExplicitCertificate}, permission::{Permission, AID}, secured_message::{SecuredMessage, SignerIdentifier}
+        certificate::{CertificateTrait, ExplicitCertificate},
+        permission::{Permission, AID},
+        secured_message::{SecuredMessage, SignerIdentifier},
     },
     time::{Duration, Instant, TAI2004},
 };
@@ -26,11 +28,11 @@ impl SecurityService {
             .store
             .own_chain()
             .at_cert()
-            .as_ref()
-            .ok_or(SecurityServiceError::NoSigningCertificate)?;
+            .ok_or(SecurityServiceError::NoSigningCertificate)?
+            .at_container();
 
         // Check AT is not expired.
-        if TAI2004::from_unix_instant(timestamp) > at.certificate().validity_period().end {
+        if TAI2004::from_unix_instant(timestamp) > at.certificate().validity_period().end() {
             return Err(SecurityServiceError::OffValidityPeriod);
         }
 
@@ -132,6 +134,8 @@ impl SecurityService {
         message
             .set_signature(signature)
             .map_err(SecurityServiceError::InvalidContent)?;
+
+        self.privacy.inner_mut().notify_signature();
 
         Ok(())
     }

@@ -10,7 +10,8 @@ license = "GPL-3.0-only OR LicenseRef-Veloce-Software-1.0"
 doctest = false
 
 [dependencies]
-rasn = "0.20.2"
+#rasn = "0.20.2"
+rasn = "0.26.4"
 lazy_static = "1.5"         # Rasn compiler dependency. This should not be a dependency.
 num-traits = { version = "0.2.19", default-features = false } # Rasn dependency. This should not be a dependency.
 

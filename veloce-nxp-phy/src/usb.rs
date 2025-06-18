@@ -1,8 +1,9 @@
 use core::mem::{size_of, transmute};
-use std::{cell::RefCell, os::fd::RawFd, rc::Rc, time::SystemTime};
+use std::{cell::RefCell, io, marker::PhantomData, os::fd::RawFd, rc::Rc, time::SystemTime};
 
-use heapless::HistoryBuffer;
+use heapless::HistoryBuf;
 use log::{error, trace};
+use mio::{event::Source, unix::SourceFd};
 use veloce::{
     phy::{
         ChannelBusyRatio, Device, DeviceCapabilities, MacFilterCapabilities, Medium, PacketMeta,
@@ -14,12 +15,21 @@ use veloce::{
 };
 
 use crate::{
-    ffi::*, usb_phy::USB, Error, NxpConfig, NxpRadio, Result, LLC_BUFFER_LEN, RAW_FRAME_LENGTH_MAX,
+    ffi::*, usb_phy::USB, NxpConfig, NxpError, NxpRadio, NxpResult, LLC_BUFFER_LEN,
+    RAW_FRAME_LENGTH_MAX,
 };
 
+/// Marker struct for the Init state of the device.
+#[derive(Debug, Clone)]
+pub struct Init;
+/// Marker struct for the Ready state of the device.
+#[derive(Debug, Clone)]
+pub struct Ready;
+
 /// An NXP USB SAF 5X00 device.
-#[derive(Debug)]
-pub struct NxpUsbDevice {
+#[derive(Debug, Clone)]
+pub struct NxpUsbDevice<ST> {
+    /// Low level USB device.
     lower: Rc<RefCell<USB>>,
     /// Reference number for sent packets that receives confirmation.
     ref_num: Rc<RefCell<u16>>,
@@ -32,33 +42,42 @@ pub struct NxpUsbDevice {
     config: NxpConfig,
     /// Channel busy ratio. Measurement should be made over a period of 100ms,
     /// NXP phy gives us a measurement each 50ms, so store 2 values of it.
-    cbr_values: HistoryBuffer<ChannelBusyRatio, 2>,
+    cbr_values: HistoryBuf<ChannelBusyRatio, 2>,
+    /// State of the socket.
+    _state: PhantomData<ST>,
 }
 
-impl NxpUsbDevice {
-    /// Constructs a new NxpDevice using `config`.
-    pub fn new(config: NxpConfig) -> Result<NxpUsbDevice> {
-        let lower = USB::new().map_err(|_| Error::USB)?;
+impl<ST> NxpUsbDevice<ST> {
+    fn parse_message_header<'a>(&mut self, buffer: &'a [u8]) -> NxpResult<&'a tMKxIFMsg> {
+        let buf_len = buffer.len();
 
-        Ok(NxpUsbDevice {
-            lower: Rc::new(RefCell::new(lower)),
-            ref_num: Rc::new(RefCell::new(0)),
-            tx_seq_num: Rc::new(RefCell::new(0)),
-            #[cfg(feature = "llc-r17_1")]
-            rx_seq_num: 0,
-            config,
-            cbr_values: HistoryBuffer::new(),
-        })
-    }
+        // Sanity check 1.
+        if buf_len < size_of::<tMKxIFMsg>() {
+            return Err(NxpError::IO(io::ErrorKind::InvalidData.into()));
+        }
 
-    /// Apply the configuration on the NXP device.
-    #[must_use = "Configuration should be applied to enable communication."]
-    pub fn commit_config(&self) -> Result<()> {
-        let mut radio_cfg = tMKxRadioConfig::default();
-        self.config.emit(&mut radio_cfg);
-        let w_buf: [u8; size_of::<tMKxRadioConfig>()] = unsafe { transmute(radio_cfg) };
+        // Unpack Nxp header.
+        let hdr: &tMKxIFMsg = unsafe { &*buffer.as_ptr().cast() };
 
-        self.lower.borrow_mut().send(&w_buf).map(|_| ())
+        // Sanity check embedded buffer length vs actual buffer length.
+        if hdr.Len > buf_len as u16 {
+            return Err(NxpError::IO(io::ErrorKind::InvalidData.into()));
+        }
+
+        #[cfg(feature = "llc-r17_1")]
+        if hdr.Seq == 0 && hdr.Type == eMKxIFMsgType_MKXIF_ERROR as u16 {
+            // Do not trigger a warning and do not increment the expected seq number.
+            return Err(NxpError::Radio(hdr.Ret));
+        } else if hdr.Seq != self.rx_seq_num {
+            // Mismatched Seq number (Radio to Host).
+            // sync up to the received message.
+            self.rx_seq_num = hdr.Seq.wrapping_add(1);
+        } else {
+            // Seq number was as expected, increment the expected Seq number.
+            self.rx_seq_num = self.rx_seq_num.wrapping_add(1);
+        }
+
+        Ok(hdr)
     }
 
     /// Wait until the device has rx data, but no longer than given timeout.
@@ -66,7 +85,7 @@ impl NxpUsbDevice {
     /// If timeout is None, this function call will block.
     /// Returns the number of bytes available to read, if any, or an Error
     /// on timeout or other.
-    pub fn poll_wait(&self, timeout: Option<Duration>) -> Result<usize> {
+    pub fn poll_wait(&self, timeout: Option<Duration>) -> NxpResult<usize> {
         let before = SystemTime::now();
         let rc = self.lower.borrow_mut().poll_wait(timeout);
         trace!(
@@ -84,12 +103,124 @@ impl NxpUsbDevice {
     }
 }
 
-impl Device for NxpUsbDevice {
-    type RxToken<'a> = NxpRxToken
+impl NxpUsbDevice<Init> {
+    /// Constructs a new NxpDevice using `config`.
+    pub fn new(config: NxpConfig) -> NxpResult<NxpUsbDevice<Init>> {
+        let lower = USB::new().map_err(|_| NxpError::USB)?;
+
+        Ok(NxpUsbDevice {
+            lower: Rc::new(RefCell::new(lower)),
+            ref_num: Rc::new(RefCell::new(0)),
+            tx_seq_num: Rc::new(RefCell::new(0)),
+            #[cfg(feature = "llc-r17_1")]
+            rx_seq_num: 0,
+            config,
+            cbr_values: HistoryBuf::new(),
+            _state: PhantomData,
+        })
+    }
+
+    fn request_firmware_version(&mut self) -> NxpResult<()> {
+        let mut ref_num = self.ref_num.borrow_mut();
+        *ref_num = ref_num.wrapping_add(1);
+
+        let mut buffer = [0u8; size_of::<tMKxIFMsg>()];
+        let version_req: &mut tMKxIFMsg = unsafe { &mut *buffer.as_mut_ptr().cast() };
+
+        version_req.Type = eMKxIFMsgType_MKXIF_APIVERSION as u16;
+        version_req.Len = size_of::<tMKxIFMsg>() as u16;
+        version_req.Ref = *ref_num;
+        version_req.Ret = eMKxStatus_MKXSTATUS_RESERVED as i16;
+
+        self.lower.borrow_mut().send(&buffer[..]).map(|_| ())
+    }
+
+    /// Wait for the device to be ready. This is a blocking call.
+    ///
+    /// Under the hood, it waits for the firmware version message to be received,
+    /// and checks the version against the local driver major version.
+    ///
+    /// An error is returned if any of theses situations occurs:
+    /// - underlying IO error
+    /// - message content is not well formed
+    /// - modem firmware version is incompatible with this driver
+    pub fn wait_for_ready(&mut self) -> NxpResult<NxpUsbDevice<Ready>> {
+        loop {
+            self.request_firmware_version()?;
+
+            self.poll_wait(None)?;
+            let mut buffer = vec![0; LLC_BUFFER_LEN];
+
+            // Code block to limit the scope of the borrow_mut.
+            // It is only needed to copy incoming data into the buffer.
+            {
+                let mut lower = self.lower.borrow_mut();
+
+                match lower.recv(&mut buffer[..]) {
+                    Ok(size) => {
+                        buffer.resize(size, 0);
+                    }
+                    Err(NxpError::IO(err)) if err.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(err) => return Err(err),
+                }
+            }
+
+            let hdr = self.parse_message_header(&buffer)?;
+
+            if hdr.Type as u32 == eMKxIFMsgType_MKXIF_APIVERSION {
+                let len = hdr.Len as usize;
+
+                // Sanity check length.
+                if len < size_of::<tMKxAPIVersion>() {
+                    return Err(NxpError::IO(io::ErrorKind::InvalidData.into()));
+                };
+
+                let version_pkt: &tMKxAPIVersion = unsafe { &*buffer.as_ptr().cast() };
+                if version_pkt.VersionData.Major == LLC_API_VERSION_MAJOR as u16 {
+                    break;
+                } else {
+                    let major_version = version_pkt.VersionData.Major;
+                    error!(
+                        "LLC API version mismatch. Expected {}, got {}",
+                        LLC_API_VERSION_MAJOR, major_version
+                    );
+                }
+            }
+        }
+
+        Ok(NxpUsbDevice {
+            lower: self.lower.clone(),
+            ref_num: self.ref_num.clone(),
+            tx_seq_num: self.tx_seq_num.clone(),
+            #[cfg(feature = "llc-r17_1")]
+            rx_seq_num: self.rx_seq_num,
+            config: self.config,
+            cbr_values: self.cbr_values.clone(),
+            _state: PhantomData,
+        })
+    }
+}
+
+impl NxpUsbDevice<Ready> {
+    /// Apply the configuration on the NXP device.
+    #[must_use = "Configuration should be applied to enable communication."]
+    pub fn commit_config(&self) -> NxpResult<()> {
+        let mut radio_cfg = tMKxRadioConfig::default();
+        self.config.emit(&mut radio_cfg);
+        let w_buf: [u8; size_of::<tMKxRadioConfig>()] = unsafe { transmute(radio_cfg) };
+
+        self.lower.borrow_mut().send(&w_buf).map(|_| ())
+    }
+}
+
+impl Device for NxpUsbDevice<Ready> {
+    type RxToken<'a>
+        = NxpRxToken
     where
         Self: 'a;
 
-    type TxToken<'a> = NxpTxToken
+    type TxToken<'a>
+        = NxpTxToken
     where
         Self: 'a;
 
@@ -181,11 +312,18 @@ impl Device for NxpUsbDevice {
                 #[cfg(feature = "llc-r16")]
                 let cond = hdr.Seq == cfg_channel as u16;
 
+                let rem_len = hdr.Len as usize - size_of::<tMKxIFMsg>();
+
                 match (hdr.Type as u32, self.config.radio) {
                     (eMKxIFMsgType_MKXIF_RADIOASTATS, NxpRadio::A)
                     | (eMKxIFMsgType_MKXIF_RADIOBSTATS, NxpRadio::B)
                         if cond =>
                     {
+                        // Sanity check length.
+                        if rem_len < size_of::<tMKxRadioStats>() {
+                            return None;
+                        };
+
                         let stats_pkt: &tMKxRadioStats = unsafe { &*buffer.as_ptr().cast() };
                         let stats = stats_pkt.RadioStatsData.Chan[cfg_channel as usize];
                         let cbr =
@@ -195,6 +333,11 @@ impl Device for NxpUsbDevice {
                         None
                     }
                     (eMKxIFMsgType_MKXIF_RXPACKET, radio) => {
+                        // Sanity check length.
+                        if rem_len < size_of::<tMKxRxPacket>() {
+                            return None;
+                        };
+
                         // Unpack NxpRxPacketData header.
                         let rx_pkt: &tMKxRxPacket = unsafe { &*buffer.as_ptr().cast() };
 
@@ -241,8 +384,11 @@ impl Device for NxpUsbDevice {
                     _ => None,
                 }
             }
-            Err(Error::Timeout) => None,
-            Err(e) => panic!("{}", e),
+            Err(NxpError::Timeout) => None,
+            Err(e) => {
+                error!("recv() returned an error: {:?}", e);
+                None
+            }
         }
     }
 
@@ -326,11 +472,35 @@ impl TxToken for NxpTxToken {
 
         match self.lower.borrow_mut().send(&buffer[..]) {
             Ok(_) => {}
-            Err(Error::Timeout) => {
+            Err(NxpError::Timeout) => {
                 error!("Timeout while TX");
             }
-            Err(e) => error!("{}", e),
+            Err(e) => error!("send returned an error: {:?}", e),
         }
         result
+    }
+}
+
+impl Source for NxpUsbDevice<Ready> {
+    fn register(
+        &mut self,
+        registry: &mio::Registry,
+        token: mio::Token,
+        interests: mio::Interest,
+    ) -> io::Result<()> {
+        SourceFd(&self.pollfds()[0]).register(registry, token, interests)
+    }
+
+    fn reregister(
+        &mut self,
+        registry: &mio::Registry,
+        token: mio::Token,
+        interests: mio::Interest,
+    ) -> io::Result<()> {
+        SourceFd(&self.pollfds()[0]).reregister(registry, token, interests)
+    }
+
+    fn deregister(&mut self, registry: &mio::Registry) -> io::Result<()> {
+        SourceFd(&self.pollfds()[0]).deregister(registry)
     }
 }

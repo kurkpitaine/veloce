@@ -17,8 +17,8 @@ use crate::{
         backend::PkiBackendTrait,
         certificate::{
             AuthorizationAuthorityCertificate, AuthorizationTicketCertificate, CertificateTrait,
-            CertificateWithHashContainer, EnrollmentAuthorityCertificate, EnrollmentCredentialCertificate,
-            ExplicitCertificate,
+            CertificateWithHashContainer, EnrollmentAuthorityCertificate,
+            EnrollmentCredentialCertificate, ExplicitCertificate,
         },
         permission::{Permission, AID},
         EcKeyType, KeyPair, ValidityPeriod,
@@ -66,6 +66,7 @@ struct Certificates<'ec, 'ea, 'aa> {
 
 /// Authorization request context.
 #[derive(Debug)]
+#[allow(unused)]
 pub struct AuthorizationRequestContext<B: PkiBackendTrait> {
     /// Public verification and encryption keys (if any) of the Authorization Ticket.
     public_keys: IncludedPublicKeys,
@@ -154,6 +155,7 @@ impl PkiClientService {
         )
     }
 
+    #[allow(clippy::type_complexity)]
     fn authorization_request_inner<B>(
         &self,
         encryption_keys: &AuthorizationRequestEncryptionKeys,
@@ -175,7 +177,7 @@ impl PkiClientService {
         let aa_certificate = certificates.aa_certificate;
         let mut request = AuthorizationRequest::new();
 
-        let (hmac_key, key_tag) = message::generate_hmac_and_tag(&included_keys, backend)
+        let (hmac_key, key_tag) = message::generate_hmac_and_tag(included_keys, backend)
             .map_err(AuthorizationRequestError::HmacAndTagGenerator)?;
 
         // Fill the 'shared at request' part of the request.
@@ -327,22 +329,16 @@ impl PkiClientService {
 
         let valid_signature = message::verify_signed_data(
             &outer_response,
-            aa_certificate.certificate(),
             backend,
             |signer_id| match signer_id {
                 SignerIdentifier::Digest(h) => {
                     if aa_certificate.hashed_id8() == h {
-                        Ok(Some(
-                            aa_certificate
-                                .certificate()
-                                .public_verification_key()
-                                .map_err(VerifierError::InvalidCertificate)?,
-                        ))
+                        Ok(Some(aa_certificate.certificate().to_owned()))
                     } else {
                         Ok(None)
                     }
                 }
-                _ => return Err(VerifierError::UnexpectedSigner),
+                _ => Err(VerifierError::UnexpectedSigner),
             },
             |aid| {
                 if AID::SCR == aid {

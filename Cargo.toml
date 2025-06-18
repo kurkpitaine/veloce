@@ -1,8 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
+   "bin",
    "veloce",
    "veloce-asn1",
+   "veloce-ctl",
    "veloce-ipc",
    "veloce-gnss",
    "veloce-nxp-phy",

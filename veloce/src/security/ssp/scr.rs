@@ -156,6 +156,12 @@ impl ScrSsp {
     }
 }
 
+impl Default for ScrSsp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SspTrait for ScrSsp {
     type SspType = ScrSsp;
     type PermissionType = ScrPermission;

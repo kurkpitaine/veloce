@@ -35,7 +35,7 @@ pub use subordinate::EnrollmentAuthorityCertificate;
 pub use tlm::TrustListManagerCertificate;
 
 /// Generic container to store a certificate along its [HashedId8].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct CertificateWithHashContainer<C: ExplicitCertificate> {
     /// Certificate hash.
@@ -53,6 +53,11 @@ impl<C: ExplicitCertificate> CertificateWithHashContainer<C> {
     /// Get a reference on the contained certificate.
     pub fn certificate(&self) -> &C {
         &self.cert
+    }
+
+    /// Consume the [CertificateWithHashContainer] and return the contained certificate.
+    pub fn into_certificate(self) -> C {
+        self.cert
     }
 }
 
@@ -83,7 +88,7 @@ pub enum CertificateError {
     /// Certificate Id type is unexpected.
     UnexpectedId,
     /// Certificate temporal validity is expired.
-    Expired,
+    Expired(TAI2004),
     /// Certificate signature issuer type is unexpected.
     UnexpectedIssuer,
     /// Certificate signature issuer type is unsupported.
@@ -114,7 +119,7 @@ impl fmt::Display for CertificateError {
             }
             CertificateError::InconsistentPermissions => write!(f, "Inconsistent permissions"),
             CertificateError::UnexpectedId => write!(f, "Unexpected certificate Id"),
-            CertificateError::Expired => write!(f, "Certificate expired"),
+            CertificateError::Expired(t) => write!(f, "Certificate expired at: {}", t.as_iso8601()),
             CertificateError::UnexpectedIssuer => write!(f, "Unexpected issuer"),
             CertificateError::UnsupportedIssuer => write!(f, "Unsupported issuer"),
             CertificateError::Signature(e) => write!(f, "Signature error: {}", e),
@@ -291,6 +296,19 @@ pub trait CertificateTrait {
         ValidityPeriod::from(&tbs.validity_period)
     }
 
+    /// Returns the certificate identifier.
+    /// As Asn.1 constraints specify the certificate identifier to be a string or None,
+    /// we return a String, empty if the identifier is None.
+    fn identifier(&self) -> CertificateResult<String> {
+        let res = match &self.inner().0.to_be_signed.id {
+            ieee1609_dot2::CertificateId::name(n) => n.0.to_owned(),
+            ieee1609_dot2::CertificateId::none(_) => String::new(),
+            _ => return Err(CertificateError::UnexpectedId),
+        };
+
+        Ok(res)
+    }
+
     /// Canonicalize `certificate`, as defined in IEEE 1609.2 paragraph 6.4.3
     /// - Encoding considerations.
     fn canonicalize<B>(
@@ -425,8 +443,8 @@ pub trait ExplicitCertificate: CertificateTrait {
         let validity_period = self.validity_period();
 
         // Check validity period.
-        if validity_period.end <= TAI2004::from_unix_instant(timestamp) {
-            return Err(CertificateError::Expired);
+        if validity_period.end() <= TAI2004::from_unix_instant(timestamp) {
+            return Err(CertificateError::Expired(validity_period.end()));
         }
 
         // Get signature.

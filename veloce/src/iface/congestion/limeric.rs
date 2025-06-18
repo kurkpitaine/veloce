@@ -1,4 +1,4 @@
-use heapless::HistoryBuffer;
+use heapless::HistoryBuf;
 
 use crate::phy::ChannelBusyRatio;
 use crate::time::{Duration, Instant};
@@ -73,7 +73,7 @@ pub struct Limeric {
     /// Current channel load.
     channel_load: f64,
     /// History of CBR values.
-    cbr_hist: HistoryBuffer<f64, CBR_HISTORY_SIZE>,
+    cbr_hist: HistoryBuf<f64, CBR_HISTORY_SIZE>,
     /// Limerick algorithm parameters.
     params: Parameters,
     /// Optional parameters for Dual Alpha improvement.
@@ -95,7 +95,7 @@ impl Limeric {
             tx_interval: MIN_INTERVAL,
             duty_cycle: 0.5 * (params.delta_min + params.delta_max),
             channel_load: 0.0,
-            cbr_hist: HistoryBuffer::new(),
+            cbr_hist: HistoryBuf::new(),
             params,
             dual_alpha_params: None,
             next_run_at: Instant::ZERO,

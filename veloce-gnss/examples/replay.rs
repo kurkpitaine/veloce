@@ -5,14 +5,14 @@ use veloce_gnss::Replay;
 
 pub fn main() {
     let path = load_nmea_log();
-    let mut player = Replay::new(&path, Duration::from_secs(1)).unwrap();
+    let mut player = Replay::new(path, Duration::from_secs(1)).unwrap();
 
     loop {
         let now = Instant::now();
         let poll_at = player.poll_at();
 
         if now >= poll_at {
-            if player.poll(now) {
+            if let Ok(true) = player.poll(now) {
                 println!("Position: {:?}", player.fetch_position());
             }
         } else {

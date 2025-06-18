@@ -257,7 +257,7 @@ impl<'a> Socket<'a> {
         let (buf, _ind) = match self.inner.recv() {
             Ok(d) => d,
             Err(e) => {
-                net_debug!("Cannot process CAM: {}", e);
+                net_warn!("Cannot process CAM: {}", e);
                 return;
             }
         };
@@ -265,7 +265,7 @@ impl<'a> Socket<'a> {
         let decoded = match rasn::uper::decode::<cam::CAM>(buf) {
             Ok(d) => d,
             Err(e) => {
-                net_debug!("Cannot process CAM: {}", e);
+                net_warn!("Cannot process CAM: {}", e);
                 return;
             }
         };
@@ -275,7 +275,7 @@ impl<'a> Socket<'a> {
             let authorized = if let Permission::CAM(p) = &_ind.its_aid {
                 Self::check_permissions(&decoded, &p.ssp)
             } else {
-                net_debug!(
+                net_warn!(
                     "Cannot process CAM - unexpected permission type. Got {:?}",
                     _ind.its_aid
                 );
@@ -283,7 +283,7 @@ impl<'a> Socket<'a> {
             };
 
             if !authorized {
-                net_debug!("Cannot process CAM - not authorized");
+                net_warn!("Cannot process CAM - not authorized");
                 return;
             }
         }
@@ -311,7 +311,7 @@ impl<'a> Socket<'a> {
             match self.inner.bind(ports::CAM) {
                 Ok(_) => net_trace!("CAM socket bind"),
                 Err(e) => {
-                    net_trace!("CAM socket bind error: {}", e);
+                    net_error!("CAM socket bind error: {}", e);
                     return Ok(());
                 }
             }
@@ -417,7 +417,7 @@ impl<'a> Socket<'a> {
 
         // TODO: FixMe
         let Ok(raw_cam) = rasn::uper::encode(&cam) else {
-            net_trace!("CAM content invalid");
+            net_error!("CAM content invalid");
             return Ok(());
         };
 
@@ -435,9 +435,11 @@ impl<'a> Socket<'a> {
 
         // TODO: FixMe
         match self.inner.send_slice(&raw_cam, meta) {
-            Ok(_) => {}
+            Ok(_) => {
+                net_trace!("CAM slice sent");
+            }
             Err(e) => {
-                net_trace!("CAM slice cannot be sent: {}", e);
+                net_error!("CAM slice cannot be sent: {}", e);
                 return Ok(());
             }
         }
@@ -465,7 +467,7 @@ impl<'a> Socket<'a> {
         })
     }
 
-    pub(crate) fn poll_at(&self, cx: &mut Context) -> PollAt {
+    pub(crate) fn poll_at(&self, cx: &Context) -> PollAt {
         self.inner.poll_at(cx).min(PollAt::Time(self.retransmit_at))
     }
 

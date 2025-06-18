@@ -15,11 +15,12 @@ use crate::{
             ExplicitCertificate, RootCertificate,
         },
         permission::Permission,
+        privacy::PrivacyStrategy,
         secured_message::{SecuredMessage, SignerIdentifier},
         service::SecurityService,
         ssp::{cam::CamSsp, denm::DenmSsp},
         storage::StorageTrait,
-        trust_chain::TrustChain,
+        trust_chain::{ATContainer, TrustChain},
         DirectoryStorage, DirectoryStorageConfig, SecurityBackend,
     },
     time::Duration,
@@ -81,12 +82,18 @@ fn setup_security_service() -> SecurityService {
     let root_cert = RootCertificate::from_bytes(&raw_root_cert, &backend).unwrap();
     let aa_cert = AuthorizationAuthorityCertificate::from_bytes(&raw_aa_cert, &backend).unwrap();
     let at_cert = AuthorizationTicketCertificate::from_bytes(&raw_at_cert, &backend).unwrap();
+    let at_container = ATContainer::new(at_cert.into_with_hash_container(&backend).unwrap(), 0);
 
     let mut own_chain = TrustChain::new(root_cert.into_with_hash_container(&backend).unwrap());
     own_chain.set_aa_cert(aa_cert.into_with_hash_container(&backend).unwrap());
-    own_chain.set_at_cert(at_cert.into_with_hash_container(&backend).unwrap());
+    own_chain.add_at_cert(0, at_container);
+    own_chain.set_at_cert_index(0).unwrap();
 
-    SecurityService::new(own_chain, SecurityBackend::Openssl(backend))
+    SecurityService::new(
+        own_chain,
+        SecurityBackend::Openssl(backend),
+        PrivacyStrategy::NoStrategy,
+    )
 }
 
 #[test]

@@ -444,6 +444,12 @@ impl AuthorizationRequest {
     }
 }
 
+impl Default for AuthorizationRequest {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Marker struct for Outer Authorization Response type.
 #[derive(Debug, Clone, Copy)]
 pub struct OuterResp;

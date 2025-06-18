@@ -13,10 +13,10 @@ use crate::{
         Aes128Key, SignerIdentifier,
     },
     security::{
-        backend::PkiBackendTrait,
+        backend::{BackendError, PkiBackendTrait},
         certificate::{
-            CertificateWithHashContainer, EnrollmentAuthorityCertificate, EnrollmentCredentialCertificate,
-            ExplicitCertificate,
+            CertificateTrait, CertificateWithHashContainer, EnrollmentAuthorityCertificate,
+            EnrollmentCredentialCertificate, ExplicitCertificate,
         },
         permission::{Permission, AID},
         ssp::{
@@ -30,6 +30,7 @@ use crate::{
 
 /// Enrollment request context.
 #[derive(Debug)]
+#[allow(unused)]
 pub struct EnrollmentRequestContext<B: PkiBackendTrait> {
     /// Public signature verification key of the Enrollment Credential.
     ec_pubkey: EcdsaKey,
@@ -40,7 +41,6 @@ pub struct EnrollmentRequestContext<B: PkiBackendTrait> {
 }
 
 impl PkiClientService {
-    // TODO: Manage re-enrollment.
     /// Emits an enrollment request.
     pub fn emit_enrollment_request<B: PkiBackendTrait>(
         &self,
@@ -82,6 +82,60 @@ impl PkiClientService {
         })
     }
 
+    pub fn emit_re_enrollment_request<B: PkiBackendTrait>(
+        &self,
+        ec_certificate: &CertificateWithHashContainer<EnrollmentCredentialCertificate>,
+        ea_certificate: &CertificateWithHashContainer<EnrollmentAuthorityCertificate>,
+        timestamp: Instant,
+        backend: &mut B,
+    ) -> PkiServiceResult<(Vec<u8>, EnrollmentRequestContext<B>)> {
+        // Get the current Enrollment Credential public key.
+        let current_ec_pubkey = backend
+            .enrollment_pubkey()
+            .map_err(PkiServiceError::Backend)?
+            .ok_or(PkiServiceError::EnrollmentRequest(
+                EnrollmentRequestError::NoEnrollmentKey,
+            ))?
+            .try_into()
+            .map_err(PkiServiceError::Backend)?;
+
+        // Generate a re-enrollment key pair.
+        let re_enrollment_ec_pubkey = backend
+            .generate_re_enrollment_keypair(EcKeyType::NistP256r1)
+            .map_err(PkiServiceError::Backend)?
+            .try_into()
+            .map_err(PkiServiceError::Backend)?;
+
+        // Generate the AES 128 ephemeral encryption key.
+        let symm_encryption_key = Aes128Key(
+            backend
+                .generate_aes128_key()
+                .map_err(PkiServiceError::Backend)?,
+        );
+
+        self.re_enrollment_request_inner(
+            &current_ec_pubkey,
+            &re_enrollment_ec_pubkey,
+            &symm_encryption_key,
+            ec_certificate,
+            ea_certificate,
+            timestamp,
+            backend,
+        )
+        .map_err(PkiServiceError::EnrollmentRequest)
+        .map(|(request, ephemeral_keypair)| {
+            (
+                request,
+                EnrollmentRequestContext {
+                    ec_pubkey: re_enrollment_ec_pubkey,
+                    symm_encryption_key,
+                    ephemeral_keypair,
+                },
+            )
+        })
+    }
+
+    #[allow(clippy::type_complexity)]
     fn enrollment_request_inner<B>(
         &self,
         pubkey: &EcdsaKey,
@@ -119,13 +173,77 @@ impl PkiClientService {
             .map_err(EnrollmentRequestError::SignedForPopSigner)?;
 
         // Create Outer EC Request and sign it with the canonical key.
+        let signer = SignerIdentifier::SelfSigned;
         let mut outer_ec_request =
-            EnrollmentRequest::emit_outer_ec_request(signed_for_pop, timestamp)?;
+            EnrollmentRequest::emit_outer_ec_request(signed_for_pop, signer, timestamp)?;
 
         let hash_algorithm = canonical_pubkey.hash_algorithm();
 
         message::sign_with_canonical_key(&mut outer_ec_request, hash_algorithm, backend)
             .map_err(EnrollmentRequestError::OuterSigner)?;
+
+        // Serialize the outer EC Request to COER bytes.
+        let to_encrypt = outer_ec_request
+            .as_bytes()
+            .map_err(EnrollmentRequestError::Outer)?;
+
+        let res = message::encrypt(to_encrypt, symm_encryption_key, ea_certificate, backend)
+            .map_err(EnrollmentRequestError::Encryption)?;
+
+        Ok((
+            res.0
+                .as_bytes()
+                .map_err(EnrollmentRequestError::Encrypted)?,
+            res.1,
+        ))
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn re_enrollment_request_inner<B>(
+        &self,
+        current_pubkey: &EcdsaKey,
+        new_pubkey: &EcdsaKey,
+        symm_encryption_key: &Aes128Key,
+        ec_certificate: &CertificateWithHashContainer<EnrollmentCredentialCertificate>,
+        ea_certificate: &CertificateWithHashContainer<EnrollmentAuthorityCertificate>,
+        timestamp: Instant,
+        backend: &B,
+    ) -> EnrollmentRequestResult<(Vec<u8>, KeyPair<B::BackendSecretKey, B::BackendPublicKey>)>
+    where
+        B: PkiBackendTrait,
+    {
+        let hash_algorithm = new_pubkey.hash_algorithm();
+        let mut request = EnrollmentRequest::new(ec_certificate.hashed_id8().as_bytes().to_vec());
+
+        // Add Enrollment Credential permissions.
+        let mut ssp = ScrSsp::new();
+        ssp.set_permission(ScrPermission::AuthorizationReq); // Allow authorization ticket request signing.
+        ssp.set_permission(ScrPermission::EnrollmentReq); // Allow enrollment request signing for re-enrollment.
+
+        request.set_app_permissions(vec![Permission::SCR(ssp.into())]);
+        request.set_verification_key(new_pubkey.to_owned())?;
+
+        // Create Inner EC Request for POP wrapper and sign it with the enrollment key.
+        let mut signed_for_pop =
+            EnrollmentRequest::emit_inner_ec_request_for_pop(request, timestamp)?;
+
+        message::sign_with_re_enrollment_key(&mut signed_for_pop, hash_algorithm, &[], backend)
+            .map_err(EnrollmentRequestError::SignedForPopSigner)?;
+
+        // Create Outer EC Request with an Enrollment Credential signer and sign it with the enrollment key.
+        let signer = SignerIdentifier::Digest(ec_certificate.hashed_id8());
+        let mut outer_ec_request =
+            EnrollmentRequest::emit_outer_ec_request(signed_for_pop, signer, timestamp)?;
+
+        let hash_algorithm = current_pubkey.hash_algorithm();
+        let signer_data = ec_certificate.certificate().raw_bytes();
+        message::sign_with_enrollment_key(
+            &mut outer_ec_request,
+            hash_algorithm,
+            signer_data,
+            backend,
+        )
+        .map_err(EnrollmentRequestError::OuterSigner)?;
 
         // Serialize the outer EC Request to COER bytes.
         let to_encrypt = outer_ec_request
@@ -150,7 +268,7 @@ impl PkiClientService {
         ctx: EnrollmentRequestContext<B>,
         ea_certificate: &CertificateWithHashContainer<EnrollmentAuthorityCertificate>,
         timestamp: Instant,
-        backend: &B,
+        backend: &mut B,
     ) -> PkiServiceResult<EnrollmentCredentialCertificate> {
         let response = self
             .enrollment_response_inner(response, ctx, ea_certificate, timestamp, backend)
@@ -165,6 +283,14 @@ impl PkiClientService {
                 EnrollmentResponseError::Failure(response_code),
             ));
         };
+
+        // Set enrollment credential secret key to the re-enrollment secret key.
+        // Silently ignore the error if there is no secret key to commit.
+        match backend.commit_re_enrollment_key() {
+            Ok(_) => {}
+            Err(BackendError::NoReEnrollmentSecretKey) => {}
+            Err(e) => return Err(PkiServiceError::Backend(e)),
+        }
 
         let enrollment_credential = response
             .enrollment_credential()
@@ -183,9 +309,9 @@ impl PkiClientService {
                 }
             })
             .map_err(|e| {
-                PkiServiceError::EnrollmentResponse(EnrollmentResponseError::EnrollmentCredentialCertificate(
-                    e,
-                ))
+                PkiServiceError::EnrollmentResponse(
+                    EnrollmentResponseError::EnrollmentCredentialCertificate(e),
+                )
             })?;
 
         // TODO: Verify the content of the Enrollment Credential.
@@ -209,22 +335,16 @@ impl PkiClientService {
 
         let valid_signature = message::verify_signed_data(
             &outer_response,
-            ea_certificate.certificate(),
             backend,
             |signer_id| match signer_id {
                 SignerIdentifier::Digest(h) => {
                     if ea_certificate.hashed_id8() == h {
-                        Ok(Some(
-                            ea_certificate
-                                .certificate()
-                                .public_verification_key()
-                                .map_err(VerifierError::InvalidCertificate)?,
-                        ))
+                        Ok(Some(ea_certificate.certificate().to_owned()))
                     } else {
                         Ok(None)
                     }
                 }
-                _ => return Err(VerifierError::UnexpectedSigner),
+                _ => Err(VerifierError::UnexpectedSigner),
             },
             |aid| {
                 if AID::SCR == aid {

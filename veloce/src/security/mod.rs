@@ -39,13 +39,18 @@ use veloce_asn1::{
     prelude::rasn::types::FixedOctetString,
 };
 
-use crate::time::{Duration, TAI2004};
+use crate::{
+    time::{Duration, TAI2004},
+    types::Pseudonym,
+    wire::EthernetAddress,
+};
 
 pub mod backend;
 pub mod certificate;
 mod certificate_cache;
 pub mod ciphertext;
 pub mod permission;
+pub mod privacy;
 pub mod secured_message;
 pub mod service;
 pub mod signature;
@@ -57,17 +62,19 @@ pub mod trust_store;
 #[cfg(test)]
 pub(super) mod tests;
 
-#[cfg(feature = "security-openssl")]
+#[cfg(feature = "security-backend-openssl")]
 pub use backend::openssl::{OpensslBackend, OpensslBackendConfig};
-
-pub use storage::directory::{DirectoryStorage, DirectoryStorageConfig};
-
 pub use backend::Backend as SecurityBackend;
-pub use storage::Storage as SecurityStorage;
+pub use backend::BackendTrait as SecurityBackendTrait;
+pub use storage::{
+    directory::{DirectoryStorage, DirectoryStorageConfig},
+    Storage as SecurityStorage, StorageError as SecurityStorageError,
+    StorageMetadata as SecurityStorageMetadata,
+};
 
 pub use certificate::Certificate;
-pub use service::SecurityService;
-pub use trust_chain::TrustChain;
+pub use service::{PollEvent as SecurityServicePollEvent, SecurityService};
+pub use trust_chain::{ATContainer, TrustChain};
 
 /// Hash algorithm for a certificate digest or a signature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,6 +187,18 @@ impl HashedId8 {
     pub const fn as_u64(&self) -> u64 {
         self.0
     }
+
+    /// Convert into a [Pseudonym], consuming the itself.
+    pub const fn into_pseudonym(self) -> Pseudonym {
+        Pseudonym(self.0 as u32)
+    }
+
+    /// Convert into an [EthernetAddress], consuming the itself.
+    pub fn into_ethernet_address(self) -> EthernetAddress {
+        let mut addr_bytes = self.as_bytes();
+        addr_bytes[0] &= !0x03; // Clear multicast and locally administered bits.
+        EthernetAddress::from_bytes(&addr_bytes[..6])
+    }
 }
 
 impl fmt::Display for HashedId8 {
@@ -250,8 +269,8 @@ impl PeriodDuration {
             PeriodDuration::Seconds(s) => Duration::from_secs((*s).into()),
             PeriodDuration::Minutes(m) => Duration::from_secs(u64::from(*m) * 60),
             PeriodDuration::Hours(h) => Duration::from_secs(u64::from(*h) * 3600),
-            PeriodDuration::SixtyHours(sh) => Duration::from_secs(u64::from(*sh) * 21_600),
-            PeriodDuration::Years(y) => Duration::from_secs(u64::from(*y) * 31_556_952), // One gregorian year is 31556952 seconds.
+            PeriodDuration::SixtyHours(sh) => Duration::from_secs(u64::from(*sh) * 216_000),
+            PeriodDuration::Years(y) => Duration::from_secs(u64::from(*y) * 31_556_952), // One gregorian year is 31_556_952 seconds.
         }
     }
 }
@@ -270,10 +289,10 @@ impl From<&Etsi103097Duration> for PeriodDuration {
     }
 }
 
-impl Into<Etsi103097Duration> for PeriodDuration {
-    fn into(self) -> Etsi103097Duration {
+impl From<PeriodDuration> for Etsi103097Duration {
+    fn from(value: PeriodDuration) -> Self {
         use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2_base_types::Uint16;
-        match self {
+        match value {
             PeriodDuration::Microseconds(us) => Etsi103097Duration::microseconds(Uint16(us)),
             PeriodDuration::Milliseconds(ms) => Etsi103097Duration::milliseconds(Uint16(ms)),
             PeriodDuration::Seconds(s) => Etsi103097Duration::seconds(Uint16(s)),
@@ -299,10 +318,10 @@ impl From<&Etsi102941Duration> for PeriodDuration {
     }
 }
 
-impl Into<Etsi102941Duration> for PeriodDuration {
-    fn into(self) -> Etsi102941Duration {
+impl From<PeriodDuration> for Etsi102941Duration {
+    fn from(value: PeriodDuration) -> Self {
         use veloce_asn1::defs::etsi_102941_v221::ieee1609_dot2_base_types::Uint16;
-        match self {
+        match value {
             PeriodDuration::Microseconds(us) => Etsi102941Duration::microseconds(Uint16(us)),
             PeriodDuration::Milliseconds(ms) => Etsi102941Duration::milliseconds(Uint16(ms)),
             PeriodDuration::Seconds(s) => Etsi102941Duration::seconds(Uint16(s)),
@@ -344,6 +363,16 @@ impl ValidityPeriod {
     pub fn contains(&self, other: &ValidityPeriod) -> bool {
         self.start <= other.start && self.end >= other.end
     }
+
+    /// Return the start of the validity period.
+    pub fn start(&self) -> TAI2004 {
+        self.start
+    }
+
+    /// Return the end of the validity period.
+    pub fn end(&self) -> TAI2004 {
+        self.end
+    }
 }
 
 impl From<&Etsi103097ValidityPeriod> for ValidityPeriod {
@@ -359,10 +388,13 @@ impl From<&Etsi103097ValidityPeriod> for ValidityPeriod {
     }
 }
 
-impl Into<Etsi103097ValidityPeriod> for ValidityPeriod {
-    fn into(self) -> Etsi103097ValidityPeriod {
+impl From<ValidityPeriod> for Etsi103097ValidityPeriod {
+    fn from(value: ValidityPeriod) -> Self {
         use veloce_asn1::defs::etsi_103097_v211::ieee1609_dot2_base_types::{Time32, Uint32};
-        Etsi103097ValidityPeriod::new(Time32(Uint32(self.start.secs() as u32)), self.period.into())
+        Etsi103097ValidityPeriod::new(
+            Time32(Uint32(value.start.secs() as u32)),
+            value.period.into(),
+        )
     }
 }
 
@@ -387,10 +419,20 @@ impl From<&Etsi102941ValidityPeriod> for ValidityPeriod {
     }
 }
 
-impl Into<Etsi102941ValidityPeriod> for ValidityPeriod {
+/* impl Into<Etsi102941ValidityPeriod> for ValidityPeriod {
     fn into(self) -> Etsi102941ValidityPeriod {
         use veloce_asn1::defs::etsi_102941_v221::ieee1609_dot2_base_types::{Time32, Uint32};
         Etsi102941ValidityPeriod::new(Time32(Uint32(self.start.secs() as u32)), self.period.into())
+    }
+}
+ */
+impl From<ValidityPeriod> for Etsi102941ValidityPeriod {
+    fn from(value: ValidityPeriod) -> Self {
+        use veloce_asn1::defs::etsi_102941_v221::ieee1609_dot2_base_types::{Time32, Uint32};
+        Etsi102941ValidityPeriod::new(
+            Time32(Uint32(value.start.secs() as u32)),
+            value.period.into(),
+        )
     }
 }
 

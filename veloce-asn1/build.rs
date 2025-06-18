@@ -3,12 +3,12 @@ use rasn_compiler::prelude::*;
 use std::{env, fs, path::PathBuf};
 
 fn main() {
-    let compile = env::var("COMPILE_ASN1").map_or(false, |c| c == "1");
+    let compile = env::var("COMPILE_ASN1").is_ok_and(|c| c == "1");
     if !compile {
         return;
     }
 
-    let gen_ts = env::var("GEN_TS").map_or(false, |c| c == "1");
+    let gen_ts = env::var("GEN_TS").is_ok_and(|c| c == "1");
 
     // Write the bindings to the $OUT_DIR/bindings.rs file.
     let out_path = PathBuf::from("./out");
