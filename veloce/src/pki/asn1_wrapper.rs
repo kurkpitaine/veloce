@@ -3,7 +3,9 @@ use core::fmt;
 use veloce_asn1::{
     defs::{
         etsi_102941_v221::{
-            etsi_ts102941_trust_lists::{CtlCommand, CtlEntry, ToBeSignedRcaCtl, ToBeSignedTlmCtl},
+            etsi_ts102941_trust_lists::{
+                CtlCommand, CtlEntry, ToBeSignedCrl, ToBeSignedRcaCtl, ToBeSignedTlmCtl,
+            },
             etsi_ts102941_types_enrolment::{
                 EnrolmentResponseCode, InnerEcRequest, InnerEcResponse,
             },
@@ -497,6 +499,18 @@ impl Asn1WrapperTrait for Asn1Wrapper<ToBeSignedRcaCtl> {
             }
         }
 
+        Ok(())
+    }
+}
+
+impl Asn1WrapperTrait for Asn1Wrapper<ToBeSignedCrl> {
+    type Wrapped = ToBeSignedCrl;
+
+    /// Check `data` is valid according to ToBeSignedCrl Asn.1 definition.
+    /// This method is necessary as the rasn Asn.1 compiler does not generate
+    /// the validation code for custom parameterized types.
+    #[inline]
+    fn verify_constraints(_data: &Self::Wrapped) -> Asn1WrapperResult<()> {
         Ok(())
     }
 }

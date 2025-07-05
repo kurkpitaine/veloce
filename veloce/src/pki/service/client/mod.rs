@@ -1,4 +1,5 @@
 pub mod authorization;
+pub mod crl;
 pub mod ctl;
 pub mod ectl;
 pub mod enrollment;

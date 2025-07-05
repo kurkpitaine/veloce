@@ -1,6 +1,6 @@
 use core::fmt::{self, Formatter};
 
-use crate::security::backend::BackendError;
+use crate::{pki::message::crl::CertificateRevocationListError, security::backend::BackendError};
 
 use super::{
     asn1_wrapper::Asn1WrapperError,
@@ -34,6 +34,8 @@ pub enum PkiServiceError {
     AuthorizationResponse(AuthorizationResponseError),
     /// ECTL error.
     EctlResponse(CertificateTrustListError),
+    /// CRL error.
+    CrlResponse(CertificateRevocationListError),
     /// CTL error.
     CtlResponse(CertificateTrustListError),
 }
@@ -61,6 +63,9 @@ impl fmt::Display for PkiServiceError {
             }
             PkiServiceError::EctlResponse(e) => {
                 write!(f, "ECTL response: {}", e)
+            }
+            PkiServiceError::CrlResponse(e) => {
+                write!(f, "CRL response: {}", e)
             }
             PkiServiceError::CtlResponse(e) => {
                 write!(f, "CTL response: {}", e)
