@@ -617,26 +617,28 @@ impl ConfigBuilder {
             match (ssp.r#type, ssp.version) {
                 (SSPConfigType::Geonet, _) => res.push(Permission::GnMgmt),
                 (SSPConfigType::Cam, Some(version)) => {
-                    if version == 1 {
-                        let Some(perms) = &ssp.permissions else {
-                            warn!("Skipping CAM SSP without permissions");
+                    let mut cam_ssp = match version {
+                        1 => CamSsp::new_v1(),
+                        2 => CamSsp::new_v2(),
+                        _ => {
+                            warn!("Skipping unsupported CAM SSP version {}", version);
                             continue;
-                        };
+                        }
+                    };
 
-                        let mut cam_ssp = CamSsp::new();
-
-                        perms.iter().for_each(|p| {
-                            Self::parse_cam_ssp_string(p).and_then(|e| {
-                                cam_ssp.set_permission(e);
-                                None::<CamPermission>
-                            });
-                        });
-
-                        res.push(Permission::CAM(cam_ssp.into()));
-                    } else {
-                        warn!("Skipping unsupported CAM SSP version {}", version);
+                    let Some(perms) = &ssp.permissions else {
+                        warn!("Skipping CAM SSP version {} without permissions", version);
                         continue;
-                    }
+                    };
+
+                    perms.iter().for_each(|p| {
+                        Self::parse_cam_ssp_string(p).and_then(|e| {
+                            cam_ssp.set_permission(e);
+                            None::<CamPermission>
+                        });
+                    });
+
+                    res.push(Permission::CAM(cam_ssp.into()));
                 }
                 (SSPConfigType::Denm, Some(version)) => {
                     let mut denm_ssp: DenmSsp = match version {
@@ -686,6 +688,8 @@ impl ConfigBuilder {
             "SPECIAL_TRANSPORT" => CamPermission::SpecialTransport,
             "PUBLIC_TRANSPORT" => CamPermission::PublicTransport,
             "TOLLING_ZONE" => CamPermission::CenDsrcTollingZoneOrProtectedCommunicationZonesRSU,
+            "TWO_WHEELER" => CamPermission::TwoWheeler,
+            "TWO_WHEELER_CYCLIST" => CamPermission::TwoWheelerCyclist,
             "SPEED_LIMIT" => CamPermission::SpeedLimit,
             "NO_TRUCKS" => CamPermission::NoPassingForTrucks,
             "NO_PASSING" => CamPermission::NoPassing,

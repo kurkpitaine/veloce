@@ -213,9 +213,9 @@ pub enum DenmSsp {
     V1(DenmSspV1),
     /// Version 2 of the DENM SSP.
     V2(DenmSspV2),
-    /// Unknown version of the DENM SSP. SSP specification guarantees that
+    /// Future version of the DENM SSP. SSP specification guarantees that
     /// a future SSP version will be at least as long as the current one.
-    Unknown(DenmSspV2),
+    Future(DenmSspV2),
 }
 
 impl DenmSsp {
@@ -243,7 +243,7 @@ impl DenmSsp {
             _ if buf.len() >= DENM_SSP_V2_LEN => {
                 let mut raw = [0u8; DENM_SSP_V2_LEN - 1];
                 raw.copy_from_slice(&buf[1..DENM_SSP_V2_LEN - 1]);
-                Ok(DenmSsp::Unknown(DenmSspV2::from_raw_permissions(raw)))
+                Ok(DenmSsp::Future(DenmSspV2::from_raw_permissions(raw)))
             }
             _ => Err(SspError::Malformed),
         }
@@ -254,7 +254,16 @@ impl DenmSsp {
         match self {
             DenmSsp::V1(v1_ssp) => v1_ssp.emit().to_vec(),
             DenmSsp::V2(v2_ssp) => v2_ssp.emit().to_vec(),
-            DenmSsp::Unknown(u_ssp) => u_ssp.emit().to_vec(),
+            DenmSsp::Future(u_ssp) => u_ssp.emit().to_vec(),
+        }
+    }
+
+    /// Get the SSP version.
+    pub const fn version(&self) -> u8 {
+        match self {
+            DenmSsp::V1(_) => SSP_VERSION_1,
+            DenmSsp::V2(_) => SSP_VERSION_2,
+            DenmSsp::Future(_) => SSP_VERSION_2,
         }
     }
 
@@ -273,8 +282,20 @@ impl DenmSsp {
         match self {
             DenmSsp::V1(v1_ssp) => v1_ssp.has_permission(permission),
             DenmSsp::V2(v2_ssp) => v2_ssp.has_permission(permission),
-            DenmSsp::Unknown(u_ssp) => u_ssp.has_permission(permission),
+            DenmSsp::Future(u_ssp) => u_ssp.has_permission(permission),
         }
+    }
+}
+
+impl PartialOrd for DenmSsp {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DenmSsp {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.version().cmp(&other.version())
     }
 }
 
@@ -306,7 +327,7 @@ impl SspTrait for DenmSsp {
         match self {
             DenmSsp::V1(s) => s.has_permission(permission),
             DenmSsp::V2(s) => s.has_permission(permission),
-            DenmSsp::Unknown(s) => s.has_permission(permission),
+            DenmSsp::Future(s) => s.has_permission(permission),
         }
     }
 
@@ -314,7 +335,7 @@ impl SspTrait for DenmSsp {
         match self {
             DenmSsp::V1(s) => s.set_permission(permission),
             DenmSsp::V2(s) => s.set_permission(permission),
-            DenmSsp::Unknown(s) => s.set_permission(permission),
+            DenmSsp::Future(s) => s.set_permission(permission),
         }
     }
 
@@ -322,7 +343,7 @@ impl SspTrait for DenmSsp {
         match self {
             DenmSsp::V1(s) => s.clear_permission(permission),
             DenmSsp::V2(s) => s.clear_permission(permission),
-            DenmSsp::Unknown(s) => s.clear_permission(permission),
+            DenmSsp::Future(s) => s.clear_permission(permission),
         }
     }
 }

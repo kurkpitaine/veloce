@@ -8,7 +8,7 @@ use crate::network::{GnCore, Transport};
 
 #[cfg(feature = "proto-security")]
 use crate::security::{
-    permission::Permission,
+    permission::{Permission, AID},
     ssp::{
         cam::{CamPermission, CamSsp},
         SspTrait,
@@ -422,14 +422,57 @@ impl<'a> Socket<'a> {
         };
 
         #[cfg(feature = "proto-security")]
-        let ssp = CamSsp::new();
+        let permission = if let Some(sec) = &srv.core.security {
+            // Check if we have permission to send this CAM.
+            let sign_permissions = match sec.application_permissions() {
+                Ok(p) => p,
+                Err(e) => {
+                    net_error!(
+                        "CAM cannot be sent: cannot get application permissions: {}",
+                        e
+                    );
+                    return Ok(());
+                }
+            };
+
+            let mut cam_ssps: Vec<CamSsp> = sign_permissions
+                .into_iter()
+                .filter_map(|p| {
+                    if p.aid() == AID::CA {
+                        let ssp = *p.cam_or_panic();
+                        // Filter future versions
+                        (ssp.is_v1() || ssp.is_v2()).then_some(ssp)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if cam_ssps.is_empty() {
+                net_error!("CAM cannot be sent: unauthorized");
+                return Ok(());
+            }
+
+            // Sort permissions by descending version value.
+            cam_ssps.sort_by(|a, b| b.cmp(a));
+
+            let ssp = if cam_ssps[0].is_v1() {
+                CamSsp::new_v1()
+            } else {
+                CamSsp::new_v2()
+            };
+
+            Permission::CAM(ssp.into())
+        } else {
+            Default::default()
+        };
 
         let meta = Request {
             transport: Transport::SingleHopBroadcast,
             max_lifetime: Duration::from_millis(1000),
             traffic_class: Self::traffic_class(),
             #[cfg(feature = "proto-security")]
-            its_aid: Permission::CAM(ssp.into()),
+            its_aid: permission,
             ..Default::default()
         };
 
@@ -637,7 +680,7 @@ impl<'a> Socket<'a> {
     /// Check if the CAM content is authorized vs `permission`.
     fn check_permissions(cam: &cam::CAM, permission: &CamSsp) -> bool {
         use veloce_asn1::defs::etsi_messages_r2::etsi__its__cdd::TrafficRule;
-        let mut expected = CamSsp::new();
+        let mut expected = CamSsp::new_v2();
 
         match &cam.cam.cam_parameters.high_frequency_container {
             cam::HighFrequencyContainer::basicVehicleContainerHighFrequency(hfc) => {

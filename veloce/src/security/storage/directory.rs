@@ -20,8 +20,10 @@ pub struct DirectoryStorageConfig {
     /// the user running the application is used as base,
     /// containing the `.veloce` directory.
     pub veloce_dir: Option<String>,
-    /// ECTL filename.
+    /// European Certificate Trust List filename.
     ectl_filename: String,
+    /// Certificate Revocation List filename.
+    crl_filename: String,
     /// Trust List Manager certificate filename.
     tlm_cert_filename: String,
     /// Root certificate filename.
@@ -56,6 +58,7 @@ impl Default for DirectoryStorageConfig {
         Self {
             veloce_dir: None,
             ectl_filename: "ECTL.oer".into(),
+            crl_filename: "CRL.oer".into(),
             tlm_cert_filename: "TLM.cert".into(),
             root_cert_filename: "RCA.cert".into(),
             aa_cert_filename: "AA.cert".into(),
@@ -342,6 +345,11 @@ impl StorageTrait for DirectoryStorage {
         load_file_storage_map!(path)
     }
 
+    fn load_crl(&self) -> StorageResult<Vec<u8>> {
+        let path = self.assets_path.join(self.config.crl_filename.clone());
+        load_file_storage_map!(path)
+    }
+
     fn load_root_certificate(&self) -> StorageResult<Vec<u8>> {
         let path = self
             .assets_path
@@ -394,6 +402,11 @@ impl StorageTrait for DirectoryStorage {
 
     fn store_ectl(&self, cert: &[u8]) -> StorageResult<()> {
         let path = self.assets_path.join(self.config.ectl_filename.clone());
+        Self::store_file(path, cert, None).map_err(|e| StorageError::Other(e.into()))
+    }
+
+    fn store_crl(&self, cert: &[u8]) -> StorageResult<()> {
+        let path = self.assets_path.join(self.config.crl_filename.clone());
         Self::store_file(path, cert, None).map_err(|e| StorageError::Other(e.into()))
     }
 

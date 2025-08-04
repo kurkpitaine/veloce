@@ -32,4 +32,4 @@ default = ["nxp-phy-r17"]
 
 [[bin]]
 name = "veloce"
-path = "src/main.rs"
+path = "src/veloce.rs"

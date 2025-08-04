@@ -111,7 +111,7 @@ fn verify_secured_message() {
 fn test_sign_message() {
     let mut service = setup_security_service();
 
-    let permissions = Permission::CAM(CamSsp::new().into());
+    let permissions = Permission::CAM(CamSsp::new_v1().into());
 
     let position = PotiPosition {
         latitude: Some(Latitude::new::<degree>(48.2764384)),
@@ -134,7 +134,7 @@ fn test_sign_message() {
 fn test_signer_digest_or_certificate_cam() {
     let mut service = setup_security_service();
 
-    let permissions = Permission::CAM(CamSsp::new().into());
+    let permissions = Permission::CAM(CamSsp::new_v1().into());
 
     let position = PotiPosition {
         latitude: Some(Latitude::new::<degree>(48.2764384)),
@@ -231,7 +231,7 @@ fn test_position_inclusion() {
     );
 
     // Position should not be included for CAM messages.
-    let permissions = Permission::CAM(CamSsp::new().into());
+    let permissions = Permission::CAM(CamSsp::new_v1().into());
     let mut message = SecuredMessage::new(GN_CAM.to_vec());
 
     service

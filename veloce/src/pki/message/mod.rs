@@ -317,7 +317,7 @@ pub fn verify_signed_data<B, C, F, A, T>(
     verify_app: A,
 ) -> VerifierResult<bool>
 where
-    B: PkiBackendTrait,
+    B: BackendTrait,
     C: ExplicitCertificate,
     F: FnOnce(SignerIdentifier) -> VerifierResult<Option<C>>,
     A: FnOnce(AID) -> Result<(), AID>,

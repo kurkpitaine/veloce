@@ -12,7 +12,7 @@ use crate::{
         SignerIdentifier,
     },
     security::{
-        backend::PkiBackendTrait,
+        backend::BackendTrait,
         certificate::{CertificateWithHashContainer, RootCertificate},
         permission::AID,
     },
@@ -22,25 +22,24 @@ use crate::{
 use super::PkiClientService;
 
 impl PkiClientService {
-    pub fn parse_crl_response<B: PkiBackendTrait>(
+    pub fn parse_crl_response<B: BackendTrait>(
         &self,
         response: &[u8],
         root_certificate: &CertificateWithHashContainer<RootCertificate>,
         timestamp: Instant,
         backend: &B,
     ) -> PkiServiceResult<CertificateRevocationList> {
-        self.crl_response_inner(response, root_certificate, timestamp, backend)
+        Self::parse_and_check_crl(response, root_certificate, timestamp, backend)
             .map_err(PkiServiceError::CrlResponse)
     }
 
-    fn crl_response_inner<B: PkiBackendTrait>(
-        &self,
-        response: &[u8],
+    pub fn parse_and_check_crl<B: BackendTrait>(
+        bytes: &[u8],
         root_certificate: &CertificateWithHashContainer<RootCertificate>,
         _timestamp: Instant, // TODO: verify the generation time in the request.
         backend: &B,
     ) -> CertificateRevocationListResult<CertificateRevocationList> {
-        let crl_msg = CertificateRevocationListMessage::from_bytes_signed(response)
+        let crl_msg = CertificateRevocationListMessage::from_bytes_signed(bytes)
             .map_err(CertificateRevocationListError::Outer)?;
 
         let valid_signature = message::verify_signed_data(

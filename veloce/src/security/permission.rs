@@ -26,6 +26,8 @@ enum_with_unknown! {
         CA = 36,
         /// Decentralized Event Notification Basic service, ie: DENM message.
         DEN = 37,
+        /// Automated Vehicle Marshaling service, ie: MIM and MVM messages.
+        AVM = 71,
         /// Traffic Light Manoeuver service, ie: SPAT message.
         TLM = 137,
         /// Road Lane Topology service, ie: MAP message.
@@ -50,6 +52,14 @@ enum_with_unknown! {
         CP = 639,
         /// Interference Management Zone service, ie: IMZM message.
         IMZ = 640,
+        /// Misbehaviour Reporting service, ie: MR message.
+        MR = 1618,
+        /// Parking availability service, ie: POIM-PA message.
+        POI = 1619,
+        /// Restricted Mode of Operation service, ie: RMO message.
+        RMO = 1620,
+        /// Parking Information service, ie: PI message.
+        PI = 1621,
         /// Service Announcement service, ie: SAM message.
         SA = 540_801,
         /// GNSS Positioning Correction service.
@@ -200,6 +210,17 @@ impl Permission {
         match self {
             Permission::DENM(ssp) => &ssp.ssp,
             _ => panic!("Permission is not DENM type."),
+        }
+    }
+
+    /// Get a reference on the inner [CamSsp].
+    ///
+    /// # Panics
+    /// This method panics of the inner SSP is not [CamSsp] type.
+    pub fn cam_or_panic(&self) -> &CamSsp {
+        match self {
+            Permission::CAM(ssp) => &ssp.ssp,
+            _ => panic!("Permission is not CAM type."),
         }
     }
 }

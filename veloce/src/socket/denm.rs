@@ -616,33 +616,51 @@ impl<'a> Socket<'a> {
                 .application_permissions()
                 .map_err(|_| ApiError::Unauthorized)?;
 
-            let sign_permission = sign_permissions
-                .iter()
-                .find(|p| p.aid() == AID::DEN)
-                .map(|p| p.denm_or_panic())
-                .ok_or(ApiError::Unauthorized)?;
+            let mut denm_ssps: Vec<DenmSsp> = sign_permissions
+                .into_iter()
+                .filter_map(|p| {
+                    if p.aid() == AID::DEN {
+                        let ssp = *p.denm_or_panic();
+                        // Filter future versions
+                        (ssp.is_v1() || ssp.is_v2()).then_some(ssp)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
 
-            let mut saved_perm = if sign_permission.is_v1() {
-                DenmSsp::new_v1()
-            } else {
-                DenmSsp::new_v2()
-            };
-
-            let authorized = if let Some(situation) = &event.situation_container {
-                let cause_code = &situation.event_type.cc_and_scc;
-                let permission =
-                    DenmPermission::try_from(cause_code).map_err(|_| ApiError::Unauthorized)?;
-                saved_perm.set_permission(permission);
-                sign_permission.has_permission(permission)
-            } else {
-                true
-            };
-
-            if !authorized {
+            if denm_ssps.is_empty() {
+                // No DENM permission found, we cannot send it.
                 return Err(ApiError::Unauthorized);
-            } else {
-                Permission::DENM(saved_perm.into())
             }
+
+            // Sort permissions by descending version value.
+            denm_ssps.sort_by(|a, b| b.cmp(a));
+
+            let final_ssp = match &event.situation_container {
+                Some(situation) => {
+                    let cause_code = &situation.event_type.cc_and_scc;
+                    let requested_permission =
+                        DenmPermission::try_from(cause_code).map_err(|_| ApiError::Unauthorized)?;
+
+                    let denm_ssp = denm_ssps
+                        .iter()
+                        .find(|ssp| ssp.has_permission(requested_permission))
+                        .ok_or(ApiError::Unauthorized)?;
+
+                    let mut ssp = if denm_ssp.is_v1() {
+                        DenmSsp::new_v1()
+                    } else {
+                        DenmSsp::new_v2()
+                    };
+
+                    ssp.set_permission(requested_permission);
+                    ssp
+                }
+                None => denm_ssps[0], // No situation container: use first available SSP
+            };
+
+            Permission::DENM(final_ssp.into())
         } else {
             Default::default()
         };

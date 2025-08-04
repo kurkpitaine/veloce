@@ -102,6 +102,9 @@ pub trait StorageTrait {
     /// Load the ECTL from the storage.
     fn load_ectl(&self) -> StorageResult<Vec<u8>>;
 
+    /// Load the CRL from the storage.
+    fn load_crl(&self) -> StorageResult<Vec<u8>>;
+
     /// Load the root certificate from the storage.
     fn load_root_certificate(&self) -> StorageResult<Vec<u8>>;
 
@@ -125,6 +128,9 @@ pub trait StorageTrait {
 
     /// Store the ECTL in the storage.
     fn store_ectl(&self, cert: &[u8]) -> StorageResult<()>;
+
+    /// Store the CRL in the storage.
+    fn store_crl(&self, cert: &[u8]) -> StorageResult<()>;
 
     /// Store the root certificate in the storage.
     fn store_root_certificate(&self, cert: &[u8]) -> StorageResult<()>;

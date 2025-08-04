@@ -4,6 +4,10 @@ use std::{collections::BTreeMap, rc::Rc};
 use log::{error, info, warn};
 use veloce::{
     network::core::SecurityConfig as RouterSecurityConfig,
+    pki::{
+        message::crl::{CertificateRevocationList, CertificateRevocationListError},
+        service::PkiClientService,
+    },
     security::{
         ATContainer, DirectoryStorage, EcdsaKey, SecurityBackend, SecurityStorageMetadata,
         TrustChain,
@@ -34,7 +38,11 @@ pub enum SecurityError {
     CertificateCheck(CertificateError),
     /// Cannot compute certificate hash.
     CertificateHash(CertificateError),
-    /// Certificate false signature.
+    /// Failed to load CRL.
+    CRLLoad(StorageError),
+    /// CRL format error.
+    CRL(CertificateRevocationListError),
+    /// False signature.
     FalseSignature,
     /// Crypto or storage backend error.
     CryptoStorage(utils::UtilError),
@@ -50,6 +58,8 @@ impl fmt::Display for SecurityError {
             SecurityError::Certificate(e) => write!(f, "failed to parse certificate: {e}"),
             SecurityError::CertificateCheck(e) => write!(f, "failed to check certificate: {e}"),
             SecurityError::CertificateHash(e) => write!(f, "cannot compute certificate hash: {e}"),
+            SecurityError::CRLLoad(e) => write!(f, "failed to load CRL: {e}"),
+            SecurityError::CRL(e) => write!(f, "failed to parse CRL: {e}"),
             SecurityError::FalseSignature => write!(f, "false signature"),
             SecurityError::CryptoStorage(e) => write!(f, "failed to setup storage and crypto: {e}"),
         }
@@ -61,7 +71,13 @@ impl fmt::Display for SecurityError {
 /// Returns the [RouterSecurityConfig] if security is enabled, None otherwise.
 pub fn setup_security(
     config: &Config,
-) -> SecurityResult<Option<(RouterSecurityConfig, Rc<DirectoryStorage>, SecurityStorageMetadata)>> {
+) -> SecurityResult<
+    Option<(
+        RouterSecurityConfig,
+        Rc<DirectoryStorage>,
+        SecurityStorageMetadata,
+    )>,
+> {
     let res = if config.security.enable {
         info!("Setting up crypto and secure storage");
         let (backend, storage) = utils::setup_openssl_and_directory_storage(config)
@@ -188,6 +204,12 @@ pub(crate) fn setup_trust_chain<B: PkiBackendTrait, S: StorageTrait>(
         })
     });
 
+    let maybe_crl = load_and_check_crl(storage, root_cert.clone(), timestamp, backend)
+        .inspect_err(|e| {
+            warn!("Failed to load CRL: {}", e);
+        })
+        .ok();
+
     // Store the AT certificate election statistics.
     storage
         .store_metadata(at_metadata.clone())
@@ -210,6 +232,13 @@ pub(crate) fn setup_trust_chain<B: PkiBackendTrait, S: StorageTrait>(
     }
 
     trust_chain.set_at_certs(at_certs);
+
+    if let Some(crl) = maybe_crl {
+        crl.entries().iter().for_each(|h| {
+            info!("Adding revoked certificate with hash: {}", h);
+            trust_chain.add_revoked_cert(*h);
+        });
+    }
 
     Ok((trust_chain, at_metadata))
 }
@@ -314,4 +343,16 @@ fn load_and_check_cert<
 
     cert.into_with_hash_container(backend)
         .map_err(SecurityError::CertificateHash)
+}
+
+fn load_and_check_crl<B: BackendTrait, S: StorageTrait>(
+    storage: &S,
+    root_cert: CertificateWithHashContainer<RootCertificate>,
+    timestamp: Instant,
+    backend: &B,
+) -> SecurityResult<CertificateRevocationList> {
+    let crl_bytes = storage.load_crl().map_err(SecurityError::CRLLoad)?;
+
+    PkiClientService::parse_and_check_crl(&crl_bytes, &root_cert, timestamp, backend)
+        .map_err(SecurityError::CRL)
 }
